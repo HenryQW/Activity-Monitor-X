@@ -6,4 +6,9 @@ public enum SignalPolicy {
         guard pid > 1, pid != selfPID, signal == SIGTERM || signal == SIGKILL else { return EPERM }
         return 0
     }
+
+    /// 0 if the process at `pid` started at `startTime`, else `ESRCH`, so a reused pid is never signalled.
+    public static func checkIdentity(pid: Int32, startTime: Double) -> Int32 {
+        ProcessReader.read(pid: pid)?.identity.startTime == startTime ? 0 : ESRCH
+    }
 }

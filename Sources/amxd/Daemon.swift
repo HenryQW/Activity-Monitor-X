@@ -5,6 +5,15 @@ import GRDB
 import os
 
 final class Daemon: @unchecked Sendable {
+    /// On-demand 1 s sampling. Own samplers, because CPU and disk rates are deltas per sampler instance.
+    private struct Live {
+        let processes = ProcessSampler()
+        let system = SystemSampler()
+        var apps: [ProcessIdentity: (name: String, path: String?, app: AppInfo)] = [:]
+        var primed = false
+        var latest: (ts: Double, json: Data)?
+    }
+
     private static let teamIDBudget = 30
     private static let rollupEvery = 12
 
@@ -24,6 +33,11 @@ final class Daemon: @unchecked Sendable {
     private var ticks = 0
     private var timer: DispatchSourceTimer?
     private var sigterm: DispatchSourceSignal?
+    private var live = Live()
+    private var liveDemand = LiveDemand()
+    private var liveTimer: DispatchSourceTimer?
+    /// Network rates of the last recording tick; live rows reuse them (nettop emits every 5 s).
+    private var latestNet: [ProcessIdentity: (inPerSec: Double, outPerSec: Double)] = [:]
 
     init(dbPath: String, xpc: Bool) throws {
         umask(0o022)
@@ -61,7 +75,7 @@ final class Daemon: @unchecked Sendable {
     }
 
     private func startXPC() {
-        let service = XPCService(dbPath: dbPath)
+        let service = XPCService(dbPath: dbPath, live: { [self] in queue.sync { liveSnapshot() } })
         let l = NSXPCListener(machServiceName: AMX.daemonLabel)
         l.delegate = service // weak; xpcService keeps it alive
         l.resume()
@@ -76,11 +90,14 @@ final class Daemon: @unchecked Sendable {
         var sys = system.sample(now: now)
 
         let rates = nettop.rates(alive: Dictionary(samples.map { ($0.identity.pid, $0.identity) }, uniquingKeysWith: { $1 }))
+        var net: [ProcessIdentity: (inPerSec: Double, outPerSec: Double)] = [:]
         for i in samples.indices {
             guard let r = rates[samples[i].identity.pid] else { continue }
             samples[i].netIn = r.inPerSec
             samples[i].netOut = r.outPerSec
+            net[samples[i].identity] = r
         }
+        latestNet = net
         sys.netIn = rates.values.reduce(0) { $0 + $1.inPerSec }
         sys.netOut = rates.values.reduce(0) { $0 + $1.outPerSec }
 
@@ -116,6 +133,62 @@ final class Daemon: @unchecked Sendable {
                 log.error("rollup failed: \(String(describing: error), privacy: .public)")
             }
             checkpoint()
+        }
+    }
+
+    /// Called on `queue`. Keeps live sampling on and returns the latest snapshot unless it is stale.
+    private func liveSnapshot() -> Data? {
+        let now = Date().timeIntervalSince1970
+        liveDemand.requested(at: now)
+        if liveTimer == nil {
+            let t = DispatchSource.makeTimerSource(queue: queue)
+            t.schedule(deadline: .now(), repeating: 1)
+            t.setEventHandler { [self] in liveTick() }
+            t.resume()
+            liveTimer = t
+        }
+        guard let latest = live.latest, now - latest.ts < 3 else { return nil }
+        return latest.json
+    }
+
+    /// Never writes the DB.
+    private func liveTick() {
+        let now = Date().timeIntervalSince1970
+        guard liveDemand.shouldSample(now: now) else {
+            liveTimer?.cancel()
+            liveTimer = nil
+            live = Live()  // the next session primes fresh
+            return
+        }
+        let sampled = live.processes.sample(now: now, gpuNanos: GPUReader.processNanos())
+        let sys = live.system.sample(now: now)
+        for raw in sampled.new {
+            live.apps[raw.identity] = (raw.name, raw.path, AppAttribution.app(forExecutable: raw.path, processName: raw.name))
+        }
+        let alive = Set(sampled.samples.map(\.identity))
+        live.apps = live.apps.filter { alive.contains($0.key) }
+        // The first sample has no previous counters, so its rates are all 0.
+        guard live.primed else {
+            live.primed = true
+            return
+        }
+
+        let rows = sampled.samples.compactMap { s -> LiveProcess? in
+            guard let (name, path, app) = live.apps[s.identity] else { return nil }
+            let net = latestNet[s.identity]
+            return LiveProcess(pid: s.identity.pid, startTime: s.identity.startTime, name: name,
+                               appKey: app.appPath ?? name, appName: app.appName, path: path, cpu: s.cpu, mem: s.mem,
+                               diskR: s.diskR, diskW: s.diskW, netIn: net?.inPerSec ?? 0,
+                               netOut: net?.outPerSec ?? 0, gpu: s.gpu, energy: s.energy)
+        }
+        let snapshot = LiveSnapshot(ts: now, system: LiveSystem(cpu: sys.cpu, memUsed: sys.memUsed,
+                                                                pressureLevel: sys.pressureLevel,
+                                                                thermalState: sys.thermalState),
+                                    processes: rows)
+        do {
+            live.latest = (now, try JSONEncoder().encode(snapshot))
+        } catch {
+            log.error("live encode failed: \(String(describing: error), privacy: .public)")
         }
     }
 

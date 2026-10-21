@@ -12,12 +12,14 @@ final class XPCService: NSObject, NSXPCListenerDelegate, DaemonXPC, @unchecked S
     }
 
     private let dbPath: String
+    private let liveSnapshot: @Sendable () -> Data?
     private let started = ProcessInfo.processInfo.systemUptime
     private let requirement: String?
     private let log = Logger(subsystem: AMX.daemonLabel, category: "xpc")
 
-    init(dbPath: String) {
+    init(dbPath: String, live: @escaping @Sendable () -> Data?) {
         self.dbPath = dbPath
+        liveSnapshot = live
         requirement = SigningRequirement.ownLeafSHA1().map { SigningRequirement.string(leafSHA1Hex: $0) }
         super.init()
         if requirement == nil {
@@ -42,16 +44,21 @@ final class XPCService: NSObject, NSXPCListenerDelegate, DaemonXPC, @unchecked S
         reply(String(decoding: try! encoder.encode(info), as: UTF8.self))
     }
 
-    func signal(pid: Int32, signal: Int32, reply: @escaping (Int32) -> Void) {
+    func signal(pid: Int32, startTime: Double, signal: Int32, reply: @escaping (Int32) -> Void) {
         let caller = NSXPCConnection.current()?.processIdentifier ?? -1
-        let refused = SignalPolicy.check(pid: pid, signal: signal, selfPID: getpid())
+        var refused = SignalPolicy.checkIdentity(pid: pid, startTime: startTime)
+        if refused == 0 { refused = SignalPolicy.check(pid: pid, signal: signal, selfPID: getpid()) }
         guard refused == 0 else {
-            log.error("signal \(signal, privacy: .public) to pid \(pid, privacy: .public) refused (caller \(caller, privacy: .public))")
+            log.error("signal \(signal, privacy: .public) to pid \(pid, privacy: .public) refused \(refused, privacy: .public) (caller \(caller, privacy: .public))")
             reply(refused)
             return
         }
         let result = kill(pid, signal) == 0 ? 0 : errno
         log.notice("signal \(signal, privacy: .public) to pid \(pid, privacy: .public) by caller \(caller, privacy: .public): \(result, privacy: .public)")
         reply(result)
+    }
+
+    func live(reply: @escaping (Data?) -> Void) {
+        reply(liveSnapshot())
     }
 }

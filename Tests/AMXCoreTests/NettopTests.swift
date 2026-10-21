@@ -10,6 +10,11 @@ import Testing
         ProcessIdentity(pid: pid, startTime: start)
     }
 
+    /// A pid 77 row of block `i`; nettop stamps block `i` at 12:00:00 + 5i s.
+    private static func row(_ i: Int, _ bytesIn: UInt64, _ bytesOut: UInt64) -> String {
+        String(format: "12:%02d:%02d.000000,x.77,\(bytesIn),\(bytesOut),", i * 5 / 60, i * 5 % 60)
+    }
+
     /// Feeds blocks 5 s apart; the last header completes the final block, received `age` s before now.
     private func stream(_ counters: [(UInt64, UInt64)], age: Double = 0) -> NettopStream {
         let now = Date(timeIntervalSince1970: Double(counters.count - 1) * 5 + age)
@@ -17,7 +22,7 @@ import Testing
         for (i, c) in counters.enumerated() {
             let t = Date(timeIntervalSince1970: Double(i) * 5)
             s.ingest(line: Self.header, at: t)
-            s.ingest(line: "12:00:00.000001,x.77,\(c.0),\(c.1),", at: t)
+            s.ingest(line: Self.row(i, c.0, c.1), at: t)
         }
         s.ingest(line: Self.header, at: Date(timeIntervalSince1970: Double(counters.count) * 5))
         return s
@@ -45,6 +50,22 @@ import Testing
         let r = stream([(1000, 100), (6000, 600)]).rates(alive: [77: id(start: 1)])
         #expect(r[77]?.inPerSec == 1000)
         #expect(r[77]?.outPerSec == 100)
+    }
+
+    /// nettop block-buffers its pipe: several blocks arrive in one read, microseconds apart. The rate uses
+    /// nettop's own sample times (5 s apart here), not receive times, and wraps at midnight.
+    @Test func burstOfBlocksUsesNettopTime() {
+        func rate(_ rows: [String]) -> Double? {
+            let s = NettopStream(launch: { nil }, clock: { Date(timeIntervalSince1970: 1) })
+            for (i, r) in rows.enumerated() {
+                s.ingest(line: Self.header, at: Date(timeIntervalSince1970: Double(i) / 1000))
+                s.ingest(line: r, at: Date(timeIntervalSince1970: Double(i) / 1000))
+            }
+            s.ingest(line: Self.header, at: Date(timeIntervalSince1970: Double(rows.count) / 1000))
+            return s.rates(alive: [77: id(start: 1)])[77]?.inPerSec
+        }
+        #expect(rate([Self.row(0, 1000, 0), Self.row(1, 6000, 0)]) == 1000)
+        #expect(rate(["23:59:58.500000,x.77,1000,0,", "00:00:03.500000,x.77,6000,0,"]) == 1000)
     }
 
     @Test func counterResetIsZero() {
@@ -76,7 +97,7 @@ import Testing
         s.start()
         defer { s.stop() }
         for t in 0...2 {
-            pipe.fileHandleForWriting.write(Data("\(Self.header)\n12:00:00.000001,x.77,\(t * 100),0,\n".utf8))
+            pipe.fileHandleForWriting.write(Data("\(Self.header)\n\(Self.row(t, UInt64(t * 100), 0))\n".utf8))
             Thread.sleep(forTimeInterval: 0.05)
         }
         pipe.fileHandleForWriting.write(Data("\(Self.header)\n".utf8))
@@ -95,7 +116,7 @@ import Testing
         func feed(_ i: Int, _ n: UInt64) {
             let t = Date(timeIntervalSince1970: Double(i) * 5)
             s.ingest(line: Self.header, at: t)
-            s.ingest(line: "12:00:00.000001,x.77,\(n),\(n),", at: t)
+            s.ingest(line: Self.row(i, n, n), at: t)
         }
         feed(0, 1000)
         feed(1, 6000)
@@ -116,7 +137,7 @@ import Testing
         s.start()
         defer { s.stop() }
         for t in 0...2 {  // spaced writes give blocks distinct receive times
-            pipe.fileHandleForWriting.write(Data("\(Self.header)\n12:00:00.000001,x.77,\(t * 100),0,\n".utf8))
+            pipe.fileHandleForWriting.write(Data("\(Self.header)\n\(Self.row(t, UInt64(t * 100), 0))\n".utf8))
             Thread.sleep(forTimeInterval: 0.05)
         }
         pipe.fileHandleForWriting.write(Data("\(Self.header)\n".utf8))

@@ -16,6 +16,13 @@ public enum NettopParser {
         }
         return out
     }
+
+    /// nettop's own sample time of a row, `HH:MM:SS.ffffff` local time, as seconds since midnight.
+    public static func sampleTime(_ row: Substring) -> TimeInterval? {
+        let f = row.prefix(while: { $0 != "," }).split(separator: ":")
+        guard f.count == 3, let h = Double(f[0]), let m = Double(f[1]), let s = Double(f[2]) else { return nil }
+        return h * 3600 + m * 60 + s
+    }
 }
 
 /// One long-running `nettop`; blocks of cumulative per-pid counters arrive every 5 s.
@@ -43,7 +50,8 @@ public final class NettopStream: @unchecked Sendable {
     private var running = false
     private var active: Launched?
     private var current: (at: Date, rows: [Substring])?
-    private var complete: [(at: Date, counters: Counters)] = []  // last two complete blocks
+    // Last two complete blocks: receive time (for staleness) and nettop's sample time (for rates).
+    private var complete: [(at: Date, sampled: TimeInterval, counters: Counters)] = []
     private var previousAlive: [Int32: ProcessIdentity] = [:]
 
     public init(retryDelay: TimeInterval = 2, launch: @escaping () -> Launched? = NettopStream.launchNettop,
@@ -137,8 +145,8 @@ public final class NettopStream: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         if line == Self.header {
-            if let c = current {
-                complete.append((c.at, NettopParser.parseBlock(c.rows)))
+            if let c = current, let sampled = c.rows.lazy.compactMap(NettopParser.sampleTime).first {
+                complete.append((c.at, sampled, NettopParser.parseBlock(c.rows)))
                 if complete.count > 2 { complete.removeFirst() }
             }
             current = (time, [])
@@ -156,7 +164,9 @@ public final class NettopStream: @unchecked Sendable {
         previousAlive = alive
         guard complete.count == 2, clock().timeIntervalSince(complete[1].at) <= 12 else { return [:] }
         let (old, new) = (complete[0], complete[1])
-        let dt = new.at.timeIntervalSince(old.at)
+        // nettop block-buffers its pipe, so several blocks can arrive in one read: receive times are no clock.
+        var dt = new.sampled - old.sampled
+        if dt < 0 { dt += 86_400 }  // midnight
         guard dt > 0 else { return [:] }
         var out: [Int32: (inPerSec: Double, outPerSec: Double)] = [:]
         for (pid, now) in new.counters {

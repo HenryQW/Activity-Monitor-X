@@ -1,9 +1,11 @@
-.PHONY: build test clean cert sign install uninstall
+.PHONY: build test clean cert sign install uninstall app install-app run-app
 
 IDENTITY := Activity Monitor X Local Signing
 LABEL := com.henryqw.activitymonitorx.daemon
 PLIST := /Library/LaunchDaemons/$(LABEL).plist
 BIN := .build/release
+APP := .build/Activity Monitor X.app
+APP_ID := com.henryqw.activitymonitorx
 
 build:
 	swift build -c release
@@ -21,6 +23,21 @@ sign: build
 	@security find-identity -v -p codesigning | grep -F "$(IDENTITY)" >/dev/null || { echo "error: identity '$(IDENTITY)' missing; run 'make cert' first" >&2; exit 1; }
 	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(LABEL) $(BIN)/amxd
 	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i com.henryqw.activitymonitorx.amx $(BIN)/amx
+
+app: build
+	@security find-identity -v -p codesigning | grep -F "$(IDENTITY)" >/dev/null || { echo "error: identity '$(IDENTITY)' missing; run 'make cert' first" >&2; exit 1; }
+	rm -rf "$(APP)"
+	mkdir -p "$(APP)/Contents/MacOS"
+	cp Packaging/Info.plist "$(APP)/Contents/Info.plist"
+	cp $(BIN)/ActivityMonitorX "$(APP)/Contents/MacOS/ActivityMonitorX"
+	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(APP_ID) "$(APP)"
+
+install-app: app
+	rm -rf "/Applications/Activity Monitor X.app"
+	ditto "$(APP)" "/Applications/Activity Monitor X.app"
+
+run-app: install-app
+	open "/Applications/Activity Monitor X.app"
 
 # sudo only where root is needed: build and signing use the user's keychain.
 install: sign

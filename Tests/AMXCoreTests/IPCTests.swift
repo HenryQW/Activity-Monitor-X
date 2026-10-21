@@ -19,6 +19,12 @@ import Testing
         #expect(SignalPolicy.check(pid: 4242, signal: SIGKILL, selfPID: getpid()) == 0)
     }
 
+    @Test func identityMismatchIsESRCH() throws {
+        let me = try #require(ProcessReader.read(pid: getpid())).identity
+        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime) == 0)
+        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime - 1) == ESRCH)
+    }
+
     @Test func requirementStringExact() {
         #expect(SigningRequirement.string(leafSHA1Hex: "abc123") ==
             #"(identifier "com.henryqw.activitymonitorx" or identifier "com.henryqw.activitymonitorx.amx") and certificate leaf = H"abc123""#)
