@@ -30,7 +30,10 @@ public struct SystemSample: Sendable {
 /// Turns system counters into one `SystemSample` per tick. The first call has no
 /// previous counters, so its CPU and disk rates are 0.
 public final class SystemSampler {
-    public init() {}
+    /// Live sends only CPU, memory used, pressure level and thermal state, so it skips swap, disks, GPU and SMC.
+    public init(liveOnly: Bool = false) { self.liveOnly = liveOnly }
+
+    private let liveOnly: Bool
 
     private let disks = DiskStatsReader()
     private let smc = SMCReader()
@@ -58,12 +61,13 @@ public final class SystemSampler {
             s.memCompressed = bytes(vm.compressor_page_count)
             s.memUsed = anonymous + bytes(vm.wire_count) + s.memCompressed
         }
-        var swap = xsw_usage()
-        if Self.sysctl("vm.swapusage", into: &swap) { s.swapUsed = swap.xsu_used }
         var level: Int32 = 0
         if Self.sysctl("kern.memorystatus_vm_pressure_level", into: &level), [1, 2, 4].contains(level) {
             s.pressureLevel = Int(level)
         }
+        guard !liveOnly else { previousNow = now; return s }
+        var swap = xsw_usage()
+        if Self.sysctl("vm.swapusage", into: &swap) { s.swapUsed = swap.xsu_used }
         let load = s.memCompressed &+ s.swapUsed
         let growth = valid ? previousLoad.map { Double(CPUMath.delta(load, $0)) / wall } ?? 0 : 0
         previousLoad = load

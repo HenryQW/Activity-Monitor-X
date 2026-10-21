@@ -7,6 +7,8 @@ struct InspectorView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var selection
+    /// The app whose full process list is shown; another app starts short again.
+    private let _showAllOf = State<String?>(initialValue: nil)
 
     var body: some View {
         let isLive = history.range == .live
@@ -33,6 +35,8 @@ struct InspectorView: View {
         // A pinned Timeline colours its app from the app's own series; every other view uses the top-5 mapping.
         let pinned: Bool = if case .pinned(let focus) = selection.sidebar { focus.key == rank.app.key } else { false }
         let color = AppPalette.colors(for: pinned ? series : history.range == .live ? live.stacked : history.stacked)[rank.app] ?? .secondary
+        let showAll = _showAllOf.wrappedValue == rank.app.key
+        let processes = rank.runningFirst(exited: showAll ? .max : 20)
         let selected = Binding<ProcKey?>(
             get: { selection.process.map(ProcKey.init) },
             set: { key in selection.process = rank.processes.first { ProcKey($0) == key } })
@@ -43,12 +47,17 @@ struct InspectorView: View {
                 } icon: {
                     Circle().fill(color).frame(width: 10, height: 10)
                 }
-                Text(rank.processes.count == 1 ? "1 process" : "\(rank.processes.count) processes")
+                Text(rank.processes.count == 1 ? "1 process" : "\(rank.processes.count.formatted()) processes")
                     .foregroundStyle(.secondary)
-                Chart(series.indices, id: \.self) { i in
-                    AreaMark(x: .value("Time", Date(timeIntervalSince1970: series[i].bucket)),
-                             y: .value(metric.label, series[i].value))
+                let drawn = AppSeries.closed(series, bucket: history.range.chartBucket)
+                Chart(drawn.indices, id: \.self) { i in
+                    AreaMark(x: .value("Time", Date(timeIntervalSince1970: drawn[i].bucket)),
+                             y: .value(metric.label, drawn[i].value))
                         .foregroundStyle(color.opacity(0.6))
+                }
+                .chartXAxis {
+                    let (unit, count) = Self.xStride(series)
+                    AxisMarks(values: .stride(by: unit, count: count))
                 }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
@@ -78,7 +87,7 @@ struct InspectorView: View {
                 }
             }
             Section("Processes") {
-                ForEach(rank.processes, id: \.key) { p in
+                ForEach(processes, id: \.key) { p in
                     LabeledContent {
                         HStack {
                             if p.exited { Text("Exited") }
@@ -91,16 +100,35 @@ struct InspectorView: View {
                     .foregroundStyle(p.exited ? .secondary : .primary)
                     .tag(ProcKey(p))
                 }
+                if processes.count < rank.processes.count {
+                    Button("Show All \(rank.processes.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
+                        .buttonStyle(.link)
+                }
             }
         }
-        .safeAreaBar(edge: .bottom) {
-            HStack {
-                Button("Quit") { request(SIGTERM) }
-                Button("Force Quit") { request(SIGKILL) }
+        // A solid bar, apart from the list, keeps the destructive buttons away from the app's name.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                Divider()
+                HStack {
+                    Button("Quit") { request(SIGTERM) }
+                    Button("Force Quit") { request(SIGKILL) }
+                }
+                .disabled(selection.signallable == nil)
+                .padding(10)
             }
-            .disabled(selection.signallable == nil)
-            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
         }
+    }
+
+    /// A whole-minute, hour or day stride for about three x labels: more truncate at the inspector's 240 pt, and
+    /// `.automatic(desiredCount:)` does not lower the count of a date axis (measured).
+    private static func xStride(_ series: [SeriesPoint]) -> (Calendar.Component, Int) {
+        let step = ((series.last?.bucket ?? 0) - (series.first?.bucket ?? 0)) / 3
+        if step < 3600 { return (.minute, [1, 2, 5, 10, 15, 30].first { Double($0 * 60) >= step } ?? 60) }
+        if step < 86_400 { return (.hour, [1, 2, 3, 6, 12].first { Double($0 * 3600) >= step } ?? 24) }
+        return (.day, Int((step / 86_400).rounded(.up)))
     }
 
     private func request(_ signal: Int32) {

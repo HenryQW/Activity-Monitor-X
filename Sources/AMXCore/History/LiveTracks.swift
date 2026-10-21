@@ -3,15 +3,13 @@ public enum LiveTracks {
     /// A snapshot holds until the next one but at most 2 s, so a gap (Live left and resumed, or a
     /// daemon stall) shows no value instead of the old one.
     public static func build(_ snapshots: [LiveSnapshot], metric: Metric, device: Device = .current) -> [ProcessTrack] {
-        struct Key: Hashable { let pid: Int32, startTime: Double }
-        var slices: [Key: [Slice]] = [:]
-        var latest: [Key: (p: LiveProcess, ts: Double)] = [:]
+        var slices: [ProcessIdentity: [Slice]] = [:]
+        var latest: [ProcessIdentity: (p: LiveProcess, ts: Double)] = [:]
         for (i, snapshot) in snapshots.enumerated() {
             let end = i + 1 < snapshots.count ? min(snapshots[i + 1].ts, snapshot.ts + 2) : snapshot.ts + 1
             for p in snapshot.processes {
-                let key = Key(pid: p.pid, startTime: p.startTime)
-                let v = value(p, metric, device)
-                slices[key, default: []].append(Slice(start: snapshot.ts, end: end, value: v, peak: v))
+                let key = ProcessIdentity(pid: p.pid, startTime: p.startTime)
+                slices[key, default: []].append(Slice(start: snapshot.ts, end: end, value: value(p, metric, device)))
                 latest[key] = (p, snapshot.ts)
             }
         }
@@ -39,21 +37,17 @@ public enum LiveTracks {
     /// starts; slices ending by `from` are dropped. A process in both (same pid and start time) keeps one track, its
     /// raw slices first; a process only in `raw` exited before Live started.
     public static func backfilled(_ live: [ProcessTrack], raw: [ProcessTrack], from: Double) -> [ProcessTrack] {
-        struct Key: Hashable { let pid: Int32, startTime: Double }
-        var earlier: [Key: ProcessTrack] = [:]
-        for track in raw {
-            let slices = track.slices.filter { $0.end > from }
-            guard !slices.isEmpty else { continue }
-            earlier[Key(pid: track.pid, startTime: track.startTime)] = ProcessTrack(
-                processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name, app: track.app,
-                path: track.path, lastSeen: track.lastSeen, slices: slices,
-                bundleID: track.bundleID, teamID: track.teamID)
+        var earlier: [ProcessIdentity: ProcessTrack] = [:]
+        for var track in raw {
+            track.slices.removeAll { $0.end <= from }
+            if !track.slices.isEmpty { earlier[ProcessIdentity(pid: track.pid, startTime: track.startTime)] = track }
         }
         let merged = live.map { track in
-            guard let before = earlier.removeValue(forKey: Key(pid: track.pid, startTime: track.startTime)) else { return track }
-            return ProcessTrack(processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
-                                app: track.app, path: track.path, lastSeen: track.lastSeen, slices: before.slices + track.slices,
-                                bundleID: track.bundleID, teamID: track.teamID)
+            var track = track
+            if let before = earlier.removeValue(forKey: ProcessIdentity(pid: track.pid, startTime: track.startTime)) {
+                track.slices = before.slices + track.slices
+            }
+            return track
         }
         return merged + earlier.values
     }

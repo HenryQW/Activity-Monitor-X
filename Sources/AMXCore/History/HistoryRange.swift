@@ -1,3 +1,5 @@
+import Foundation
+
 public enum HistorySource: Sendable { case live, raw, minute, hour }
 
 public enum HistoryRange: CaseIterable, Sendable {
@@ -33,5 +35,20 @@ public enum HistoryRange: CaseIterable, Sendable {
         case .month: 14_400
         case .quarter: 43_200
         }
+    }
+}
+
+extension HistoryRange {
+    /// The subtitle when recording began inside the range, in the locale's formats: "Since 11:06 PM" today,
+    /// "Since Yesterday, 11:06 PM", and the day only from 7D up ("Since 21 Oct"). The Range pop-up names the range.
+    public func since(_ start: Double, now: Double, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let date = Date(timeIntervalSince1970: start)
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
+                                           to: calendar.startOfDay(for: Date(timeIntervalSince1970: now))).day!
+        let daysOnly = seconds >= HistoryRange.week.seconds
+        // Up to 24H the start is today or yesterday.
+        var style = daysOnly ? Date.FormatStyle.dateTime.day().month(.abbreviated) : .dateTime.hour().minute()
+        (style.calendar, style.timeZone, style.locale) = (calendar, calendar.timeZone, locale)
+        return "Since \(!daysOnly && days > 0 ? "Yesterday, " : "")\(date.formatted(style))"
     }
 }

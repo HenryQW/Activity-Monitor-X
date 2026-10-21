@@ -16,7 +16,7 @@ public enum AgentSQL {
             CREATE TEMP VIEW v_process AS
             SELECT p.id, p.pid, p.start_time, p.name, p.path, p.app_path, p.app_name, p.bundle_id, p.team_id, p.uid,
                    p.translated, p.first_seen,
-                   IIF(p.last_seen = 9e999, \(Schema.openLastSeenSQL), p.last_seen) AS last_seen,
+                   \(Schema.lastSeenSQL) AS last_seen,
                    \(app)
             FROM processes p;
             """

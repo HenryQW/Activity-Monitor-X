@@ -7,6 +7,8 @@ struct AppTable: View {
     /// The chart's top apps; other apps get no dot.
     let colors: [AppKey: Color]
     let metric: Metric
+    /// The group's total average; the table then shows each row's share of it.
+    var shareTotal: Double? = nil
 
     @Environment(Selection.self) private var selection
     private let _selected = State<Row.ID?>(initialValue: nil)
@@ -57,6 +59,14 @@ struct AppTable: View {
             TableColumn("Peak", value: \.peak) { Text(metric.format($0.peak)).monospacedDigit() }
                 .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
+            if let shareTotal {
+                TableColumn("Share", value: \.average) { row in
+                    Text((shareTotal > 0 ? row.average / shareTotal : 0).formatted(.percent.precision(.fractionLength(1))))
+                        .monospacedDigit()
+                }
+                .width(min: 64, ideal: 72, max: 90)
+                .alignment(.trailing)
+            }
         } rows: {
             ForEach(rows) { app in
                 DisclosureTableRow(app, isExpanded: expansion(app)) {

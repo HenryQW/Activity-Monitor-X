@@ -24,7 +24,7 @@ public enum Metric: String, CaseIterable, Sendable {
         case .network: ["net_in", "net_out"]
         case .energy: ["energy"]
         case .gpu: ["gpu"]
-        case .score: ["cpu", "mem"]
+        case .score: ["cpu", "mem"] // Not read: HistoryReader weighs these two itself; listed for the exhaustive switch.
         }
     }
 }

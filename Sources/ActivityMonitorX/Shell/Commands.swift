@@ -34,6 +34,21 @@ struct GoCommands: Commands {
     }
 }
 
+/// File > New Group… in place of New Window: the app has one window.
+struct GroupCommands: Commands {
+    let selection: Selection
+    let groups: GroupsModel
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Group…") { selection.editingGroup = .new }
+                .keyboardShortcut("n")
+                // While the sheet is open a new group would replace it and lose the draft.
+                .disabled(groups.loadError != nil || selection.editingGroup != nil)
+        }
+    }
+}
+
 /// Range and Metric menus mirror the toolbar pickers.
 struct DataCommands: Commands {
     let history: HistoryModel
@@ -46,7 +61,7 @@ struct DataCommands: Commands {
             }
         }
         CommandMenu("Metric") {
-            ForEach(Array(Metric.recorded.enumerated()), id: \.offset) { i, metric in
+            ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
                 Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
             }

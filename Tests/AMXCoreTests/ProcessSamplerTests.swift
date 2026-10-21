@@ -49,6 +49,23 @@ import Testing
         #expect(a.identity.startTime > 0)
     }
 
+    @Test func staticFactsReadOnlyForNewOrExecdProcess() {
+        let known = [ProcessIdentity(pid: 100, startTime: 1): raw(translated: true)]
+        var reads = 0
+        func facts(pid: Int32, start: Double, name: String) -> (path: String?, translated: Bool) {
+            ProcessReader.facts(of: ProcessIdentity(pid: pid, startTime: start), name: name, known: known) {
+                reads += 1
+                return ("/new", false)
+            }
+        }
+        #expect(facts(pid: 100, start: 1, name: "p") == (nil, true))
+        #expect(reads == 0)
+        #expect(facts(pid: 101, start: 1, name: "p") == ("/new", false))  // new pid, same name
+        #expect(facts(pid: 100, start: 2, name: "p") == ("/new", false))  // reused pid
+        #expect(facts(pid: 100, start: 1, name: "q") == ("/new", false))  // exec
+        #expect(reads == 3)
+    }
+
     @Test func energyFormula() {
         #expect(CPUMath.energy(cpu: 50, wakeupsPerSec: 20, translated: true) == 62)
     }

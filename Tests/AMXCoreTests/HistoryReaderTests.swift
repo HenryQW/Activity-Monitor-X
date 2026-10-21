@@ -78,7 +78,6 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         try r.raw(30, cpu: 50)
         let t = try #require(try r.tracks(.hour, .cpu, end: 60).first)
         #expect(spans(t) == [[0, 30, 10], [30, 60, 50]])
-        #expect(t.slices[0].peak == 10)
     }
 
     @Test func tracksCarryLastSeen() throws {
@@ -130,11 +129,11 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(spans(t) == [[b + 1800, b + 1860, 50]])
     }
 
-    @Test func memoryUsesFootprintAvgAndMax() throws {
+    @Test func memoryUsesFootprintAvg() throws {
         let r = try Rig(lastSeen: 1e9)
         try r.tier("process_hour", 0, mem: 1e9, memMax: 2e9)
         let s = try #require(try r.tracks(.week, .memory, end: 3600).first?.slices.first)
-        #expect(s.value == 1e9 && s.peak == 2e9)
+        #expect(s.value == 1e9)
     }
 
     @Test func rawGapPastHeartbeatCoversOneTick() throws {
@@ -163,7 +162,7 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         let r = try Rig(lastSeen: 1e9)
         try r.tier("process_hour", 0, diskR: 3, diskW: 4)
         let s = try #require(try r.tracks(.week, .disk, end: 3600).first?.slices.first)
-        #expect(s.value == 7 && s.peak == 7)
+        #expect(s.value == 7)
     }
 
     @Test func systemSeriesUsesTierForRange() throws {

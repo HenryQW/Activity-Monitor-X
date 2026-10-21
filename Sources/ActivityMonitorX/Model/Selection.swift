@@ -12,8 +12,10 @@ final class Selection {
     var process: ProcessRank?
     /// A Quit / Force Quit waiting for confirmation.
     var signalRequest: SignalRequest?
+    /// The group open in the editor sheet; a new one is not in `GroupsModel.groups` yet.
+    var editingGroup: ProcessGroup?
     var inspectorShown = false
-    /// Toolbar search text as typed; filters the tables and Pinned Apps, never the chart.
+    /// Sidebar search text as typed; filters the tables and Pinned Apps and dims the chart's other apps.
     var query = ""
     /// Edit > Find sets it to focus the search field.
     var searchPresented = false

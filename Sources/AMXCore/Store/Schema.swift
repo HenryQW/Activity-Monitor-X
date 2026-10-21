@@ -16,6 +16,8 @@ public enum Schema {
         """
     /// The `last_seen` an open process reads as, over a `processes` row: `lastMinuteSQL`, never before `first_seen`.
     static let openLastSeenSQL = "MAX(first_seen, IFNULL(\(lastMinuteSQL), first_seen))"
+    /// `last_seen` as readers see it, over a `processes` row: `openLastSeenSQL` for an open process.
+    static let lastSeenSQL = "IIF(last_seen = 9e999, \(openLastSeenSQL), last_seen)"
 
     public static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()

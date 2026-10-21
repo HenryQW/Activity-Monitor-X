@@ -136,7 +136,7 @@ enum AgentHistory {
     static let summarize = AgentTools.Tool(
         "summarize",
         """
-        A summary of the window: system CPU (% of all cores) average and maximum, used memory maximum (bytes), \
+        A summary of the window. It gives system CPU (% of all cores) average and maximum, used memory maximum (bytes), \
         the worst memory pressure (normal, warning, critical) and thermal state (nominal, fair, serious, critical); \
         the top 3 apps for each of \(Metric.recorded.map(\.rawValue).joined(separator: ", ")) (as in top_apps); \
         and event counts by kind. \(recordedFrom) cpu_avg is the mean of bucket means; maximums are of bucket means; \

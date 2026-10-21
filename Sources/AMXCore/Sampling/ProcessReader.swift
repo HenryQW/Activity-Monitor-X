@@ -20,8 +20,9 @@ enum ProcessReader {
         return pids[0..<min(Int(ret), capacity)].filter { $0 > 0 }
     }
 
-    /// nil when the process is gone or unreadable.
-    static func read(pid: Int32) -> RawProcess? {
+    /// nil when the process is gone or unreadable. `known` holds the last pass's processes, so only a new process
+    /// pays for its path and translated flag (see `facts`).
+    static func read(pid: Int32, known: [ProcessIdentity: RawProcess] = [:]) -> RawProcess? {
         var info = proc_taskallinfo()
         let size = Int32(MemoryLayout<proc_taskallinfo>.size)
         let ret = withUnsafeMutablePointer(to: &info) { proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, $0, size) }
@@ -32,20 +33,29 @@ enum ProcessReader {
 
         let name = cString(info.pbsd.pbi_name).nonEmpty ?? cString(info.pbsd.pbi_comm)
         let cpu = info.ptinfo.pti_total_user &+ info.ptinfo.pti_total_system
+        let identity = ProcessIdentity(
+            pid: pid, startTime: Double(info.pbsd.pbi_start_tvsec) + Double(info.pbsd.pbi_start_tvusec) / 1e6)
+        let stable = facts(of: identity, name: name, known: known) { (path(pid: pid), camx_is_translated(pid) == 1) }
 
         return RawProcess(
-            identity: ProcessIdentity(
-                pid: pid,
-                startTime: Double(info.pbsd.pbi_start_tvsec) + Double(info.pbsd.pbi_start_tvusec) / 1e6),
+            identity: identity,
             name: name,
-            path: path(pid: pid),
+            path: stable.path,
             uid: info.pbsd.pbi_uid,
             cpuNanos: CPUMath.machToNanos(cpu, numer: timebase.numer, denom: timebase.denom),
             footprint: footprint,
             diskRead: diskRead,
             diskWritten: diskWritten,
             wakeups: wakeups,
-            translated: camx_is_translated(pid) == 1)
+            translated: stable.translated)
+    }
+
+    /// Path and translated flag cannot change for one identity (pid + start time) unless the process calls exec,
+    /// which also changes its name. So they are reused from `known` and `read` runs only for a new or exec'd process.
+    static func facts(of id: ProcessIdentity, name: String, known: [ProcessIdentity: RawProcess],
+                      read: () -> (path: String?, translated: Bool)) -> (path: String?, translated: Bool) {
+        if let k = known[id], k.name == name { return (k.path, k.translated) }
+        return read()
     }
 
     /// nil when the process is gone or its path is unreadable.

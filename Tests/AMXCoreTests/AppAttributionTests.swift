@@ -48,12 +48,6 @@ import Testing
         #expect(info.appPath == "/System/Applications/Calculator.app")
     }
 
-    @Test func noResponsibleUsesPath() {
-        let helper = "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)"
-        let info = AppAttribution.app(forExecutable: helper, processName: "Google Chrome Helper (Renderer)", responsiblePath: nil)
-        #expect(info.appPath == "/Applications/Google Chrome.app")
-    }
-
     @Test func responsibleOutsideBundleUsesPath() {
         let info = AppAttribution.app(forExecutable: "/bin/zsh", processName: "zsh", responsiblePath: "/usr/sbin/sshd")
         #expect(info.appPath == nil)

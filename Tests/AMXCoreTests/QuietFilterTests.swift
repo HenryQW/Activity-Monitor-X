@@ -3,7 +3,7 @@ import Testing
 
 private func track(_ id: Int64, _ app: String, path: String?, _ value: Double) -> ProcessTrack {
     ProcessTrack(processID: id, pid: Int32(id), startTime: 0, name: app, app: AppKey(key: app, name: app), path: path,
-                 slices: [Slice(start: 0, end: 10, value: value, peak: value)])
+                 slices: [Slice(start: 0, end: 10, value: value)])
 }
 
 @Test func systemPaths() {
@@ -35,7 +35,7 @@ private func track(_ id: Int64, _ app: String, path: String?, _ value: Double) -
 @Test func averageIsOverTheWholeWindow() {
     // 10 for 1 s of a 10 s window averages 1: shown.
     let t = [ProcessTrack(processID: 0, pid: 0, startTime: 0, name: "a", app: AppKey(key: "a", name: "a"), path: "/bin/a",
-                          slices: [Slice(start: 0, end: 1, value: 10, peak: 10)])]
+                          slices: [Slice(start: 0, end: 1, value: 10)])]
     #expect(QuietFilter.hidden(t, metric: .cpu, from: 0, to: 10).isEmpty)
     #expect(QuietFilter.hidden(t, metric: .cpu, from: 0, to: 100) == [0])
 }

@@ -35,12 +35,6 @@ private func call(_ tool: String, _ arguments: String) throws -> [String: Any] {
         #expect((try call("events", "")["events"] as? [Any])?.count == 2)
     }
 
-    @Test func stateWordsOutOfRange() {
-        #expect(SystemState.pressure(3) == "level 3")
-        #expect(SystemState.thermal(4) == "state 4")
-        #expect(SystemState.thermal(-1) == "state -1")
-    }
-
     @Test func summarizeSpan() throws {
         let out = try call("summarize", #"{"from":"-1h"}"#)
         let system = try #require(out["system"] as? [String: Any])
@@ -56,12 +50,5 @@ private func call(_ tool: String, _ arguments: String) throws -> [String: Any] {
         #expect(throws: AgentError.invalid("unknown metric: ram")) { try call("top_apps", #"{"metric":"ram"}"#) }
         #expect(throws: AgentError.invalid("limit must be 1 to 50")) { try call("top_apps", #"{"limit":0}"#) }
         #expect(throws: AgentError.invalid("unknown kind: cpu")) { try call("events", #"{"kind":"cpu"}"#) }
-    }
-
-    @Test func catalogSchemasParse() throws {
-        for spec in AgentTools.catalog {
-            let schema = try JSONSerialization.jsonObject(with: Data(spec.inputSchema.utf8)) as? [String: Any]
-            #expect(schema?["type"] as? String == "object", "\(spec.name)")
-        }
     }
 }

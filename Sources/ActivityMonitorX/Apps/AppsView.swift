@@ -26,7 +26,7 @@ struct AppsView: View {
             }
         }
         .navigationTitle("Apps")
-        .navigationSubtitle(selection.search.isEmpty ? history.range.subtitle(since: isLive ? nil : history.since)
+        .navigationSubtitle(selection.search.isEmpty ? history.subtitle
                             : "\(shown.count) of \(all.count) apps")
         .onAppear { live.sparklinesShown = true }
         .onDisappear { live.sparklinesShown = false }

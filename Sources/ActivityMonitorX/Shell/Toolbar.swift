@@ -2,7 +2,7 @@ import AMXCore
 import SwiftUI
 
 /// Metric is flipped often, so it is the segmented control in the centre; Range is set once per question, so it is a
-/// pop-up in the trailing group with the filter and the inspector (search follows them, from `.searchable`).
+/// pop-up in the trailing group with the filter and the inspector. Search is in the sidebar.
 struct MainToolbar: CustomizableToolbarContent {
     let history: HistoryModel
     let selection: Selection
@@ -10,7 +10,7 @@ struct MainToolbar: CustomizableToolbarContent {
     var body: some CustomizableToolbarContent {
         ToolbarItem(id: "metric", placement: .principal) {
             Picker("Metric", selection: Bindable(history).metric) {
-                ForEach(Metric.recorded, id: \.self) { Text($0.label).tag($0) }
+                ForEach(history.metrics, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
         }
@@ -30,6 +30,8 @@ struct MainToolbar: CustomizableToolbarContent {
         }
         ToolbarItem(id: "hideQuiet", placement: .primaryAction) {
             Toggle("Hide Quiet System Processes", systemImage: "line.3.horizontal.decrease", isOn: Bindable(history).hideQuietSystem)
+                // A group shows all its members.
+                .disabled(history.scope != nil)
         }
         ToolbarItem(id: "inspector", placement: .primaryAction) {
             // ⌥⌘I lives on the View menu command.

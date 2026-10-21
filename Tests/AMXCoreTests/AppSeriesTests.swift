@@ -1,9 +1,9 @@
 import Testing
 @testable import AMXCore
 
-private func track(_ id: Int64, _ app: String, _ slices: [(Double, Double, Double, Double)], name: String = "p") -> ProcessTrack {
+private func track(_ id: Int64, _ app: String, _ slices: [(Double, Double, Double)], name: String = "p") -> ProcessTrack {
     ProcessTrack(processID: id, pid: Int32(id), startTime: 0, name: name, app: AppKey(key: app, name: app),
-                 slices: slices.map { Slice(start: $0.0, end: $0.1, value: $0.2, peak: $0.3) })
+                 slices: slices.map { Slice(start: $0.0, end: $0.1, value: $0.2) })
 }
 
 private func value(_ points: [SeriesPoint], _ bucket: Double, _ key: String?) -> Double? {
@@ -11,14 +11,14 @@ private func value(_ points: [SeriesPoint], _ bucket: Double, _ key: String?) ->
 }
 
 @Test func stackedSumsHelpersIntoApp() {
-    let t = [track(1, "A", [(0, 10, 10, 10)]), track(2, "A", [(0, 10, 30, 30)])]
+    let t = [track(1, "A", [(0, 10, 10)]), track(2, "A", [(0, 10, 30)])]
     let points = AppSeries.stacked(t, from: 0, to: 10, bucket: 10)
     #expect(points.count == 1)
     #expect(value(points, 0, "A") == 40)
 }
 
 @Test func topFiveAndOther() {
-    let t = (0..<7).map { track(Int64($0), "app\($0)", [(0, 10, Double(70 - $0 * 10), 0)]) }
+    let t = (0..<7).map { track(Int64($0), "app\($0)", [(0, 10, Double(70 - $0 * 10))]) }
     let points = AppSeries.stacked(t, from: 0, to: 10, bucket: 10)
     #expect(points.count == 6)
     #expect(value(points, 0, "app0") == 70)
@@ -32,20 +32,20 @@ private func value(_ points: [SeriesPoint], _ bucket: Double, _ key: String?) ->
 }
 
 @Test func partialOverlapIsTimeWeighted() {
-    let t = [track(1, "A", [(0, 5, 60, 60)])]
+    let t = [track(1, "A", [(0, 5, 60)])]
     let points = AppSeries.stacked(t, from: 0, to: 10, bucket: 10)
     #expect(value(points, 0, "A") == 30)
 }
 
 @Test func partialLastBucketUsesItsOwnWidth() {
-    let t = [track(1, "A", [(0, 15, 20, 20)])]
+    let t = [track(1, "A", [(0, 15, 20)])]
     let points = AppSeries.stacked(t, from: 0, to: 15, bucket: 10)
     #expect(value(points, 0, "A") == 20)
     #expect(value(points, 10, "A") == 20)
 }
 
 @Test func zeroPointsKeepStacksAligned() {
-    let t = [track(1, "A", [(0, 10, 5, 5)]), track(2, "B", [(10, 20, 7, 7)])]
+    let t = [track(1, "A", [(0, 10, 5)]), track(2, "B", [(10, 20, 7)])]
     let points = AppSeries.stacked(t, from: 0, to: 20, bucket: 10)
     #expect(points.count == 4)
     #expect(value(points, 10, "A") == 0)
@@ -61,11 +61,11 @@ private func randomTracks() -> [ProcessTrack] {
     }
     var tracks: [ProcessTrack] = []
     for id in 0..<12 {
-        var slices: [(Double, Double, Double, Double)] = []
+        var slices: [(Double, Double, Double)] = []
         var t = rnd() * 20
         while t < 100 {
             let end = t + 1 + rnd() * 15
-            slices.append((t, min(end, 100), rnd() * 100, 100))
+            slices.append((t, min(end, 100), rnd() * 100))
             t = end + rnd() * 5
         }
         tracks.append(track(Int64(id), "app\(id % 8)", slices))
@@ -93,7 +93,7 @@ private func randomTracks() -> [ProcessTrack] {
 }
 
 @Test func sparklinesCoverEveryApp() {
-    let t = (0..<7).map { track(Int64($0), "app\($0)", [(0, 60, Double($0), 0)]) } + [track(7, "late", [(30, 60, 6, 0)])]
+    let t = (0..<7).map { track(Int64($0), "app\($0)", [(0, 60, Double($0))]) } + [track(7, "late", [(30, 60, 6)])]
     let lines = AppSeries.sparklines(t, from: 0, to: 60, count: 6)
     #expect(lines.count == 8)
     #expect(lines[AppKey(key: "app6", name: "app6")] == Array(repeating: 6, count: 6))
@@ -101,15 +101,15 @@ private func randomTracks() -> [ProcessTrack] {
 
     // One key with two names stays two series, as in `stacked`.
     let renamed = ProcessTrack(processID: 9, pid: 9, startTime: 0, name: "p", app: AppKey(key: "late", name: "Late 2"),
-                               slices: [Slice(start: 0, end: 60, value: 1, peak: 1)])
+                               slices: [Slice(start: 0, end: 60, value: 1)])
     #expect(AppSeries.sparklines(t + [renamed], from: 0, to: 60, count: 6).count == 9)
 }
 
 @Test func sameNameDifferentPathStaySeparate() {
     let a = ProcessTrack(processID: 1, pid: 1, startTime: 0, name: "Helper", app: AppKey(key: "/A.app", name: "Helper"),
-                         slices: [Slice(start: 0, end: 10, value: 10, peak: 10)])
+                         slices: [Slice(start: 0, end: 10, value: 10)])
     let b = ProcessTrack(processID: 2, pid: 2, startTime: 0, name: "Helper", app: AppKey(key: "/B.app", name: "Helper"),
-                         slices: [Slice(start: 0, end: 10, value: 20, peak: 20)])
+                         slices: [Slice(start: 0, end: 10, value: 20)])
     #expect(AppSeries.ranking([a, b], from: 0, to: 10, bucket: 10).count == 2)
     let points = AppSeries.stacked([a, b], from: 0, to: 10, bucket: 10)
     #expect(value(points, 0, "/A.app") == 10)
@@ -118,9 +118,9 @@ private func randomTracks() -> [ProcessTrack] {
 
 @Test func rankingOrdersByAverageWithPeak() {
     let t = [
-        track(1, "A", [(0, 10, 10, 15)], name: "a1"),
-        track(2, "A", [(0, 5, 40, 90), (5, 10, 0, 0)], name: "a2"),
-        track(3, "B", [(0, 10, 50, 55)], name: "b1"),
+        track(1, "A", [(0, 10, 10)], name: "a1"),
+        track(2, "A", [(0, 5, 40), (5, 10, 0)], name: "a2"),
+        track(3, "B", [(0, 10, 50)], name: "b1"),
     ]
     let ranks = AppSeries.ranking(t, from: 0, to: 10, bucket: 10)
     #expect(ranks.map(\.app.key) == ["B", "A"])
@@ -129,18 +129,20 @@ private func randomTracks() -> [ProcessTrack] {
     #expect(ranks[1].peak == 30)  // one bucket: the app's average
     #expect(ranks[1].processes.map(\.name) == ["a2", "a1"])
     #expect(ranks[1].processes.map(\.average) == [20, 10])
-    #expect(ranks[1].processes.map(\.peak) == [90, 15])
+    #expect(ranks[1].processes.map(\.peak) == [20, 10])  // one bucket: each process's average
 }
 
-@Test func appPeakIsSummedBucketPeak() throws {
-    let t = [track(1, "A", [(0, 10, 10, 99)], name: "a1"), track(2, "A", [(5, 15, 20, 99)], name: "a2")]
+@Test func peaksAreBucketPeaks() throws {
+    let t = [track(1, "A", [(0, 10, 10)], name: "a1"), track(2, "A", [(5, 15, 20)], name: "a2")]
     let rank = try #require(AppSeries.ranking(t, from: 0, to: 20, bucket: 5).first)
     #expect(rank.peak == 30)  // [5, 10): 10 + 20
     #expect(rank.average == 15)
-    #expect(rank.processes.map(\.peak) == [99, 99])
+    #expect(rank.processes.map(\.peak) == [20, 10])  // a2 [5, 15), a1 [0, 10)
 
     let ranks = AppSeries.ranking(randomTracks(), from: 0, to: 100, bucket: 7)
     #expect(ranks.allSatisfy { $0.peak >= $0.average })
+    // A process never peaks above its app.
+    #expect(ranks.allSatisfy { app in app.processes.allSatisfy { $0.peak <= app.peak } })
 }
 
 @Test func colorIndexIsStable() {
@@ -164,34 +166,34 @@ private func randomTracks() -> [ProcessTrack] {
 
 @Test func spanRankingIgnoresSlicesOutsideSpan() {
     let t = [
-        track(1, "A", [(0, 10, 100, 100), (10, 20, 10, 12)], name: "a1"),
-        track(2, "B", [(0, 10, 50, 50)], name: "b1"),
+        track(1, "A", [(0, 10, 100), (10, 20, 10)], name: "a1"),
+        track(2, "B", [(0, 10, 50)], name: "b1"),
     ]
     let ranks = AppSeries.ranking(t, from: 10, to: 20, bucket: 10)
     #expect(ranks.map(\.app.key) == ["A"])
     #expect(ranks[0].average == 10)
     #expect(ranks[0].peak == 10)
     #expect(ranks[0].processes.map(\.name) == ["a1"])
-    #expect(ranks[0].processes[0].peak == 12)
+    #expect(ranks[0].processes[0].peak == 10)
 }
 
 @Test func tiesBreakByKeyAndPid() {
     let t = [
-        track(3, "b", [(0, 10, 10, 10)]), track(1, "c", [(0, 10, 10, 10)]),
-        track(2, "a", [(0, 10, 10, 10)]), track(4, "a", [(0, 10, 10, 10)]),
+        track(3, "b", [(0, 10, 10)]), track(1, "c", [(0, 10, 10)]),
+        track(2, "a", [(0, 10, 10)]), track(4, "a", [(0, 10, 10)]),
     ]
     let ranks = AppSeries.ranking(t, from: 0, to: 10, bucket: 10)
     #expect(ranks.map(\.app.key) == ["a", "b", "c"])
     #expect(ranks[0].processes.map(\.pid) == [2, 4])
 
-    let seven = (0..<7).map { track(Int64($0), "k\(6 - $0)", [(0, 10, 10, 10)]) }
+    let seven = (0..<7).map { track(Int64($0), "k\(6 - $0)", [(0, 10, 10)]) }
     let points = AppSeries.stacked(seven, from: 0, to: 10, bucket: 10)
     #expect(points.compactMap(\.app?.key) == ["k0", "k1", "k2", "k3", "k4"])
 }
 
 private func exited(lastSeen: Double, before: Double) -> Bool {
     let t = ProcessTrack(processID: 1, pid: 1, startTime: 0, name: "p", app: AppKey(key: "A", name: "A"), lastSeen: lastSeen,
-                         slices: [Slice(start: 0, end: 10, value: 1, peak: 1)])
+                         slices: [Slice(start: 0, end: 10, value: 1)])
     return AppSeries.ranking([t], from: 0, to: 10, bucket: 10, exitedBefore: before)[0].processes[0].exited
 }
 
@@ -216,7 +218,7 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
 }
 
 @Test func recordedStartIsTheEarliestSliceWithinTheRange() {
-    let t = [track(1, "A", [(40, 50, 1, 1)]), track(2, "B", [(30, 35, 1, 1), (60, 70, 1, 1)])]
+    let t = [track(1, "A", [(40, 50, 1)]), track(2, "B", [(30, 35, 1), (60, 70, 1)])]
     #expect(AppSeries.recordedStart(t, from: 0) == 30)
     // Recording older than the range: the range start holds.
     #expect(AppSeries.recordedStart(t, from: 45) == 45)
@@ -226,7 +228,7 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
 @Test func backfillJoinsOneProcessAndKeepsExitedOnes() {
     func t(_ id: Int64, pid: Int32, _ slices: [(Double, Double)]) -> ProcessTrack {
         ProcessTrack(processID: id, pid: pid, startTime: 7, name: "p", app: AppKey(key: "A", name: "A"),
-                     slices: slices.map { Slice(start: $0.0, end: $0.1, value: 1, peak: 1) })
+                     slices: slices.map { Slice(start: $0.0, end: $0.1, value: 1) })
     }
     let raw = [t(5, pid: 1, [(0, 50), (50, 100)]), t(6, pid: 2, [(60, 80)]), t(7, pid: 3, [(0, 40)])]
     let live = [t(0, pid: 1, [(100, 101)]), t(0, pid: 4, [(100, 101)])]
@@ -254,4 +256,23 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
     // A PID matches exactly, never as a prefix.
     #expect(AppSearch.filter(apps, query: "12").flatMap { $0.processes.map(\.pid) } == [12])
     #expect(AppSearch.filter(apps, query: "123").map(\.app.name) == ["node"])
+}
+
+@Test func bubbleOrdersByValueWithOtherLastAndHidesZeroRows() {
+    let a = AppKey(key: "a", name: "a"), b = AppKey(key: "b", name: "b"), c = AppKey(key: "c", name: "c")
+    let points = [SeriesPoint(bucket: 0, app: a, value: 1), SeriesPoint(bucket: 0, app: b, value: 0.01),
+                  SeriesPoint(bucket: 0, app: c, value: 5), SeriesPoint(bucket: 0, app: nil, value: 50)]
+    let rows = AppSeries.bubbleRows(points) { $0 < 0.05 }
+    #expect(rows.map { $0.app?.key } == ["c", "a", nil])
+}
+
+@Test func inspectorListsRunningThenTopExited() {
+    let procs = (1...6).map { i in
+        ProcessRank(processID: Int64(i), pid: Int32(i), startTime: 0, name: "p", average: Double(10 - i), peak: 0,
+                    lastSeen: 0, exited: i != 5)
+    }
+    let rank = AppRank(app: AppKey(key: "A", name: "A"), average: 0, peak: 0, processes: procs)
+    // pid 5 runs with a low average; it still comes first, then the top two exited by average.
+    #expect(rank.runningFirst(exited: 2).map(\.pid) == [5, 1, 2])
+    #expect(rank.runningFirst(exited: .max).count == 6)
 }

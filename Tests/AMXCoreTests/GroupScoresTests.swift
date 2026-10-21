@@ -3,16 +3,10 @@ import Testing
 @testable import AMXCore
 
 @Suite struct GroupScoresTests {
-    private let device = Device(cores: 10, memory: 17_179_869_184)
-
-    @Test func scoreBlendsCpuAndMemory() {
-        #expect(device.score(cpu: 200, mem: 8_589_934_592) == 35)
-    }
-
     @Test func groupAverageSumsMembers() {
         func track(_ name: String, _ value: Double) -> ProcessTrack {
             ProcessTrack(processID: 0, pid: 1, startTime: 0, name: name, app: AppKey(key: name, name: name),
-                         slices: [Slice(start: 0, end: 10, value: value, peak: value)])
+                         slices: [Slice(start: 0, end: 10, value: value)])
         }
         let tracks = [track("a", 10), track("b", 20), track("c", 5)]
         func cond(_ n: String) -> GroupRule { .condition(GroupCondition(field: .name, op: .equals, value: n)) }

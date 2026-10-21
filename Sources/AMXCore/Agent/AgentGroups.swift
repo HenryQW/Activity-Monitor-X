@@ -43,9 +43,9 @@ enum AgentGroups {
     static let groupSummary = AgentTools.Tool(
         "group_summary",
         """
-        One group's series over the window (at most 120 points, each the members' summed mean over the bucket \
-        starting at t) and its member apps, ranked by their time-weighted average; share is the app's part of the \
-        group total. group is a group id or name, case-insensitive. metric defaults to score. \
+        One group's series and member apps over the window. points has at most 120 points, each the members' summed \
+        mean over the bucket starting at t; members are ranked by their time-weighted average; share is the app's part \
+        of the group total. group is a group id or name, case-insensitive. metric defaults to score. \
         \(AgentTools.units) \(AgentTools.times)
         """,
         schema: AgentTools.schema([#""group":{"type":"string"}"#, AgentTools.timeProperties,

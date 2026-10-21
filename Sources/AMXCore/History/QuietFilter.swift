@@ -10,7 +10,7 @@ public enum QuietFilter {
     public static func threshold(_ metric: Metric) -> Double {
         switch metric {
         case .cpu, .energy, .gpu: 1
-        case .score: 0.5
+        case .score: 0.5 // Not reached today: score is shown only for a group, where the quiet filter is off.
         case .memory: 100_000_000
         case .disk, .network: 100_000
         }

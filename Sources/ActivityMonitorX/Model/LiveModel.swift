@@ -50,7 +50,7 @@ final class LiveModel {
     private func loadBackfill() async {
         guard let first = snapshots.first else { return }
         let metric = history.metric
-        let raw = (try? await history.rawTracks(metric: metric, end: first.ts)) ?? []
+        let raw = (try? await history.rawTracks(metric: metric, from: first.ts - HistoryRange.hour.seconds, to: first.ts)) ?? []
         // A metric change during the read loads its own backfill.
         if metric == history.metric { backfill = raw }
     }
@@ -80,12 +80,13 @@ final class LiveModel {
     private func rebuild() async {
         guard let last = snapshots.last else { return }
         generation += 1
-        let (generation, snapshots, backfill, metric, hideQuiet, withSparklines) =
-            (generation, snapshots, backfill, history.metric, history.hideQuietSystem, sparklinesShown)
+        let (generation, snapshots, backfill, metric, scope, hideQuiet, withSparklines) =
+            (generation, snapshots, backfill, history.metric, history.scope, history.hidesQuiet, sparklinesShown)
         let end = last.ts + 1
         let built = await Task.detached {
-            let tracks = LiveTracks.backfilled(LiveTracks.build(snapshots, metric: metric), raw: backfill, from: end - 300)
-            let from = AppSeries.recordedStart(tracks, from: end - 300)
+            let all = LiveTracks.backfilled(LiveTracks.build(snapshots, metric: metric), raw: backfill, from: end - 300)
+            let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
+            let from = AppSeries.recordedStart(all, from: end - 300)
             let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: end) : []
             return (tracks: tracks, start: from,
                     stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),

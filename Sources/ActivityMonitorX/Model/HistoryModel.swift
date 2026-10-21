@@ -35,6 +35,18 @@ final class HistoryModel {
             reload()
         }
     }
+    /// The selected group: only its members are loaded, and the quiet filter is off. Set through `show(_:metric:)`.
+    private(set) var scope: ProcessGroup?
+    var hidesQuiet: Bool { hideQuietSystem && scope == nil }
+    /// Score is a group's metric; the Timeline shows the recorded ones.
+    var metrics: [Metric] { scope == nil ? Metric.recorded : Metric.allCases }
+    /// What a Live rebuild depends on, so one change of scope and metric rebuilds Live once.
+    var liveSettings: LiveSettings { LiveSettings(metric: metric, scope: scope, hideQuiet: hideQuietSystem) }
+    struct LiveSettings: Equatable {
+        let metric: Metric
+        let scope: ProcessGroup?
+        let hideQuiet: Bool
+    }
     /// Selected sub-span of the range; `ranking` covers it when set.
     var span: ClosedRange<Double>? { didSet { updateRanking() } }
     private(set) var stacked: [SeriesPoint] = []
@@ -47,8 +59,10 @@ final class HistoryModel {
     private(set) var state: LoadState = .loading
     /// Start of the loaded range: its nominal start, or later when recording began inside it.
     private(set) var start = 0.0
-    /// `start` when recording began more than one chart bucket into the range, for the subtitle.
-    private(set) var since: Double?
+    /// `start` when recording began more than one chart bucket into the range.
+    private var since: Double?
+    /// "Since …" when recording began inside the range, else empty: the Range pop-up names the range. Live has none.
+    var subtitle: String { since.map { range.since($0, now: end) } ?? "" }
 
     /// `last_seen` reads as a minute's first tick, and amxd commits every few ticks, so a live process can
     /// look up to a minute plus one commit batch old.
@@ -73,11 +87,24 @@ final class HistoryModel {
         loading?.cancel()
     }
 
+    /// Enters, leaves or refreshes a group together with its metric: one load for both.
+    func show(_ group: ProcessGroup?, metric: Metric) {
+        guard group != scope || metric != self.metric else { return }
+        scope = group
+        if metric != self.metric {
+            self.metric = metric
+        } else {
+            state = .loading
+            reload()
+        }
+    }
+
     func reload() {
         loading?.cancel()
         generation += 1
         guard range != .live else { return }
-        let (generation, range, metric, hideQuiet, now) = (generation, range, metric, hideQuietSystem, Date().timeIntervalSince1970)
+        let (generation, range, metric, scope, hideQuiet) = (generation, range, metric, scope, hidesQuiet)
+        let now = Date().timeIntervalSince1970
         requestedAt = now
         if state != .ready { state = .loading }
         let pool: DatabasePool
@@ -91,10 +118,11 @@ final class HistoryModel {
             let result = await Task.detached { () -> Result<Loaded, Error> in
                 Result {
                     let reader = HistoryReader(pool: pool)
-                    let tracks = try reader.tracks(range: range, metric: metric, end: now)
-                    let from = AppSeries.recordedStart(tracks, from: now - range.seconds)
+                    let all = try reader.tracks(range: range, metric: metric, end: now)
+                    let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
+                    let from = AppSeries.recordedStart(all, from: now - range.seconds)
                     let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: now) : []
-                    return Loaded(tracks: tracks, start: from,
+                    return Loaded(tracks: tracks, recorded: !all.isEmpty, start: from,
                            stacked: AppSeries.stacked(tracks, from: from, to: now, bucket: range.chartBucket, otherOnly: hidden),
                            system: try reader.system(range: range, end: now),
                            events: try reader.events(from: from, to: now),
@@ -115,7 +143,8 @@ final class HistoryModel {
                 sparklines = loaded.sparklines
                 stacked = loaded.stacked
                 updateRanking()
-                state = tracks.isEmpty ? .empty : .ready
+                // A group without members in the range is ready with no points: "No Activity", not "Collecting".
+                state = loaded.recorded ? .ready : .empty
             case .failure(let error):
                 state = .failed(error.localizedDescription)
             }
@@ -127,10 +156,12 @@ final class HistoryModel {
         AppSeries.stacked(tracks.filter { $0.app.key == app.key }, from: start, to: end, bucket: range.chartBucket)
     }
 
-    /// The raw tier's last hour before `end`; Live backfills its first 5 min from it.
-    func rawTracks(metric: Metric, end: Double) async throws -> [ProcessTrack] {
+    /// The raw tier over [from, to): Live backfills its first 5 min from the last hour, groups read the last 60 s.
+    func rawTracks(metric: Metric, from: Double, to: Double) async throws -> [ProcessTrack] {
         let pool = try openPool()
-        return try await Task.detached { try HistoryReader(pool: pool).tracks(range: .hour, metric: metric, end: end) }.value
+        return try await Task.detached {
+            try HistoryReader(pool: pool).tracks(source: .raw, from: from, to: to, metric: metric)
+        }.value
     }
 
     private func openPool() throws -> DatabasePool {
@@ -151,7 +182,7 @@ final class HistoryModel {
         spanGeneration += 1
         guard let span else { ranking = apps; return }
         let (generation, tracks, bucket, metric, hideQuiet, exitedBefore) =
-            (spanGeneration, tracks, range.chartBucket, metric, hideQuietSystem, end - Self.exitSlack)
+            (spanGeneration, tracks, range.chartBucket, metric, hidesQuiet, end - Self.exitSlack)
         Task {
             let ranked = await Task.detached {
                 // Quiet is judged over the span, the window the ranking covers.
@@ -165,6 +196,8 @@ final class HistoryModel {
 
     private struct Loaded: Sendable {
         let tracks: [ProcessTrack]
+        /// The range has data, in the scope or not.
+        let recorded: Bool
         let start: Double
         let stacked: [SeriesPoint]
         let system: [SystemPoint]

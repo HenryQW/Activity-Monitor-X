@@ -49,7 +49,8 @@ public enum AgentTools {
 
     public static let catalog: [Spec] = tools.map(\.spec)
 
-    /// Empty `arguments` reads as `{}`. Every error a tool throws is an `AgentError`, except a failed output encoding.
+    /// Empty `arguments` reads as `{}`. Every error a tool throws is an `AgentError`, except a failed output encoding
+    /// and what `context.groups` throws (`amx` wraps that in an `AgentError`).
     public static func call(_ name: String, arguments: Data, context: AgentContext) throws -> Data {
         guard let tool = tools.first(where: { $0.spec.name == name }) else { throw AgentError.unknownTool(name) }
         do {

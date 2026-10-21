@@ -8,7 +8,7 @@ final class Daemon: @unchecked Sendable {
     /// On-demand 1 s sampling. Own samplers, because CPU and disk rates are deltas per sampler instance.
     private struct Live {
         let processes = ProcessSampler()
-        let system = SystemSampler()
+        let system = SystemSampler(liveOnly: true)
         var apps: [ProcessIdentity: (name: String, path: String?, app: AppInfo)] = [:]
         var primed = false
         var latest: (ts: Double, json: Data)?

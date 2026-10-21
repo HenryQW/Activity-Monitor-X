@@ -40,13 +40,6 @@ private func rows(_ sql: String) throws -> (rows: [[Any]], truncated: Bool) {
         #expect(throws: AgentError.invalid("unknown group: x")) { try call("group_summary", #"{"group":"x"}"#) }
     }
 
-    @Test func groupsFileErrorSurfaces() throws {
-        let (fixture, pool) = try AgentFixture.make()
-        let context = AgentContext(pool: pool, groups: { throw GroupStoreError.unsupportedVersion(2) },
-                                   device: fixture.device, now: fixture.now)
-        #expect(throws: GroupStoreError.unsupportedVersion(2)) { try call("list_groups", "{}", context: context) }
-    }
-
     @Test func queryReads() throws {
         let out = try rows("SELECT name FROM processes ORDER BY name")
         #expect(out.rows.map { $0.compactMap { $0 as? String } } == [["Code Helper"], ["Safari"], ["mds_stores"]])

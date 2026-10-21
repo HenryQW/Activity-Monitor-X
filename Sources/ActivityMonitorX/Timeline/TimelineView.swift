@@ -1,9 +1,11 @@
 import AMXCore
 import SwiftUI
 
-/// With `focus`, the Timeline of one pinned app: its single area and its processes.
+/// With `focus`, the Timeline of one pinned app: its single area and its processes. With `group`, the history model
+/// is scoped to the group's members, and the table shows each app's share of the group.
 struct TimelineView: View {
     let focus: AppKey?
+    var group: ProcessGroup? = nil
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var selection
@@ -16,6 +18,7 @@ struct TimelineView: View {
             ?? (isLive ? live.ranking : history.ranking)
         let shown = AppSearch.filter(ranking, query: selection.search)
         let colors = AppPalette.colors(for: points)
+        let title = focus?.name ?? group?.name
         Group {
             switch isLive ? live.state : history.state {
             case .loading:
@@ -25,9 +28,9 @@ struct TimelineView: View {
             case .failed(let message):
                 ContentUnavailableView("Cannot Load Data", systemImage: "exclamationmark.triangle", description: Text(message))
             case .ready where points.isEmpty:
-                if let focus {
+                if let title {
                     ContentUnavailableView("No Activity", systemImage: "chart.xyaxis.line",
-                                           description: Text("\(focus.name) has no data in this range."))
+                                           description: Text("\(title) has no data in this range."))
                 } else {
                     collecting
                 }
@@ -35,6 +38,7 @@ struct TimelineView: View {
                 VStack(spacing: 0) {
                     TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, metric: history.metric,
                                   events: isLive ? [] : history.events,
+                                  highlighted: selection.search.isEmpty ? nil : Set(shown.map(\.app.key)),
                                   span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
                                   commitSpan: isLive ? nil : { span in
                                       history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970
@@ -43,12 +47,13 @@ struct TimelineView: View {
                         .padding()
                         .backgroundExtensionEffect()
                     if let span = history.span, !isLive { spanBar(span) }
-                    AppTable(ranking: shown, colors: colors, metric: history.metric)
+                    AppTable(ranking: shown, colors: colors, metric: history.metric,
+                             shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } })
                 }
             }
         }
-        .navigationTitle(focus?.name ?? "Timeline")
-        .navigationSubtitle(selection.search.isEmpty ? history.range.subtitle(since: isLive ? nil : history.since)
+        .navigationTitle(title ?? "Timeline")
+        .navigationSubtitle(selection.search.isEmpty ? history.subtitle
                             : "\(shown.count) of \(ranking.count) apps")
     }
 

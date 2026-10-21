@@ -9,7 +9,9 @@ public final class ProcessSampler {
     private var previousNow: Double?
 
     public func sample(now: Double, gpuNanos: [Int32: UInt64] = [:]) -> (samples: [ProcessSample], new: [RawProcess]) {
-        sample(now: now, raw: ProcessReader.listPIDs().compactMap(ProcessReader.read(pid:)), gpuNanos: gpuNanos)
+        // `previous` holds only processes alive at the last pass, so an exited process drops out of the cache.
+        let raw = ProcessReader.listPIDs().compactMap { ProcessReader.read(pid: $0, known: previous) }
+        return sample(now: now, raw: raw, gpuNanos: gpuNanos)
     }
 
     func sample(now: Double, raw: [RawProcess], gpuNanos: [Int32: UInt64])

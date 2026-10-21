@@ -5,6 +5,8 @@ import SwiftUI
 /// Stacked areas for the top apps + Other; hover shows a value bubble, drag selects a span.
 struct TimelineChart: View {
     private let points: [SeriesPoint]
+    /// `points` with the last bucket closed, as drawn.
+    private let drawn: [SeriesPoint]
     private let colors: [AppKey: Color]
     private let bucket: Double
     private let metric: Metric
@@ -23,12 +25,13 @@ struct TimelineChart: View {
     private let _drag = State<ClosedRange<Date>?>(initialValue: nil)
 
     /// `points` is non-empty and ordered by bucket; every bucket holds every series.
-    /// `colors` holds every named app of `points`.
+    /// `colors` holds every named app of `points`. With `highlighted` (search), other apps' series are dimmed.
     init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, metric: Metric, events: [EventMark],
-         span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?) {
+         highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?) {
         (self.points, self.colors, self.bucket, self.metric, self.events, self.span, self.commitSpan)
             = (points, colors, bucket, metric, events, span, commitSpan)
-        series = Self.series(points, colors: colors)
+        drawn = AppSeries.closed(points, bucket: bucket)
+        series = Self.series(points, colors: colors, highlighted: highlighted)
         labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
         byBucket = Dictionary(grouping: points, by: \.bucket)
         totals = byBucket.mapValues { $0.reduce(0) { $0 + $1.value } }
@@ -40,11 +43,11 @@ struct TimelineChart: View {
     var body: some View {
         let shownSpan = _drag.wrappedValue ?? span
         Chart {
-            ForEach(points.indices, id: \.self) { i in
-                AreaMark(x: .value("Time", Self.date(points[i].bucket)),
-                         y: .value(metric.label, points[i].value),
+            ForEach(drawn.indices, id: \.self) { i in
+                AreaMark(x: .value("Time", Self.date(drawn[i].bucket)),
+                         y: .value(metric.label, drawn[i].value),
                          stacking: .standard)
-                    .foregroundStyle(by: .value("App", labels[points[i].app]!))
+                    .foregroundStyle(by: .value("App", labels[drawn[i].app]!))
             }
             if let shownSpan {
                 RectangleMark(xStart: .value("Start", shownSpan.lowerBound), xEnd: .value("End", shownSpan.upperBound))
@@ -108,7 +111,8 @@ struct TimelineChart: View {
     }
 
     private func bubble(bucket b: Double) -> some View {
-        let rows = byBucket[b]!.filter { $0.value > 0 }.sorted { $0.value > $1.value }
+        let zero = metric.format(0)
+        let rows = AppSeries.bubbleRows(byBucket[b]!) { metric.format($0) == zero }
         return VStack(alignment: .leading, spacing: 3) {
             Text("\(Self.date(b).formatted(timeFormat)) · \(metric.format(totals[b]!))")
                 .fontWeight(.semibold)
@@ -143,13 +147,16 @@ struct TimelineChart: View {
     }
 
     /// Legend labels are display names, made unique so two apps sharing a name stay two series.
-    private static func series(_ points: [SeriesPoint], colors: [AppKey: Color]) -> [Series] {
+    private static func series(_ points: [SeriesPoint], colors: [AppKey: Color], highlighted: Set<String>?) -> [Series] {
         var used = ["Other": 1]
         return points.prefix { $0.bucket == points[0].bucket }.map { point in
-            guard let app = point.app else { return Series(app: nil, label: "Other", color: AppPalette.other) }
+            let color = point.app.map { colors[$0]! } ?? AppPalette.other
+            // Other never matches a search.
+            let shown = highlighted.map { $0.contains(point.app?.key ?? "") } ?? true ? color : color.opacity(0.25)
+            guard let app = point.app else { return Series(app: nil, label: "Other", color: shown) }
             let n = (used[app.name] ?? 0) + 1
             used[app.name] = n
-            return Series(app: app, label: n == 1 ? app.name : "\(app.name) (\(n))", color: colors[app]!)
+            return Series(app: app, label: n == 1 ? app.name : "\(app.name) (\(n))", color: shown)
         }
     }
 }

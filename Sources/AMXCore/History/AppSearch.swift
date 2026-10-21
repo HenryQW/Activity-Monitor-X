@@ -1,6 +1,6 @@
 import Foundation
 
-/// The toolbar search: case- and diacritic-insensitive text in an app's name or path or a process's name, or a PID
+/// The sidebar search: case- and diacritic-insensitive text in an app's name or path or a process's name, or a PID
 /// exactly ("12" does not find 123).
 public enum AppSearch {
     public static func matches(_ app: AppKey, _ query: String) -> Bool {

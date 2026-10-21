@@ -3,10 +3,11 @@ import Testing
 @testable import AMXCore
 
 @Suite struct GroupStoreTests {
-    private func tempURL(_ path: String = "groups.json") -> URL {
+    /// In a directory that does not exist yet.
+    private func tempURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("amx-\(UUID().uuidString)")
-            .appendingPathComponent(path)
+            .appendingPathComponent("groups.json")
     }
 
     private func write(_ text: String) throws -> URL {
@@ -53,15 +54,16 @@ import Testing
         #expect(throws: GroupStoreError.unsupportedVersion(2)) { try GroupStore.load(from: url) }
     }
 
+    @Test func duplicateIDThrows() throws {
+        let group = ProcessGroup(name: "A")
+        let url = tempURL()
+        try GroupStore.save([group, group], to: url)
+        #expect(throws: GroupStoreError.duplicateID(group.id)) { try GroupStore.load(from: url) }
+    }
+
     @Test func unknownRuleKeyThrows() {
         for json in [#"{"xor":[]}"#, #"{"all":[],"any":[]}"#] {
             #expect(throws: DecodingError.self) { try JSONDecoder().decode(GroupRule.self, from: Data(json.utf8)) }
         }
-    }
-
-    @Test func saveCreatesDirectory() throws {
-        let url = tempURL("x/y/groups.json")
-        try GroupStore.save([ProcessGroup(name: "A")], to: url)
-        #expect(try GroupStore.load(from: url).count == 1)
     }
 }

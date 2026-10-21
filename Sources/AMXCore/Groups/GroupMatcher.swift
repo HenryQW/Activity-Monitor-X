@@ -43,8 +43,8 @@ public enum GroupMatcher {
         guard !value.isEmpty, let target else { return false }
         switch cond.op {
         case .equals: return target.caseInsensitiveCompare(value) == .orderedSame
-        case .contains: return target.localizedCaseInsensitiveContains(value)
-        case .startsWith: return target.lowercased().hasPrefix(value.lowercased())
+        case .contains: return target.range(of: value, options: .caseInsensitive) != nil
+        case .startsWith: return target.range(of: value, options: [.caseInsensitive, .anchored]) != nil
         }
     }
 }
@@ -52,14 +52,10 @@ public enum GroupMatcher {
 extension GroupRule {
     /// True when a condition with a non-empty value exists anywhere in the tree.
     public var hasCondition: Bool {
-        switch self {
-        case .condition(let c): return !c.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case .all(let children), .any(let children): return children.contains { $0.hasCondition }
-        case .not(let child): return child.hasCondition
-        }
+        conditions.contains { !$0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
-    public enum Kind: CaseIterable, Sendable { case all, any, not }
+    public enum Kind: String, CaseIterable, Sendable { case all, any, not }
 
     /// Nil for a condition.
     public var kind: Kind? {

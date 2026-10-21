@@ -12,24 +12,6 @@ extension HistoryRange {
         case .quarter: "90D"
         }
     }
-
-    var subtitle: String {
-        switch self {
-        case .live: "Live"
-        case .hour: "Last Hour"
-        case .day: "Last 24 Hours"
-        case .week: "Last 7 Days"
-        case .month: "Last 30 Days"
-        case .quarter: "Last 90 Days"
-        }
-    }
-
-    /// Names the start when recording began inside the range.
-    func subtitle(since: Double?) -> String {
-        guard let since else { return subtitle }
-        let date = Date(timeIntervalSince1970: since).formatted(.dateTime.day().month(.abbreviated).hour().minute())
-        return "\(subtitle), since \(date)"
-    }
 }
 
 extension Metric {
@@ -57,8 +39,28 @@ extension Metric {
     /// Axis ticks carry no decimals for percentages; the bubble and tables keep `format`.
     func axisLabel(_ value: Double) -> String {
         switch self {
-        case .cpu, .gpu: (value / 100).formatted(.percent.precision(.fractionLength(0)))
+        case .cpu, .gpu, .score: (value / 100).formatted(.percent.precision(.fractionLength(0)))
         default: format(value)
+        }
+    }
+}
+
+extension GroupColor {
+    var color: Color {
+        switch self {
+        case .red: .red
+        case .orange: .orange
+        case .yellow: .yellow
+        case .green: .green
+        case .mint: .mint
+        case .teal: .teal
+        case .cyan: .cyan
+        case .blue: .blue
+        case .indigo: .indigo
+        case .purple: .purple
+        case .pink: .pink
+        case .brown: .brown
+        case .gray: .gray
         }
     }
 }

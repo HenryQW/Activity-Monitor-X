@@ -10,10 +10,9 @@ public struct Slice: Sendable {
     public let start: Double
     public let end: Double
     public let value: Double
-    public let peak: Double
 
-    public init(start: Double, end: Double, value: Double, peak: Double) {
-        (self.start, self.end, self.value, self.peak) = (start, end, value, peak)
+    public init(start: Double, end: Double, value: Double) {
+        (self.start, self.end, self.value) = (start, end, value)
     }
 }
 
@@ -28,7 +27,7 @@ public struct ProcessTrack: Sendable {
     public let path: String?
     /// `processes.last_seen` (a minute's first tick); for Live tracks, the ts of the last snapshot holding the process.
     public let lastSeen: Double
-    public let slices: [Slice]
+    public var slices: [Slice]
     /// The attributed app's bundle ID and the executable's team ID, for group rules.
     public let bundleID: String?
     public let teamID: String?
@@ -75,76 +74,66 @@ public struct HistoryReader {
         case .minute: tier = Tier(table: "process_minute", time: "bucket", hold: 3660, isRaw: false)
         case .hour: tier = Tier(table: "process_hour", time: "bucket", hold: 90_000, isRaw: false)
         }
-        // Raw rows carry no max; the peak of a raw value is the value.
-        func sum(_ suffix: String) -> String {
-            if metric == .score {
-                return "0.5 * IFNULL(t.cpu\(suffix), 0) / \(device.cores) + 50.0 * IFNULL(t.mem\(suffix), 0) / \(device.memory)"
-            }
-            return metric.columns.map { "IFNULL(t.\($0)\(suffix), 0)" }.joined(separator: " + ")
-        }
-        let value = sum(tier.isRaw ? "" : "_avg")
-        let peak = tier.isRaw ? value : sum("_max")
+        let suffix = tier.isRaw ? "" : "_avg"
+        let value = metric == .score
+            ? "0.5 * IFNULL(t.cpu\(suffix), 0) / \(device.cores) + 50.0 * IFNULL(t.mem\(suffix), 0) / \(device.memory)"
+            : metric.columns.map { "IFNULL(t.\($0)\(suffix), 0)" }.joined(separator: " + ")
         // A slice reaching `start` needs `last_seen + 60 > start`, so other processes are skipped.
         // An open process was last seen in the writer's last minute.
         let metaSQL = """
             SELECT id, pid, start_time, name, app_path, app_name, first_seen,
-                   IIF(last_seen = ?1, \(Schema.openLastSeenSQL), last_seen), path,
+                   \(Schema.lastSeenSQL), path,
                    bundle_id, team_id
-            FROM processes WHERE last_seen > ?2 ORDER BY id
+            FROM processes WHERE last_seen > ? ORDER BY id
             """
         // In time order the key serves the order and each process folds its rows as they come:
         // no join and no sort over the (up to ~900k) rows.
         let sql = """
-            SELECT t.process_id, t.\(tier.time), \(value), \(peak)
+            SELECT t.process_id, t.\(tier.time), \(value)
             FROM \(tier.table) t
             WHERE t.\(tier.time) >= ? AND t.\(tier.time) < ?
             ORDER BY t.\(tier.time)
             """
         struct Builder {
-            let id: Int64, pid: Int32, startTime: Double, name: String, app: AppKey, path: String?, firstSeen: Double, lastSeen: Double
-            let bundleID: String?, teamID: String?
-            var slices: [Slice] = []
-            var last: (t: Double, v: Double, pk: Double)?
+            var track: ProcessTrack
+            let firstSeen: Double
+            var last: (t: Double, v: Double)?
         }
         func close(_ b: inout Builder, next: Double) {
-            guard let (t, v, pk) = b.last else { return }
+            guard let (t, v) = b.last else { return }
             // A bucket row averages alive time only, so it starts no earlier than the process.
             let sliceStart = max(t, b.firstSeen, start)
             // Raw rows follow the rollup: a gap past the hold means the row covered one 5 s tick.
             let sliceEnd = tier.isRaw && next.isFinite
                 ? min(next - t <= tier.hold ? next : t + 5, end)
-                : min(next, t + tier.hold, b.lastSeen + 60, end)  // last_seen is a minute's first tick
-            if sliceStart < sliceEnd { b.slices.append(Slice(start: sliceStart, end: sliceEnd, value: v, peak: pk)) }
+                : min(next, t + tier.hold, b.track.lastSeen + 60, end)  // last_seen is a minute's first tick
+            if sliceStart < sliceEnd { b.track.slices.append(Slice(start: sliceStart, end: sliceEnd, value: v)) }
         }
         // Stream with positional access: name-based Row copies dominated the 90-day query.
         var builders: [Builder] = []
         try pool.read { db in
             var slot: [Int64: Int] = [:]
-            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [Schema.open, start - 60])
+            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [start - 60])
             while let r = try metas.next() {
                 let id: Int64 = r[0], name: String = r[3], appPath: String? = r[4], appName: String? = r[5]
                 slot[id] = builders.count
-                builders.append(Builder(id: id, pid: r[1], startTime: r[2], name: name,
-                                        app: AppKey(key: appPath ?? name, name: appName ?? name),
-                                        path: r[8], firstSeen: r[6], lastSeen: r[7],
-                                        bundleID: r[9], teamID: r[10]))
+                let track = ProcessTrack(processID: id, pid: r[1], startTime: r[2], name: name,
+                                         app: AppKey(key: appPath ?? name, name: appName ?? name), path: r[8],
+                                         lastSeen: r[7], slices: [], bundleID: r[9], teamID: r[10])
+                builders.append(Builder(track: track, firstSeen: r[6]))
             }
             let rows = try Row.fetchCursor(db, sql: sql, arguments: [start - tier.hold, end])
             while let r = try rows.next() {
                 guard let i = slot[r[0]] else { continue }
                 let t: Double = r[1]
                 close(&builders[i], next: t)
-                builders[i].last = (t, r[2], r[3])
+                builders[i].last = (t, r[2])
             }
         }
         var result: [ProcessTrack] = []
         for var b in builders {
             close(&b, next: .infinity)
-            if !b.slices.isEmpty {
-                result.append(ProcessTrack(processID: b.id, pid: b.pid, startTime: b.startTime, name: b.name,
-                                           app: b.app, path: b.path, lastSeen: b.lastSeen, slices: b.slices,
-                                           bundleID: b.bundleID, teamID: b.teamID))
-            }
+            if !b.track.slices.isEmpty { result.append(b.track) }
         }
         return result
     }

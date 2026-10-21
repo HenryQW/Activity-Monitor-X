@@ -1,7 +1,18 @@
 import Foundation
 
-public enum GroupStoreError: Error, Equatable {
+/// Readable in the app (`localizedDescription`) and in `amx` (`description`).
+public enum GroupStoreError: LocalizedError, CustomStringConvertible, Equatable {
     case unsupportedVersion(Int)
+    case duplicateID(UUID)
+
+    public var description: String {
+        switch self {
+        case .unsupportedVersion(let found): "groups.json has version \(found); this app reads version 1"
+        case .duplicateID(let id): "groups.json has two groups with id \(id)"
+        }
+    }
+
+    public var errorDescription: String? { description }
 }
 
 /// `groups.json`: `{"version":1,"groups":[…]}`. Only the app writes it; `amx` reads it.
@@ -28,7 +39,10 @@ public enum GroupStore {
         }
         let found = try JSONDecoder().decode(Version.self, from: data).version
         guard found == version else { throw GroupStoreError.unsupportedVersion(found) }
-        return try JSONDecoder().decode(File.self, from: data).groups
+        let groups = try JSONDecoder().decode(File.self, from: data).groups
+        var seen = Set<UUID>()
+        for group in groups where !seen.insert(group.id).inserted { throw GroupStoreError.duplicateID(group.id) }
+        return groups
     }
 
     public static func save(_ groups: [ProcessGroup], to url: URL) throws {

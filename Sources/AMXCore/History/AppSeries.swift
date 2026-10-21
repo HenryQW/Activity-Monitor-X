@@ -23,6 +23,12 @@ public struct AppRank: Sendable, Identifiable {
     public let average: Double
     public let peak: Double
     public let processes: [ProcessRank]
+
+    /// The inspector's list: every running process, then the top `limit` exited ones by average, so a long-gone
+    /// helper never hides a running process.
+    public func runningFirst(exited limit: Int) -> [ProcessRank] {
+        processes.filter { !$0.exited } + processes.filter(\.exited).prefix(limit)
+    }
 }
 
 public enum AppSeries {
@@ -32,15 +38,16 @@ public enum AppSeries {
         max(from, tracks.compactMap { $0.slices.first?.start }.min() ?? from)
     }
 
-    /// Each app's time-weighted mean in each bucket of [from, to); the last bucket may be shorter.
-    private static func bucketed(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double)
-        -> (starts: [Double], perApp: [AppKey: [Double]]) {
+    /// Each key's time-weighted mean in each bucket of [from, to); the last bucket may be shorter.
+    private static func bucketed<Key: Hashable>(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double,
+                                                key: (Int, ProcessTrack) -> Key) -> (starts: [Double], perKey: [Key: [Double]]) {
         let starts = Array(stride(from: from, to: to, by: bucket))
-        // One app lookup per track, not per slice: hashing the key per slice dominated the 24H stack.
-        var slot: [AppKey: Int] = [:]
+        // One key lookup per track, not per slice: hashing the app key per slice dominated the 24H stack.
+        var slot: [Key: Int] = [:]
         var values: [[Double]] = []
-        for track in tracks {
-            var i = slot[track.app]
+        for (t, track) in tracks.enumerated() {
+            let k = key(t, track)
+            var i = slot[k]
             for slice in track.slices {
                 let lo = max(Int(((slice.start - from) / bucket).rounded(.down)), 0)
                 let hi = min(Int(((slice.end - from) / bucket).rounded(.up)), starts.count)
@@ -51,7 +58,7 @@ public enum AppSeries {
                     guard overlap > 0 else { continue }
                     if i == nil {
                         i = values.count
-                        slot[track.app] = i
+                        slot[k] = i
                         values.append(Array(repeating: 0, count: starts.count))
                     }
                     values[i!][b] += slice.value * overlap / width
@@ -64,8 +71,8 @@ public enum AppSeries {
     /// Tracks at the indices in `otherOnly` never get a series of their own: their values add to Other.
     public static func stacked(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double, top: Int = 5,
                                otherOnly: Set<Int> = []) -> [SeriesPoint] {
-        let (starts, perApp) = bucketed(without(tracks, otherOnly), from: from, to: to, bucket: bucket)
-        let forced = otherOnly.isEmpty ? [:] : bucketed(otherOnly.sorted().map { tracks[$0] }, from: from, to: to, bucket: bucket).perApp
+        let (starts, perApp) = bucketed(without(tracks, otherOnly), from: from, to: to, bucket: bucket) { $1.app }
+        let forced = otherOnly.isEmpty ? [:] : bucketed(otherOnly.sorted().map { tracks[$0] }, from: from, to: to, bucket: bucket) { $1.app }.perKey
         // Range average is the width-weighted mean of the bucket values.
         let widths = starts.map { min($0 + bucket, to) - $0 }
         let averages = perApp.mapValues { zip($0, widths).reduce(0) { $0 + $1.0 * $1.1 } / (to - from) }
@@ -89,6 +96,19 @@ public enum AppSeries {
         indices.isEmpty ? tracks : tracks.enumerated().filter { !indices.contains($0.offset) }.map(\.element)
     }
 
+    /// `points` plus a closing point at the end of the last bucket, so a chart draws the last (partial) bucket too.
+    public static func closed(_ points: [SeriesPoint], bucket: Double) -> [SeriesPoint] {
+        guard let last = points.last?.bucket else { return points }
+        return points + points.filter { $0.bucket == last }.map { SeriesPoint(bucket: last + bucket, app: $0.app, value: $0.value) }
+    }
+
+    /// The hover bubble's rows for one bucket: apps by value, Other last, without the rows `hides` (they would read 0).
+    public static func bubbleRows(_ points: [SeriesPoint], hides: (Double) -> Bool) -> [SeriesPoint] {
+        points.filter { !hides($0.value) }.sorted {
+            ($0.app == nil ? 1 : 0, $1.value, $0.app?.key ?? "") < ($1.app == nil ? 1 : 0, $0.value, $1.app?.key ?? "")
+        }
+    }
+
     /// Every app's series in `count` equal buckets: one pass for all sparklines.
     public static func sparklines(_ tracks: [ProcessTrack], from: Double, to: Double, count: Int = 60,
                                   excluding: Set<Int> = []) -> [AppKey: [Double]] {
@@ -96,28 +116,26 @@ public enum AppSeries {
         return Dictionary(grouping: points) { $0.app! }.mapValues { $0.map(\.value) }
     }
 
-    /// An app's peak is its highest summed `bucket` value; a process's peak is its highest recorded value.
-    /// A process is exited when its `lastSeen` is before `exitedBefore`: the latest Live snapshot's ts, or now − 70 s
-    /// for history (`last_seen` reads as a minute's first tick).
+    /// One peak definition: an app's or a process's peak is its highest `bucket` value, so a process never peaks
+    /// above its app. A process is exited when its `lastSeen` is before `exitedBefore`: the latest Live snapshot's ts,
+    /// or now − the exit slack for history (`last_seen` reads as a minute's first tick).
     public static func ranking(_ allTracks: [ProcessTrack], from: Double, to: Double, bucket: Double,
                                excluding: Set<Int> = [], exitedBefore: Double = 0) -> [AppRank] {
         let tracks = without(allTracks, excluding)
-        let perApp = bucketed(tracks, from: from, to: to, bucket: bucket).perApp
-        var byApp: [AppKey: [ProcessRank]] = [:]
-        for track in tracks {
-            let inSpan = track.slices.filter { min($0.end, to) > max($0.start, from) }
-            guard !inSpan.isEmpty else { continue }
-            let area = inSpan.reduce(0) { $0 + $1.value * (min($1.end, to) - max($1.start, from)) }
-            let peak = inSpan.map(\.peak).max()!
-            byApp[track.app, default: []].append(ProcessRank(
-                processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
-                average: area / (to - from), peak: peak,
-                lastSeen: track.lastSeen, exited: track.lastSeen < exitedBefore))
-        }
-        return byApp.map { app, procs in
+        let perTrack = bucketed(tracks, from: from, to: to, bucket: bucket) { i, _ in i }.perKey
+        var byApp: [AppKey: [Int]] = [:]
+        for i in perTrack.keys { byApp[tracks[i].app, default: []].append(i) }
+        return byApp.map { app, indices in
+            var buckets = perTrack[indices[0]]!
+            for i in indices.dropFirst() { for (b, v) in perTrack[i]!.enumerated() { buckets[b] += v } }
+            let procs = indices.map { i in
+                let track = tracks[i]
+                return ProcessRank(processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
+                                   average: track.average(from: from, to: to), peak: perTrack[i]!.max()!,
+                                   lastSeen: track.lastSeen, exited: track.lastSeen < exitedBefore)
+            }
             let sorted = procs.sorted { ($1.average, $0.pid) < ($0.average, $1.pid) }
-            return AppRank(app: app, average: procs.reduce(0) { $0 + $1.average },
-                           peak: perApp[app]!.max()!, processes: sorted)
+            return AppRank(app: app, average: procs.reduce(0) { $0 + $1.average }, peak: buckets.max()!, processes: sorted)
         }.sorted { ($1.average, $0.app.key) < ($0.average, $1.app.key) }
     }
 }

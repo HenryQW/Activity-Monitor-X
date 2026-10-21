@@ -56,7 +56,11 @@ func context(_ options: [String: String]) -> AgentContext {
     let groups = options["--groups"].map { URL(fileURLWithPath: $0) } ?? GroupStore.defaultURL
     do {
         let pool = try Store.openReader(path: options["--db"] ?? AMX.databasePath, prepare: AgentSQL.views)
-        return AgentContext(pool: pool, groups: { try GroupStore.load(from: groups) })
+        return AgentContext(pool: pool, groups: {
+            do { return try GroupStore.load(from: groups) } catch {
+                throw AgentError.invalid("\(groups.path): \(error.localizedDescription)")
+            }
+        })
     } catch {
         fail("\(error)")
     }
@@ -107,7 +111,8 @@ case "stats":
 case "tools":
     guard args.isEmpty else { usage() }
     for spec in AgentTools.catalog {
-        print("\(spec.name)\t\(spec.description.prefix { $0 != "\n" })")
+        let d = spec.description
+        print("\(spec.name)\t\(d.range(of: ". ").map { d[..<$0.lowerBound] + "." } ?? d)")
     }
     exit(0)
 case "call":
