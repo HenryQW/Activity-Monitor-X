@@ -20,15 +20,18 @@ private struct Rig {
     let path = NSTemporaryDirectory() + "amx-\(UUID().uuidString).sqlite"
     let db: DatabaseQueue
     let writer: SampleWriter
-    init() throws {
+    init(ticksPerCommit: Int = 1) throws {
         db = try Store.openWriter(path: path)
-        writer = SampleWriter(db: db, path: path)
+        writer = try SampleWriter(db: db, path: path, ticksPerCommit: ticksPerCommit)
     }
     func tick(_ now: Double, _ p: [ProcessSample], new: [ProcessIdentity] = [], system: SystemSample = SystemSample()) throws {
         try writer.write(now: now, processes: p, newProcesses: new.map(raw), system: system)
     }
     func count(_ table: String) throws -> Int {
         try db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM \(table)") ?? 0 }
+    }
+    func lastSeen(_ id: ProcessIdentity) throws -> Double? {
+        try db.read { try Double.fetchOne($0, sql: "SELECT last_seen FROM processes WHERE pid = ?", arguments: [id.pid]) }
     }
 }
 
@@ -78,8 +81,45 @@ private struct Rig {
         try r.tick(119, [sample()], new: [idA])
         try r.tick(121, [sample()])
         #expect(try r.count("process_samples") == 2)
-        let lastSeen = try r.db.read { try Double.fetchOne($0, sql: "SELECT last_seen FROM processes") }
-        #expect(lastSeen == 121)
+    }
+
+    @Test func ticksCommitTogether() throws {
+        let r = try Rig(ticksPerCommit: 3)
+        try r.tick(1000, [sample(cpu: 1)], new: [idA])
+        try r.tick(1005, [sample(cpu: 9)])
+        #expect(try r.count("system_samples") == 0)
+        try r.tick(1010, [sample(cpu: 9)])
+        // The gate still compares each tick with the one before it.
+        #expect(try [r.count("system_samples"), r.count("process_samples")] == [3, 2])
+        try r.tick(1015, [sample(cpu: 1)])
+        try r.writer.flush()
+        #expect(try [r.count("system_samples"), r.count("process_samples")] == [4, 3])
+    }
+
+    @Test func endedProcessKeepsFirstTickOfItsLastMinute() throws {
+        let r = try Rig()
+        try r.tick(119, [sample()], new: [idA])
+        try r.tick(121, [sample()])
+        try r.tick(126, [sample()])
+        #expect(try r.lastSeen(idA) == .infinity)
+        // The end is written with the next minute's first tick.
+        try r.tick(131, [])
+        #expect(try r.lastSeen(idA) == .infinity)
+        try r.tick(180, [])
+        #expect(try r.lastSeen(idA) == 121)
+    }
+
+    @Test func newWriterClosesOpenProcessesAndReopensLiveOnes() throws {
+        let r = try Rig()
+        let idC = ProcessIdentity(pid: 12, startTime: 102)
+        try r.tick(1000, [sample(idA), sample(idB)], new: [idA, idB])
+        try r.tick(1065, [sample(idA), sample(idB)])
+        try r.tick(1070, [sample(idA), sample(idB), sample(idC)], new: [idC])
+        // Restart: the previous writer's last minute opened at 1065; C started after that.
+        let writer = try SampleWriter(db: r.db, path: r.path)
+        #expect(try [r.lastSeen(idA), r.lastSeen(idB), r.lastSeen(idC)] == [1065, 1065, 1070])
+        try writer.write(now: 1200, processes: [sample(idA)], newProcesses: [raw(idA)], system: SystemSample())
+        #expect(try [r.lastSeen(idA), r.lastSeen(idB)] == [.infinity, 1065])
     }
 
     @Test func systemRowAlwaysWritten() throws {
@@ -143,19 +183,21 @@ private struct Rig {
         #expect(r.writer.ids.keys.sorted { $0.pid < $1.pid } == [idA])
     }
 
-    @Test func writeFailureCarriesPath() throws {
-        let path = NSTemporaryDirectory() + "amx-\(UUID().uuidString).sqlite"
-        _ = try Store.openWriter(path: path)
-        try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: path)
-        var config = Configuration()
-        config.readonly = true
-        let db = try DatabaseQueue(path: path, configuration: config)
-        let writer = SampleWriter(db: db, path: path)
+    @Test func failedBatchCarriesPathAndKeepsNewProcesses() throws {
+        let r = try Rig(ticksPerCommit: 2)
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 1") }
+        try r.tick(1000, [sample(idA), sample(idB)], new: [idA])
         do {
-            try writer.write(now: 1, processes: [], newProcesses: [], system: SystemSample())
+            try r.tick(1005, [sample(idA), sample(idB)], new: [idB])
             Issue.record("expected failure")
         } catch let error as StoreError {
-            #expect(error.description.contains(path))
+            #expect(error.description.contains(r.path))
         }
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 0") }
+        // New processes of both failed ticks are written with the next commit.
+        try r.tick(1010, [sample(idA), sample(idB)])
+        try r.writer.flush()
+        let pids = try r.db.read { try Int32.fetchAll($0, sql: "SELECT pid FROM processes ORDER BY pid") }
+        #expect(pids == [idA.pid, idB.pid])
     }
 }

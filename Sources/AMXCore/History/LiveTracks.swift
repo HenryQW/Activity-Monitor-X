@@ -33,4 +33,25 @@ public enum LiveTracks {
         case .gpu: p.gpu
         }
     }
+
+    /// `live` with the raw history before it, so Live opens with its full 5 min. `raw` ends where the first snapshot
+    /// starts; slices ending by `from` are dropped. A process in both (same pid and start time) keeps one track, its
+    /// raw slices first; a process only in `raw` exited before Live started.
+    public static func backfilled(_ live: [ProcessTrack], raw: [ProcessTrack], from: Double) -> [ProcessTrack] {
+        struct Key: Hashable { let pid: Int32, startTime: Double }
+        var earlier: [Key: ProcessTrack] = [:]
+        for track in raw {
+            let slices = track.slices.filter { $0.end > from }
+            guard !slices.isEmpty else { continue }
+            earlier[Key(pid: track.pid, startTime: track.startTime)] = ProcessTrack(
+                processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name, app: track.app,
+                path: track.path, lastSeen: track.lastSeen, slices: slices)
+        }
+        let merged = live.map { track in
+            guard let before = earlier.removeValue(forKey: Key(pid: track.pid, startTime: track.startTime)) else { return track }
+            return ProcessTrack(processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
+                                app: track.app, path: track.path, lastSeen: track.lastSeen, slices: before.slices + track.slices)
+        }
+        return merged + earlier.values
+    }
 }

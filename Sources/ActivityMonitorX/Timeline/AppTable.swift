@@ -10,6 +10,7 @@ struct AppTable: View {
 
     @Environment(Selection.self) private var selection
     private let _selected = State<Row.ID?>(initialValue: nil)
+    private let _expanded = State<Set<Row.ID>>(initialValue: [])
     private let _sortOrder = State(initialValue: [KeyPathComparator(\Row.average, order: .reverse)])
 
     var body: some View {
@@ -46,24 +47,33 @@ struct AppTable: View {
                     }
                     .foregroundStyle(process.exited ? .tertiary : .secondary)
                 } else {
-                    Label {
-                        Text(row.name).help(row.app.key)
-                    } icon: {
-                        Circle().fill(colors[row.app] ?? .clear).frame(width: 8, height: 8)
-                    }
+                    AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app))
                 }
             }
+            .width(min: 140)
             TableColumn("Average", value: \.average) { Text(metric.format($0.average)).monospacedDigit() }
+                .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
             TableColumn("Peak", value: \.peak) { Text(metric.format($0.peak)).monospacedDigit() }
+                .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
         } rows: {
             ForEach(rows) { app in
-                DisclosureTableRow(app) {
+                DisclosureTableRow(app, isExpanded: expansion(app)) {
                     ForEach(app.processes) { TableRow($0) }
                 }
             }
         }
+    }
+
+    /// An app found by search only through its processes opens to show them.
+    private func expansion(_ app: Row) -> Binding<Bool> {
+        let found = !selection.search.isEmpty && !AppSearch.matches(app.app, selection.search)
+        return Binding(
+            get: { found || _expanded.wrappedValue.contains(app.id) },
+            set: { open in
+                if open { _expanded.wrappedValue.insert(app.id) } else { _expanded.wrappedValue.remove(app.id) }
+            })
     }
 
     /// Live rows have no DB id (processID 0) and a pid can repeat inside the Live window, so a repeat

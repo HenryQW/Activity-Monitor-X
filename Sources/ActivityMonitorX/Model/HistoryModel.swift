@@ -14,6 +14,7 @@ final class HistoryModel {
         didSet {
             guard range != oldValue else { return }
             span = nil
+            since = nil
             state = .loading
             reload()
         }
@@ -44,9 +45,14 @@ final class HistoryModel {
     private(set) var apps: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
     private(set) var state: LoadState = .loading
+    /// Start of the loaded range: its nominal start, or later when recording began inside it.
+    private(set) var start = 0.0
+    /// `start` when recording began more than one chart bucket into the range, for the subtitle.
+    private(set) var since: Double?
 
-    /// `last_seen` is written once a minute, so a process unseen for 70 s has exited.
-    nonisolated private static let exitSlack = 70.0
+    /// `last_seen` reads as a minute's first tick, and amxd commits every few ticks, so a live process can
+    /// look up to a minute plus one commit batch old.
+    nonisolated private static let exitSlack = 60 + AMX.tick * Double(AMX.ticksPerCommit + 1) + 5
 
     private var pool: DatabasePool?
     private var tracks: [ProcessTrack] = []
@@ -74,21 +80,21 @@ final class HistoryModel {
         let (generation, range, metric, hideQuiet, now) = (generation, range, metric, hideQuietSystem, Date().timeIntervalSince1970)
         requestedAt = now
         if state != .ready { state = .loading }
+        let pool: DatabasePool
         do {
-            if pool == nil { pool = try Store.openReader(path: AMX.databasePath) }
+            pool = try openPool()
         } catch {
             state = .failed("Cannot open history database: \(error.localizedDescription)")
             return
         }
-        let pool = pool!
         loading = Task {
             let result = await Task.detached { () -> Result<Loaded, Error> in
                 Result {
                     let reader = HistoryReader(pool: pool)
                     let tracks = try reader.tracks(range: range, metric: metric, end: now)
-                    let from = now - range.seconds
+                    let from = AppSeries.recordedStart(tracks, from: now - range.seconds)
                     let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: now) : []
-                    return Loaded(tracks: tracks,
+                    return Loaded(tracks: tracks, start: from,
                            stacked: AppSeries.stacked(tracks, from: from, to: now, bucket: range.chartBucket, otherOnly: hidden),
                            system: try reader.system(range: range, end: now),
                            events: try reader.events(from: from, to: now),
@@ -100,7 +106,8 @@ final class HistoryModel {
             guard generation == self.generation else { return }
             switch result {
             case .success(let loaded):
-                end = now
+                (end, start) = (now, loaded.start)
+                since = start - (now - range.seconds) > range.chartBucket ? start : nil
                 tracks = loaded.tracks
                 system = loaded.system
                 events = loaded.events
@@ -117,12 +124,23 @@ final class HistoryModel {
 
     /// One app's single series for the range, at chart resolution.
     func series(of app: AppKey) -> [SeriesPoint] {
-        AppSeries.stacked(tracks.filter { $0.app.key == app.key }, from: end - range.seconds, to: end, bucket: range.chartBucket)
+        AppSeries.stacked(tracks.filter { $0.app.key == app.key }, from: start, to: end, bucket: range.chartBucket)
+    }
+
+    /// The raw tier's last hour before `end`; Live backfills its first 5 min from it.
+    func rawTracks(metric: Metric, end: Double) async throws -> [ProcessTrack] {
+        let pool = try openPool()
+        return try await Task.detached { try HistoryReader(pool: pool).tracks(range: .hour, metric: metric, end: end) }.value
+    }
+
+    private func openPool() throws -> DatabasePool {
+        if pool == nil { pool = try Store.openReader(path: AMX.databasePath) }
+        return pool!
     }
 
     /// One app's rank for the span or range, from unfiltered tracks: the inspector and pinned views ignore the quiet filter.
     func rank(of app: AppKey) -> AppRank? {
-        let from = span?.lowerBound ?? end - range.seconds, to = span?.upperBound ?? end
+        let from = span?.lowerBound ?? start, to = span?.upperBound ?? end
         return AppSeries.ranking(tracks.filter { $0.app.key == app.key }, from: from, to: to, bucket: range.chartBucket,
                                  exitedBefore: end - Self.exitSlack).first
     }
@@ -147,6 +165,7 @@ final class HistoryModel {
 
     private struct Loaded: Sendable {
         let tracks: [ProcessTrack]
+        let start: Double
         let stacked: [SeriesPoint]
         let system: [SystemPoint]
         let events: [EventMark]

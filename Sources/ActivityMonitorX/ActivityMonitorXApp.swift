@@ -25,6 +25,11 @@ struct ActivityMonitorXApp: App {
         .defaultLaunchBehavior(.presented)
         .commands {
             SidebarCommands()
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Find…") { selection.searchPresented = true }
+                    .keyboardShortcut("f")
+            }
             GoCommands(selection: selection, history: history)
             DataCommands(history: history)
             ProcessCommands(selection: selection)

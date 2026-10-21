@@ -14,8 +14,12 @@ final class LiveModel {
     private let history: HistoryModel
     let client: DaemonClient
     private var snapshots: [LiveSnapshot] = []
+    /// Raw history up to the first snapshot of this Live visit, for the current metric.
+    private var backfill: [ProcessTrack] = []
     private var tracks: [ProcessTrack] = []
     private var end = 0.0
+    /// Start of recorded time in the 5 min window: averages cover it only; the chart keeps the full 5 min.
+    private var start = 0.0
     private var generation = 0
     private var failures = 0
 
@@ -24,10 +28,11 @@ final class LiveModel {
         self.client = client
     }
 
-    /// Runs while a window is open; polls once a second while the range is Live.
+    /// Runs while a window is open; polls once a second while the range is Live. Each visit to Live starts
+    /// afresh, so the backfill covers the time spent away.
     func run() async {
         while !Task.isCancelled {
-            if history.range == .live { await poll() }
+            if history.range == .live { await poll() } else { snapshots = [] }
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -35,7 +40,19 @@ final class LiveModel {
     /// Hides data of the old metric or filter and rebuilds from the snapshots at once.
     func settingsChanged() {
         state = .loading
-        Task { await rebuild() }
+        Task {
+            await loadBackfill()
+            await rebuild()
+        }
+    }
+
+    /// Without the history database Live still works; it then opens with only its own snapshots.
+    private func loadBackfill() async {
+        guard let first = snapshots.first else { return }
+        let metric = history.metric
+        let raw = (try? await history.rawTracks(metric: metric, end: first.ts)) ?? []
+        // A metric change during the read loads its own backfill.
+        if metric == history.metric { backfill = raw }
     }
 
     /// Fetches a snapshot now instead of waiting for the next tick (after a Quit).
@@ -47,8 +64,10 @@ final class LiveModel {
             failures = 0
             // The daemon repeats its latest snapshot for up to 3 s.
             guard snapshot.ts > (snapshots.last?.ts ?? -.infinity) else { return }
+            let first = snapshots.isEmpty
             snapshots.append(snapshot)
             snapshots.removeAll { $0.ts <= snapshot.ts - 300 }
+            if first { await loadBackfill() }
             await rebuild()
         } catch {
             // One missed poll keeps the last data; only a lasting outage shows the error.
@@ -61,26 +80,28 @@ final class LiveModel {
     private func rebuild() async {
         guard let last = snapshots.last else { return }
         generation += 1
-        let (generation, snapshots, metric, hideQuiet, withSparklines) =
-            (generation, snapshots, history.metric, history.hideQuietSystem, sparklinesShown)
+        let (generation, snapshots, backfill, metric, hideQuiet, withSparklines) =
+            (generation, snapshots, backfill, history.metric, history.hideQuietSystem, sparklinesShown)
         let end = last.ts + 1
         let built = await Task.detached {
-            let tracks = LiveTracks.build(snapshots, metric: metric)
-            let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: end - 300, to: end) : []
-            return (tracks: tracks,
+            let tracks = LiveTracks.backfilled(LiveTracks.build(snapshots, metric: metric), raw: backfill, from: end - 300)
+            let from = AppSeries.recordedStart(tracks, from: end - 300)
+            let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: end) : []
+            return (tracks: tracks, start: from,
                     stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),
-                    ranking: AppSeries.ranking(tracks, from: end - 300, to: end, bucket: 1, excluding: hidden, exitedBefore: last.ts),
-                    sparklines: withSparklines ? AppSeries.sparklines(tracks, from: end - 300, to: end, excluding: hidden) : [:])
+                    ranking: AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last.ts),
+                    sparklines: withSparklines ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
         }.value
         guard generation == self.generation else { return }
-        (self.end, tracks, stacked, ranking, sparklines) = (end, built.tracks, built.stacked, built.ranking, built.sparklines)
+        (self.end, start, tracks, stacked, ranking, sparklines)
+            = (end, built.start, built.tracks, built.stacked, built.ranking, built.sparklines)
         // A rebuild during an outage must not hide the error.
         if failures < 3 { state = .ready }
     }
 
     /// One app's rank for the last 5 min, unfiltered (see `HistoryModel.rank(of:)`).
     func rank(of app: AppKey) -> AppRank? {
-        AppSeries.ranking(tracks.filter { $0.app.key == app.key }, from: end - 300, to: end, bucket: 1,
+        AppSeries.ranking(tracks.filter { $0.app.key == app.key }, from: start, to: end, bucket: 1,
                           exitedBefore: end - 1).first
     }
 

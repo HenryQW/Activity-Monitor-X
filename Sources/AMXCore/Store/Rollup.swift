@@ -21,11 +21,11 @@ public enum Rollup {
     private static let batch = 10_000
     /// Finest first: the size cap deletes in this order.
     private static let tiers = [
-        Tier(table: "process_samples", time: "ts", key: "process_id, ts"),
+        Tier(table: "process_samples", time: "ts", key: "ts, process_id"),
         Tier(table: "system_samples", time: "ts", key: "rowid"),
-        Tier(table: "process_minute", time: "bucket", key: "rowid"),
+        Tier(table: "process_minute", time: "bucket", key: "bucket, process_id"),
         Tier(table: "system_minute", time: "bucket", key: "rowid"),
-        Tier(table: "process_hour", time: "bucket", key: "rowid"),
+        Tier(table: "process_hour", time: "bucket", key: "bucket, process_id"),
         Tier(table: "system_hour", time: "bucket", key: "rowid"),
     ]
     private static let events = Tier(table: "events", time: "ts", key: "rowid")
@@ -43,9 +43,17 @@ public enum Rollup {
             while try db.write({ try deleteOldest($0, tier, before: cutoff) }) == batch {}
         }
         try db.write { try pruneIfDue($0, now: now, cutoff: now - policy.hour) }
-        try db.write { try $0.execute(sql: "PRAGMA incremental_vacuum(2000)") }
+        // Retention frees about as many pages as the next ticks need. Vacuuming those would move the pages the
+        // ticks appended into the holes, then append again: keep up to `reusable` free for the inserts.
+        try db.write { db in
+            let excess = try Int.fetchOne(db, sql: "PRAGMA freelist_count")! - reusable
+            if excess > 0 { try db.execute(sql: "PRAGMA incremental_vacuum(\(min(excess, 2000)))") }
+        }
         try enforceSizeCap(db, maxBytes: policy.maxBytes, rawBound: rawBound)
     }
+
+    /// Free pages kept for reuse: 8 MB, about an hour of inserts.
+    static let reusable = 2048
 
     private struct Level { let name: String, width: Double, heartbeat: Double }
     private static let minute = Level(name: "minute", width: 60, heartbeat: 3600)
@@ -75,7 +83,8 @@ public enum Rollup {
     // Tiers are sparse: a bucket is written only when it passes the raw gate against the process's
     // last written bucket in the same tier, or that bucket is a heartbeat old. A missing bucket means
     // the process's last written row still holds, until `processes.last_seen`. Buckets roll in order,
-    // one statement each, so each compares against the rows written before it.
+    // one statement each, so each compares against the rows written before it. A last row older than
+    // the heartbeat passes the gate anyway, so only rows within the heartbeat are looked up.
     private static func rollProcesses(_ db: Database, _ level: Level, from: Double, to: Double) throws {
         let w = level.width
         guard let first = try ProcessSampleRecord.filter(Column("ts") >= from - 65)
@@ -98,18 +107,22 @@ public enum Rollup {
                         FROM (SELECT r.*, r.b + \(w) * k.column1 AS bucket, IIF(r.next - r.ts <= 65, r.next, r.ts + 5) AS stop
                               FROM (SELECT *, CAST(ts / \(w) AS INTEGER) * \(w) AS b,
                                            LEAD(ts) OVER (PARTITION BY process_id ORDER BY ts) AS next
-                                    FROM process_samples INDEXED BY idx_process_samples_ts
+                                    FROM process_samples
                                     WHERE ts >= \(bucket - 65) AND ts < \(bucket + w + 65)) AS r,
                                    (VALUES (0), (1), (2)) AS k)
                         WHERE bucket = \(bucket))
                   WHERE dt > 0
+                  GROUP BY process_id),
+                prev AS (
+                  SELECT process_id, MAX(bucket) AS bucket FROM process_\(sql: level.name)
+                  WHERE bucket >= \(bucket - level.heartbeat) AND bucket < \(bucket)
                   GROUP BY process_id)
-                INSERT INTO process_\(sql: level.name)(process_id, bucket, samples, \(sql: cols.joined(separator: ", ")))
-                SELECT a.process_id, a.bucket, a.samples, \(sql: cols.map { "a.\($0)" }.joined(separator: ", "))
-                FROM a LEFT JOIN process_\(sql: level.name) p ON p.process_id = a.process_id AND p.bucket =
-                  (SELECT MAX(bucket) FROM process_\(sql: level.name) WHERE process_id = a.process_id AND bucket < a.bucket)
+                INSERT INTO process_\(sql: level.name)(bucket, process_id, samples, \(sql: cols.joined(separator: ", ")))
+                SELECT a.bucket, a.process_id, a.samples, \(sql: cols.map { "a.\($0)" }.joined(separator: ", "))
+                FROM a LEFT JOIN prev l ON l.process_id = a.process_id
+                LEFT JOIN process_\(sql: level.name) p ON p.bucket = l.bucket AND p.process_id = a.process_id
                 WHERE p.process_id IS NULL OR a.bucket - p.bucket >= \(level.heartbeat) OR \(sql: changed)
-                ON CONFLICT(process_id, bucket) DO UPDATE SET \(sql: upsertSet(["samples"] + cols))
+                ON CONFLICT(bucket, process_id) DO UPDATE SET \(sql: upsertSet(["samples"] + cols))
                 """)
             bucket += w
         }
@@ -149,8 +162,11 @@ public enum Rollup {
         guard now - last >= 600 || now < last else { return }
         let p = TableAlias()
         var stale = ProcessRecord.aliased(p).filter(Column("last_seen") < cutoff)
-        for table in ["process_samples", "process_minute", "process_hour"] {
-            stale = stale.filter(!Table(table).filter(Column("process_id") == p[Column("id")]).exists())
+        // A process's rows end within 65 s after its `last_seen`. No index starts with process_id, so the
+        // time bound keeps each lookup to the few rows between the oldest kept row and that end.
+        for t in tiers where t.table.hasPrefix("process_") {
+            stale = stale.filter(!Table(t.table).filter(
+                Column(t.time) < p[Column("last_seen")] + 120 && Column("process_id") == p[Column("id")]).exists())
         }
         try stale.deleteAll(db)
         try setMeta(db, "prune_at", now)

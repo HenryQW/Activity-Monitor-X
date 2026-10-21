@@ -6,6 +6,7 @@ struct TimelineView: View {
     let focus: AppKey?
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
+    @Environment(Selection.self) private var selection
 
     var body: some View {
         let isLive = history.range == .live
@@ -13,6 +14,7 @@ struct TimelineView: View {
             ?? (isLive ? live.stacked : history.stacked)
         let ranking = focus.map { app in (isLive ? live.rank(of: app) : history.rank(of: app)).map { [$0] } ?? [] }
             ?? (isLive ? live.ranking : history.ranking)
+        let shown = AppSearch.filter(ranking, query: selection.search)
         let colors = AppPalette.colors(for: points)
         Group {
             switch isLive ? live.state : history.state {
@@ -41,12 +43,13 @@ struct TimelineView: View {
                         .padding()
                         .backgroundExtensionEffect()
                     if let span = history.span, !isLive { spanBar(span) }
-                    AppTable(ranking: ranking, colors: colors, metric: history.metric)
+                    AppTable(ranking: shown, colors: colors, metric: history.metric)
                 }
             }
         }
         .navigationTitle(focus?.name ?? "Timeline")
-        .navigationSubtitle(history.range.subtitle)
+        .navigationSubtitle(selection.search.isEmpty ? history.range.subtitle(since: isLive ? nil : history.since)
+                            : "\(shown.count) of \(ranking.count) apps")
     }
 
     private var collecting: some View {

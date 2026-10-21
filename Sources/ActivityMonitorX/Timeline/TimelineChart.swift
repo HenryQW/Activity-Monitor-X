@@ -68,11 +68,23 @@ struct TimelineChart: View {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
                 AxisValueLabel {
-                    if let v = value.as(Double.self) { Text(metric.format(v)) }
+                    if let v = value.as(Double.self) { Text(metric.axisLabel(v)) }
                 }
             }
         }
-        .chartLegend(position: .bottom, alignment: .leading)
+        // One line: names truncate instead of wrapping into a second row.
+        .chartLegend(position: .bottom, alignment: .leading) {
+            HStack(spacing: 12) {
+                ForEach(series.indices, id: \.self) { i in
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 2).fill(series[i].color).frame(width: 8, height: 8)
+                        Text(series[i].label).lineLimit(1)
+                    }
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(Color.secondary)
+        }
         .chartXSelection(value: _hover.projectedValue)
         .chartXSelection(range: dragBinding)
         .chartOverlay { proxy in EventLane(events: events, proxy: proxy) }

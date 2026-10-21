@@ -63,6 +63,8 @@ struct ProcessCommands: Commands {
             Button(selection.app.map(selection.isPinned) == true ? "Unpin App" : "Pin App") {
                 selection.app.map(selection.togglePin)
             }
+            // The usual shortcut for Add to Sidebar.
+            .keyboardShortcut("t", modifiers: [.command, .control])
             .disabled(selection.app == nil)
             Divider()
             Button("Quit Process…") { request(SIGTERM) }

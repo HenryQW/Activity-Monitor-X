@@ -26,6 +26,12 @@ public struct AppRank: Sendable, Identifiable {
 }
 
 public enum AppSeries {
+    /// The later of `from` and the earliest slice start: averages and the x domain then cover recorded time only,
+    /// not the part of the range before recording began.
+    public static func recordedStart(_ tracks: [ProcessTrack], from: Double) -> Double {
+        max(from, tracks.compactMap { $0.slices.first?.start }.min() ?? from)
+    }
+
     /// Each app's time-weighted mean in each bucket of [from, to); the last bucket may be shorter.
     private static func bucketed(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double)
         -> (starts: [Double], perApp: [AppKey: [Double]]) {
@@ -92,7 +98,7 @@ public enum AppSeries {
 
     /// An app's peak is its highest summed `bucket` value; a process's peak is its highest recorded value.
     /// A process is exited when its `lastSeen` is before `exitedBefore`: the latest Live snapshot's ts, or now − 70 s
-    /// for history (`last_seen` is written once a minute).
+    /// for history (`last_seen` reads as a minute's first tick).
     public static func ranking(_ allTracks: [ProcessTrack], from: Double, to: Double, bucket: Double,
                                excluding: Set<Int> = [], exitedBefore: Double = 0) -> [AppRank] {
         let tracks = without(allTracks, excluding)

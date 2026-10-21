@@ -13,6 +13,12 @@ final class Selection {
     /// A Quit / Force Quit waiting for confirmation.
     var signalRequest: SignalRequest?
     var inspectorShown = false
+    /// Toolbar search text as typed; filters the tables and Pinned Apps, never the chart.
+    var query = ""
+    /// Edit > Find sets it to focus the search field.
+    var searchPresented = false
+    /// `query` without the spaces around it, for `AppSearch`.
+    var search: String { query.trimmingCharacters(in: .whitespaces) }
     var pinned: [AppKey] = UserDefaults.standard.data(forKey: Selection.pinnedKey)
         .flatMap { try? JSONDecoder().decode([AppKey].self, from: $0) } ?? [] {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(pinned), forKey: Self.pinnedKey) }

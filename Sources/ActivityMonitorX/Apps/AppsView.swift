@@ -2,7 +2,7 @@ import AMXCore
 import Charts
 import SwiftUI
 
-/// Every app seen in the range with its average, peak and sparkline; pin or unpin from here.
+/// Every app seen in the range with its average, peak and sparkline; pin or unpin from the context menu.
 struct AppsView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
@@ -11,6 +11,8 @@ struct AppsView: View {
 
     var body: some View {
         let isLive = history.range == .live
+        let all = isLive ? live.ranking : history.apps
+        let shown = AppSearch.filter(all, query: selection.search)
         Group {
             switch isLive ? live.state : history.state {
             case .loading:
@@ -20,11 +22,12 @@ struct AppsView: View {
             case .failed(let message):
                 ContentUnavailableView("Cannot Load Data", systemImage: "exclamationmark.triangle", description: Text(message))
             case .ready:
-                table(apps: isLive ? live.ranking : history.apps, sparklines: isLive ? live.sparklines : history.sparklines)
+                table(apps: shown, sparklines: isLive ? live.sparklines : history.sparklines)
             }
         }
         .navigationTitle("Apps")
-        .navigationSubtitle(history.range.subtitle)
+        .navigationSubtitle(selection.search.isEmpty ? history.range.subtitle(since: isLive ? nil : history.since)
+                            : "\(shown.count) of \(all.count) apps")
         .onAppear { live.sparklinesShown = true }
         .onDisappear { live.sparklinesShown = false }
     }
@@ -36,30 +39,18 @@ struct AppsView: View {
         let colors = AppPalette.colors(for: history.range == .live ? live.stacked : history.stacked)
 
         return Table(rows, selection: Bindable(selection).app, sortOrder: _sortOrder.projectedValue) {
-            TableColumn("App", value: \.name) { row in
-                Label {
-                    Text(row.name).help(row.app.key)
-                } icon: {
-                    Circle().fill(colors[row.app] ?? .clear).frame(width: 8, height: 8)
-                }
-            }
-            .width(min: 100, ideal: 180)
+            TableColumn("App", value: \.name) { AppLabel(app: $0.app, color: colors[$0.app], pinned: selection.isPinned($0.app)) }
+                .width(min: 140)
             TableColumn("Average", value: \.average) { Text(metric.format($0.average)).monospacedDigit() }
-                .width(min: 60, ideal: 80)
+                .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
             TableColumn("Peak", value: \.peak) { Text(metric.format($0.peak)).monospacedDigit() }
-                .width(min: 60, ideal: 80)
+                .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
             TableColumn("Trend") { row in
                 Sparkline(values: sparklines[row.app] ?? [], color: colors[row.app] ?? .secondary)
             }
-            .width(min: 50, ideal: 90, max: 140)
-            TableColumn("Pin") { row in
-                pinButton(row.app)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-            }
-            .width(32)
+            .width(min: 60, ideal: 80, max: 120)
         }
         .contextMenu(forSelectionType: AppKey.self) { apps in
             if let app = apps.first { pinButton(app) }

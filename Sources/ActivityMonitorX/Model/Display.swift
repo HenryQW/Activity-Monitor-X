@@ -23,6 +23,13 @@ extension HistoryRange {
         case .quarter: "Last 90 Days"
         }
     }
+
+    /// Names the start when recording began inside the range.
+    func subtitle(since: Double?) -> String {
+        guard let since else { return subtitle }
+        let date = Date(timeIntervalSince1970: since).formatted(.dateTime.day().month(.abbreviated).hour().minute())
+        return "\(subtitle), since \(date)"
+    }
 }
 
 extension Metric {
@@ -45,11 +52,21 @@ extension Metric {
         case .energy: value.formatted(.number.precision(.fractionLength(1)))
         }
     }
+
+    /// Axis ticks carry no decimals for percentages; the bubble and tables keep `format`.
+    func axisLabel(_ value: Double) -> String {
+        switch self {
+        case .cpu, .gpu: (value / 100).formatted(.percent.precision(.fractionLength(0)))
+        default: format(value)
+        }
+    }
 }
 
-/// App colours carry meaning only: the current top-5 apps get distinct colours, every other app none.
+/// App colours carry meaning only: the current top-5 apps get distinct colours, every other app none. System colours
+/// at least 32° of hue apart in light and dark (measured); red and yellow mean severity (`EventLane`), so they are
+/// left out, and so is pink, 10° from red.
 enum AppPalette {
-    static let colors: [Color] = [.blue, .orange, .green, .pink, .purple, .teal, .yellow, .red, .indigo, .mint]
+    static let colors: [Color] = [.blue, .orange, .green, .purple, .mint]
     static let other = Color.secondary.opacity(0.35)
 
     /// Colours of the top apps of `points` (a stacked series), in rank order as `stacked` emits them.

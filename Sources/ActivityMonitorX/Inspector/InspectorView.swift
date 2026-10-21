@@ -54,7 +54,7 @@ struct InspectorView: View {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine()
                         AxisValueLabel {
-                            if let v = value.as(Double.self) { Text(metric.format(v)) }
+                            if let v = value.as(Double.self) { Text(metric.axisLabel(v)) }
                         }
                     }
                 }

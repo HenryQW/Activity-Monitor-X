@@ -8,6 +8,12 @@ public enum Schema {
                              "net_in", "net_out"]
     private static let sysIntegers: Set = ["mem_used", "mem_compressed", "swap_used", "pressure_level", "thermal_state"]
     static let maxOnly: Set = ["pressure_level", "thermal_state"]
+    /// `processes.last_seen` of a process alive at the writer's last tick.
+    static let open = Double.infinity
+    /// What `last_seen` of an open process means: the first tick of the writer's last minute.
+    static let lastMinuteSQL = """
+        (SELECT MIN(ts) FROM system_samples WHERE ts >= (SELECT CAST(MAX(ts) / 60 AS INTEGER) * 60 FROM system_samples))
+        """
 
     public static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -84,6 +90,32 @@ public enum Schema {
             try db.create(table: "meta") { t in
                 t.primaryKey("key", .text)
                 t.column("value", .double).notNull()
+            }
+        }
+        // Time-first keys: a tick or a rolled bucket appends to the right edge of its b-tree and retention
+        // deletes from the left edge, so each commit dirties a few pages instead of one per process.
+        // No index or foreign key on process_id: either would scatter every insert again.
+        m.registerMigration("v2") { db in
+            let raw = "ts, process_id, cpu, mem, disk_r, disk_w, energy, gpu, net_in, net_out"
+            try db.execute(sql: """
+                CREATE TABLE process_samples_v2(
+                  ts REAL NOT NULL, process_id INTEGER NOT NULL, cpu REAL, mem INTEGER, disk_r REAL, disk_w REAL,
+                  energy REAL, gpu REAL, net_in REAL, net_out REAL, PRIMARY KEY(ts, process_id)) WITHOUT ROWID;
+                INSERT INTO process_samples_v2(\(raw)) SELECT \(raw) FROM process_samples ORDER BY ts, process_id;
+                DROP TABLE process_samples;
+                ALTER TABLE process_samples_v2 RENAME TO process_samples;
+                """)
+            for tier in ["process_minute", "process_hour"] {
+                let cols = "bucket, process_id, samples, " + procMetrics.map { "\($0)_avg, \($0)_max" }.joined(separator: ", ")
+                try db.execute(sql: """
+                    CREATE TABLE \(tier)_v2(
+                      bucket REAL NOT NULL, process_id INTEGER NOT NULL, samples INTEGER NOT NULL,
+                      \(procMetrics.map { "\($0)_avg REAL, \($0)_max REAL" }.joined(separator: ", ")),
+                      PRIMARY KEY(bucket, process_id)) WITHOUT ROWID;
+                    INSERT INTO \(tier)_v2(\(cols)) SELECT \(cols) FROM \(tier) ORDER BY bucket, process_id;
+                    DROP TABLE \(tier);
+                    ALTER TABLE \(tier)_v2 RENAME TO \(tier);
+                    """)
             }
         }
         return m

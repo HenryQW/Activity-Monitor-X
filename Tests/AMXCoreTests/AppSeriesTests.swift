@@ -214,3 +214,44 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
     #expect(procs.first { $0.pid == 1 }?.exited == false)
     #expect(procs.first { $0.pid == 2 }?.exited == true)
 }
+
+@Test func recordedStartIsTheEarliestSliceWithinTheRange() {
+    let t = [track(1, "A", [(40, 50, 1, 1)]), track(2, "B", [(30, 35, 1, 1), (60, 70, 1, 1)])]
+    #expect(AppSeries.recordedStart(t, from: 0) == 30)
+    // Recording older than the range: the range start holds.
+    #expect(AppSeries.recordedStart(t, from: 45) == 45)
+    #expect(AppSeries.recordedStart([], from: 10) == 10)
+}
+
+@Test func backfillJoinsOneProcessAndKeepsExitedOnes() {
+    func t(_ id: Int64, pid: Int32, _ slices: [(Double, Double)]) -> ProcessTrack {
+        ProcessTrack(processID: id, pid: pid, startTime: 7, name: "p", app: AppKey(key: "A", name: "A"),
+                     slices: slices.map { Slice(start: $0.0, end: $0.1, value: 1, peak: 1) })
+    }
+    let raw = [t(5, pid: 1, [(0, 50), (50, 100)]), t(6, pid: 2, [(60, 80)]), t(7, pid: 3, [(0, 40)])]
+    let live = [t(0, pid: 1, [(100, 101)]), t(0, pid: 4, [(100, 101)])]
+    let merged = LiveTracks.backfilled(live, raw: raw, from: 50)
+    // pid 3 ended before `from`; pid 1 keeps one track with its raw slice first.
+    #expect(merged.map(\.pid).sorted() == [1, 2, 4])
+    #expect(merged.first { $0.pid == 1 }!.slices.map(\.start) == [50, 100])
+    #expect(merged.first { $0.pid == 1 }!.processID == 0)
+}
+
+@Test func searchMatchesNamesPathAndExactPID() {
+    func rank(_ key: String, _ name: String, _ procs: [(Int32, String)]) -> AppRank {
+        AppRank(app: AppKey(key: key, name: name), average: 1, peak: 1, processes: procs.map {
+            ProcessRank(processID: Int64($0.0), pid: $0.0, startTime: 0, name: $0.1, average: 1, peak: 1, lastSeen: 0, exited: false)
+        })
+    }
+    let apps = [rank("/Applications/Café.app", "Café", [(12, "Café"), (13, "Café Helper")]),
+                rank("node", "node", [(123, "node")])]
+    #expect(AppSearch.filter(apps, query: "").count == 2)
+    #expect(AppSearch.filter(apps, query: "cafe").map(\.app.name) == ["Café"])
+    #expect(AppSearch.filter(apps, query: "cafe")[0].processes.count == 2)
+    #expect(AppSearch.filter(apps, query: "/applications").map(\.app.name) == ["Café"])
+    // Only a process matches: the app stays with just that process.
+    #expect(AppSearch.filter(apps, query: "helper")[0].processes.map(\.pid) == [13])
+    // A PID matches exactly, never as a prefix.
+    #expect(AppSearch.filter(apps, query: "12").flatMap { $0.processes.map(\.pid) } == [12])
+    #expect(AppSearch.filter(apps, query: "123").map(\.app.name) == ["node"])
+}

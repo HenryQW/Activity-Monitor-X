@@ -26,7 +26,7 @@ public struct ProcessTrack: Sendable {
     public let app: AppKey
     /// Executable path; nil when unknown.
     public let path: String?
-    /// `processes.last_seen` (written once a minute); for Live tracks, the ts of the last snapshot holding the process.
+    /// `processes.last_seen` (a minute's first tick); for Live tracks, the ts of the last snapshot holding the process.
     public let lastSeen: Double
     public let slices: [Slice]
 
@@ -63,11 +63,13 @@ public struct HistoryReader {
         let peak = tier.isRaw ? value : sum("_max")
         let start = end - range.seconds
         // A slice reaching `start` needs `last_seen + 60 > start`, so other processes are skipped.
+        // An open process was last seen in the writer's last minute.
         let metaSQL = """
-            SELECT id, pid, start_time, name, app_path, app_name, first_seen, last_seen, path
-            FROM processes WHERE last_seen > ? ORDER BY id
+            SELECT id, pid, start_time, name, app_path, app_name, first_seen,
+                   IIF(last_seen = ?1, MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen)), last_seen), path
+            FROM processes WHERE last_seen > ?2 ORDER BY id
             """
-        // In time order the index serves the order and each process folds its rows as they come:
+        // In time order the key serves the order and each process folds its rows as they come:
         // no join and no sort over the (up to ~900k) rows.
         let sql = """
             SELECT t.process_id, t.\(tier.time), \(value), \(peak)
@@ -87,14 +89,14 @@ public struct HistoryReader {
             // Raw rows follow the rollup: a gap past the hold means the row covered one 5 s tick.
             let sliceEnd = tier.isRaw && next.isFinite
                 ? min(next - t <= tier.hold ? next : t + 5, end)
-                : min(next, t + tier.hold, b.lastSeen + 60, end)  // last_seen is written once per minute
+                : min(next, t + tier.hold, b.lastSeen + 60, end)  // last_seen is a minute's first tick
             if sliceStart < sliceEnd { b.slices.append(Slice(start: sliceStart, end: sliceEnd, value: v, peak: pk)) }
         }
         // Stream with positional access: name-based Row copies dominated the 90-day query.
         var builders: [Builder] = []
         try pool.read { db in
             var slot: [Int64: Int] = [:]
-            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [start - 60])
+            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [Schema.open, start - 60])
             while let r = try metas.next() {
                 let id: Int64 = r[0], name: String = r[3], appPath: String? = r[4], appName: String? = r[5]
                 slot[id] = builders.count

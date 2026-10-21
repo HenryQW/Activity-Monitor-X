@@ -14,6 +14,8 @@ public struct ProcessRecord: Codable, FetchableRecord, PersistableRecord, Sendab
     public var uid: Int64?
     public var translated: Bool
     public var firstSeen: Double
+    /// `Schema.open` (+inf) while the process lives, which JSON cannot encode. Read it through
+    /// `HistoryReader`, which maps it to the first tick of the writer's last minute.
     public var lastSeen: Double
 
     enum CodingKeys: String, CodingKey {

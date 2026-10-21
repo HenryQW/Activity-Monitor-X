@@ -76,6 +76,15 @@ private func spans(_ t: ProcessTrack) -> [[Double]] { t.slices.map { [$0.start, 
         #expect(t.slices.last?.end == 160)
     }
 
+    @Test func openProcessStopsAtWritersLastMinute() throws {
+        let r = try Rig(lastSeen: .infinity)
+        try r.tier("process_minute", 0, cpu: 20)
+        // The writer's last ticks; it stopped at 125, in the minute that 121 opened.
+        try r.db.write { try $0.execute(sql: "INSERT INTO system_samples(ts) VALUES (116), (121), (125)") }
+        let t = try #require(try r.tracks(.day, .cpu, end: 3600).first)
+        #expect(t.slices.last?.end == 181)
+    }
+
     @Test func carryInFromBeforeRange() throws {
         let r = try Rig(lastSeen: 1e9)
         try r.tier("process_minute", -1800, cpu: 7)

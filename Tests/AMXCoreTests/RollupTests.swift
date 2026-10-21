@@ -230,7 +230,8 @@ private struct Rig {
         let stale = now - RetentionPolicy().hour - 1
         let gone = try r.addProcess(lastSeen: stale)
         let kept = try r.addProcess(lastSeen: stale)
-        try r.exec("INSERT INTO process_hour(process_id, bucket, samples) VALUES (\(kept), \(now - 3600), 1)")
+        // Its last row, in its last minute, is still within the hour tier's window.
+        try r.exec("INSERT INTO process_hour(process_id, bucket, samples) VALUES (\(kept), \(stale + 1), 1)")
         try r.run(now)
         let ids = try r.db.read { try Int64.fetchSet($0, sql: "SELECT id FROM processes") }
         #expect(!ids.contains(gone) && ids.contains(kept))
@@ -238,6 +239,22 @@ private struct Rig {
         let later = try r.addProcess(lastSeen: stale)
         try r.run(now + 599)
         #expect(try r.db.read { try ProcessRecord.exists($0, key: later) })
+    }
+
+    @Test func vacuumKeepsReusablePagesFree() throws {
+        let r = try Rig()
+        func free(after pages: Int) throws -> Int {
+            try r.exec("""
+                CREATE TABLE junk(x);
+                WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < \(pages))
+                INSERT INTO junk SELECT randomblob(3000) FROM n;
+                DROP TABLE junk;
+                """)
+            try r.run(b)
+            return try r.db.read { try Int.fetchOne($0, sql: "PRAGMA freelist_count")! }
+        }
+        #expect(try free(after: 100) > 90)
+        #expect(try free(after: 3000) == Rollup.reusable)
     }
 
     @Test func trimKeepsRawTheHourNeeds() throws {

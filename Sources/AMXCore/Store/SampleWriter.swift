@@ -1,8 +1,14 @@
 import Foundation
 import GRDB
 
-/// Writes one tick per `write` call in a single transaction. Process rows are sparse:
-/// a row is stored only when it changed enough, or once per minute as a heartbeat.
+/// Writes `ticksPerCommit` ticks per transaction: each commit rewrites the last page of every table it
+/// touches, so commits, not rows, set the bytes written. `flush` commits the ticks so far. Process rows
+/// are sparse: a row is stored only when it changed enough, or once per minute as a heartbeat.
+///
+/// `processes.last_seen` is `Schema.open` while a process lives; when it ends, it becomes the first tick
+/// of the last minute it was seen. Updating it every minute for every live process rewrote most of
+/// `processes`. Ends are written with the first tick of the next minute: until then readers take an open
+/// process to the first tick of the writer's last minute, which is the same value.
 public final class SampleWriter {
     private struct Last {
         var ts: Double
@@ -10,67 +16,131 @@ public final class SampleWriter {
         var diskR: Double, diskW: Double, netIn: Double, netOut: Double
     }
 
+    private struct Tick {
+        let now: Double
+        let processes: [ProcessSample]
+        let newProcesses: [(RawProcess, AppInfo, teamID: String?)]
+        let system: SystemSample
+    }
+
+    /// What the next tick compares against; applied only after its transaction commits.
+    private struct State {
+        var ids: [ProcessIdentity: Int64] = [:]
+        var last: [ProcessIdentity: Last] = [:]
+        /// The first tick of the latest minute each process was seen: its `last_seen` once it ends.
+        var lastSeen: [ProcessIdentity: Double] = [:]
+        /// `last_seen` of the processes that ended in the minute of the last tick, by id.
+        var ended: [Int64: Double] = [:]
+        var minute: Int?
+        var pressure: Int?
+        var thermal: Int?
+    }
+
     private let db: DatabaseQueue
     private let path: String
-    private(set) var ids: [ProcessIdentity: Int64] = [:]
-    private var last: [ProcessIdentity: Last] = [:]
-    private var lastSeenBucket: [ProcessIdentity: Int] = [:]
+    private let ticksPerCommit: Int
+    private var state = State()
+    private var queued: [Tick] = []
     /// New processes of a failed write; the sampler reports a process as new only once.
     private var pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)] = [:]
-    private var lastPressure: Int?
-    private var lastThermal: Int?
+    var ids: [ProcessIdentity: Int64] { state.ids }
 
-    public init(db: DatabaseQueue, path: String) {
+    /// Closes the processes a previous writer left open at that writer's last minute; the ones still
+    /// alive reopen on their first write.
+    public init(db: DatabaseQueue, path: String, ticksPerCommit: Int = 1) throws {
         self.db = db
         self.path = path
+        self.ticksPerCommit = ticksPerCommit
+        do {
+            try db.write { db in
+                try db.execute(sql: """
+                    UPDATE processes SET last_seen = MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen))
+                    WHERE last_seen = ?
+                    """, arguments: [Schema.open])
+            }
+        } catch {
+            throw StoreError(path: path, underlying: error)
+        }
     }
 
     public func write(now: Double, processes: [ProcessSample],
                       newProcesses: [(RawProcess, AppInfo, teamID: String?)], system: SystemSample) throws {
-        // State is applied only after the transaction commits.
-        var newIds = ids, newLast = last, newBuckets = lastSeenBucket
-        let bucket = Int((now / 60).rounded(.down))
-        let live = Set(processes.map(\.identity))
-        var inserts = pending.filter { live.contains($0.key) }
-        for n in newProcesses { inserts[n.0.identity] = n }
+        queued.append(Tick(now: now, processes: processes, newProcesses: newProcesses, system: system))
+        if queued.count >= ticksPerCommit { try flush() }
+    }
+
+    public func flush() throws {
+        guard let lastTick = queued.last else { return }
+        let ticks = queued
+        queued = []
+        var next = state
         do {
             try db.write { db in
-                for (raw, app, teamID) in inserts.values {
-                    let record = ProcessRecord(
-                        pid: raw.identity.pid, startTime: raw.identity.startTime, name: raw.name, path: raw.path,
-                        appPath: app.appPath, appName: app.appName, bundleId: app.bundleID, teamId: teamID,
-                        uid: Int64(raw.uid), translated: raw.translated, firstSeen: now, lastSeen: now)
-                    try record.insert(db, onConflict: .ignore)
-                    // An ignored insert can leave a stale rowid in `record`, so always look it up.
-                    newIds[raw.identity] = try Self.fetchId(db, raw.identity)
-                    newBuckets[raw.identity] = bucket
+                var carried = pending
+                for tick in ticks {
+                    try apply(tick, carrying: carried, to: &next, db)
+                    carried = [:]
                 }
-                for p in processes {
-                    guard let id = newIds[p.identity] else { continue }
-                    if newBuckets[p.identity] != bucket {
-                        try ProcessRecord.filter(Column("id") == id).updateAll(db, Column("last_seen").set(to: now))
-                        newBuckets[p.identity] = bucket
-                    }
-                    guard Self.shouldWrite(p, last: newLast[p.identity], now: now) else { continue }
-                    try ProcessSampleRecord(processId: id, ts: now, cpu: p.cpu, mem: Int64(p.mem), diskR: p.diskR,
-                                            diskW: p.diskW, energy: p.energy, gpu: p.gpu,
-                                            netIn: p.netIn, netOut: p.netOut).insert(db)
-                    newLast[p.identity] = Last(ts: now, cpu: p.cpu, mem: p.mem, gpu: p.gpu, diskR: p.diskR,
-                                               diskW: p.diskW, netIn: p.netIn, netOut: p.netOut)
-                }
-                try Self.record(system, now: now).insert(db)
-                try events(system, now: now, processes: processes, ids: newIds).forEach { try $0.insert(db) }
             }
         } catch {
-            pending = inserts
+            let live = Set(lastTick.processes.map(\.identity))
+            for n in ticks.flatMap(\.newProcesses) { pending[n.0.identity] = n }
+            pending = pending.filter { live.contains($0.key) }
             throw StoreError(path: path, underlying: error)
         }
         pending = [:]
-        ids = newIds.filter { live.contains($0.key) }
-        last = newLast.filter { live.contains($0.key) }
-        lastSeenBucket = newBuckets.filter { live.contains($0.key) }
-        lastPressure = system.pressureLevel
-        lastThermal = system.thermalState
+        state = next
+    }
+
+    private func apply(_ tick: Tick, carrying pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)],
+                       to s: inout State, _ db: Database) throws {
+        let now = tick.now
+        let bucket = Int((now / 60).rounded(.down))
+        let live = Set(tick.processes.map(\.identity))
+        var inserts = pending.filter { live.contains($0.key) }
+        for n in tick.newProcesses { inserts[n.0.identity] = n }
+        for (identity, id) in s.ids where !live.contains(identity) { s.ended[id] = s.lastSeen[identity]! }
+        for (raw, app, teamID) in inserts.values {
+            let record = ProcessRecord(
+                pid: raw.identity.pid, startTime: raw.identity.startTime, name: raw.name, path: raw.path,
+                appPath: app.appPath, appName: app.appName, bundleId: app.bundleID, teamId: teamID,
+                uid: Int64(raw.uid), translated: raw.translated, firstSeen: now, lastSeen: Schema.open)
+            try record.insert(db, onConflict: .ignore)
+            // An ignored insert can leave a stale rowid in `record`, so always look it up.
+            guard let id = try Self.fetchId(db, raw.identity) else { continue }
+            // Seen by an earlier writer, which closed it.
+            try ProcessRecord.filter(key: id).filter(Column("last_seen") != Schema.open)
+                .updateAll(db, Column("last_seen").set(to: Schema.open))
+            s.ids[raw.identity] = id
+            s.lastSeen[raw.identity] = now
+            s.ended[id] = nil
+        }
+        if bucket != s.minute {
+            for (id, seen) in s.ended {
+                try ProcessRecord.filter(key: id).updateAll(db, Column("last_seen").set(to: seen))
+            }
+            s.ended = [:]
+        }
+        for p in tick.processes {
+            guard let id = s.ids[p.identity] else { continue }
+            if let seen = s.lastSeen[p.identity], Int((seen / 60).rounded(.down)) != bucket {
+                s.lastSeen[p.identity] = now
+            }
+            guard Self.shouldWrite(p, last: s.last[p.identity], now: now) else { continue }
+            try ProcessSampleRecord(processId: id, ts: now, cpu: p.cpu, mem: Int64(p.mem), diskR: p.diskR,
+                                    diskW: p.diskW, energy: p.energy, gpu: p.gpu,
+                                    netIn: p.netIn, netOut: p.netOut).insert(db)
+            s.last[p.identity] = Last(ts: now, cpu: p.cpu, mem: p.mem, gpu: p.gpu, diskR: p.diskR,
+                                      diskW: p.diskW, netIn: p.netIn, netOut: p.netOut)
+        }
+        try Self.record(tick.system, now: now).insert(db)
+        try Self.events(tick.system, now: now, processes: tick.processes, state: s).forEach { try $0.insert(db) }
+        s.minute = bucket
+        s.ids = s.ids.filter { live.contains($0.key) }
+        s.last = s.last.filter { live.contains($0.key) }
+        s.lastSeen = s.lastSeen.filter { live.contains($0.key) }
+        s.pressure = tick.system.pressureLevel
+        s.thermal = tick.system.thermalState
     }
 
     private static func fetchId(_ db: Database, _ identity: ProcessIdentity) throws -> Int64? {
@@ -101,16 +171,16 @@ public final class SampleWriter {
     }
 
     /// Events fire on change from the last written level; the first tick only sets the baseline.
-    private func events(_ s: SystemSample, now: Double, processes: [ProcessSample],
-                        ids: [ProcessIdentity: Int64]) -> [EventRecord] {
+    private static func events(_ s: SystemSample, now: Double, processes: [ProcessSample],
+                               state: State) -> [EventRecord] {
         var out: [EventRecord] = []
-        if let lastPressure, lastPressure != s.pressureLevel {
-            let top = processes.max { $0.mem < $1.mem }.flatMap { ids[$0.identity] }
+        if let lastPressure = state.pressure, lastPressure != s.pressureLevel {
+            let top = processes.max { $0.mem < $1.mem }.flatMap { state.ids[$0.identity] }
             let word = [1: "normal", 2: "warning", 4: "critical"][s.pressureLevel] ?? "level \(s.pressureLevel)"
             out.append(EventRecord(ts: now, kind: "pressure", severity: [1: 0, 2: 1, 4: 2][s.pressureLevel] ?? 0,
                                    processId: top, message: "Memory pressure \(word)", value: s.pressurePct))
         }
-        if let lastThermal, lastThermal != s.thermalState {
+        if let lastThermal = state.thermal, lastThermal != s.thermalState {
             let word = ["nominal", "fair", "serious", "critical"][safe: s.thermalState] ?? "state \(s.thermalState)"
             out.append(EventRecord(ts: now, kind: "thermal", severity: s.thermalState,
                                    message: "Thermal state \(word)", value: Double(s.thermalState)))

@@ -1,3 +1,4 @@
+import AMXCore
 import SwiftUI
 
 struct MainWindow: View {
@@ -19,7 +20,8 @@ struct MainWindow: View {
                 }
                 if !appSelection.pinned.isEmpty {
                     Section("Pinned Apps") {
-                        ForEach(appSelection.pinned, id: \.key) { app in
+                        ForEach(appSelection.pinned.filter { appSelection.search.isEmpty || AppSearch.matches($0, appSelection.search) },
+                                id: \.key) { app in
                             Label(app.name, systemImage: "pin")
                                 .help(app.key)
                                 .tag(SidebarItem.pinned(app))
@@ -36,11 +38,21 @@ struct MainWindow: View {
                 case .pinned(let app): TimelineView(focus: app)
                 }
             }
-            .toolbar(id: "main") { MainToolbar(history: history, selection: appSelection) }
+            // A new id drops toolbar layouts saved before Metric moved to the centre.
+            .toolbar(id: "window") { MainToolbar(history: history, selection: appSelection) }
+            .frame(minHeight: 480)
+            // With the inspector open the window minimum is sidebar + this + twice the inspector's ideal width
+            // (measured): 180 + 560 + 2 × 280 = 1300 pt, which leaves the detail the 840 pt its toolbar needs.
+            .navigationSplitViewColumnWidth(min: 560, ideal: 980)
         }
+        .searchable(text: Bindable(appSelection).query, isPresented: Bindable(appSelection).searchPresented, placement: .toolbar,
+                    prompt: "App, process or PID")
+        // The toolbar fits without » from a 1000 pt window (measured), with the sidebar shown or hidden. Applied here,
+        // before the inspector, this minimum does not hold the inspector's width as well.
+        .frame(minWidth: 1020)
         .inspector(isPresented: Bindable(appSelection).inspectorShown) {
             InspectorView()
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 340)
+                .inspectorColumnWidth(min: 240, ideal: 280, max: 400)
         }
         .focusedSceneValue(\.sidebarSelection, _selection.projectedValue)
         .modifier(SignalConfirmation())

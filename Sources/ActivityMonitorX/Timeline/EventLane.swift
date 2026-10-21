@@ -2,7 +2,8 @@ import AMXCore
 import Charts
 import SwiftUI
 
-/// Pressure ▲ and thermal ◆ markers on the chart's x scale, in the headroom strip at the top of the plot.
+/// Pressure ▲ and thermal ◆ markers on the chart's x scale, in the headroom strip at the top of the plot. Shape is the
+/// kind, colour the severity: yellow warns, red is critical; the app palette uses neither.
 struct EventLane: View {
     let events: [EventMark]
     let proxy: ChartProxy
@@ -13,7 +14,7 @@ struct EventLane: View {
                 let plot = geo[anchor]
                 ForEach(events.indices, id: \.self) { i in
                     let event = events[i]
-                    if case let (symbol, color)? = Self.style(event.kind),
+                    if case let (symbol, color)? = Self.style(event),
                        let x = proxy.position(forX: Date(timeIntervalSince1970: event.ts)), (0...plot.width).contains(x) {
                         Image(systemName: symbol)
                             .font(.system(size: 9))
@@ -27,11 +28,14 @@ struct EventLane: View {
         }
     }
 
-    private static func style(_ kind: String) -> (String, Color)? {
-        switch kind {
-        case "pressure": ("triangle.fill", .orange)
-        case "thermal": ("diamond.fill", .purple)
-        default: nil
+    private static func style(_ event: EventMark) -> (String, Color)? {
+        let symbol: String, warning: Int, critical: Int
+        switch event.kind {
+        case "pressure": (symbol, warning, critical) = ("triangle.fill", 1, 2)
+        // Thermal "fair" (1) is not yet a warning.
+        case "thermal": (symbol, warning, critical) = ("diamond.fill", 2, 3)
+        default: return nil
         }
+        return (symbol, event.severity >= critical ? .red : event.severity >= warning ? .yellow : .secondary)
     }
 }

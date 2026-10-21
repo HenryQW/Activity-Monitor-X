@@ -46,7 +46,7 @@ final class Daemon: @unchecked Sendable {
             attributes: [.posixPermissions: 0o755])
         db = try Store.openWriter(path: dbPath)
         try db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_autocheckpoint=0") }
-        writer = SampleWriter(db: db, path: dbPath)
+        writer = try SampleWriter(db: db, path: dbPath, ticksPerCommit: AMX.ticksPerCommit)
         self.xpc = xpc
         self.dbPath = dbPath
     }
@@ -60,6 +60,7 @@ final class Daemon: @unchecked Sendable {
         term.setEventHandler { [self] in
             timer?.cancel()
             nettop.stop()
+            flush()
             checkpoint()
             exit(0)
         }
@@ -127,12 +128,21 @@ final class Daemon: @unchecked Sendable {
 
         ticks += 1
         if ticks % Self.rollupEvery == 0 {
+            flush()  // the rollup reads every tick so far
             do {
                 try Rollup.run(db: db, now: now, policy: RetentionPolicy())
             } catch {
                 log.error("rollup failed: \(String(describing: error), privacy: .public)")
             }
-            checkpoint()
+        }
+        if ticks % AMX.ticksPerCheckpoint == 0 { checkpoint() }
+    }
+
+    private func flush() {
+        do {
+            try writer.flush()
+        } catch {
+            log.error("write failed: \(String(describing: error), privacy: .public)")
         }
     }
 

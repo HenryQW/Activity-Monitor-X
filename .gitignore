@@ -3,3 +3,4 @@
 .context/
 *.p12
 .DS_Store
+.claude/worktrees/
