@@ -4,6 +4,17 @@ public enum Metric: String, CaseIterable, Sendable {
     /// The metrics stored per process; `score` is blended from them at read time.
     public static let recorded: [Metric] = allCases.filter { $0 != .score }
 
+    public var unit: String {
+        switch self {
+        case .cpu: "% of one core"
+        case .memory: "bytes"
+        case .disk, .network: "bytes/s"
+        case .energy: "energy impact"
+        case .gpu: "% GPU"
+        case .score: "% of this Mac, 0 to 100 (0.5 x cpu/cores + 50 x mem/memory)"
+        }
+    }
+
     /// Underlying process columns; the metric is their sum.
     var columns: [String] {
         switch self {

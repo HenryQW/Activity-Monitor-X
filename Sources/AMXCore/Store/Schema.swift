@@ -14,6 +14,8 @@ public enum Schema {
     static let lastMinuteSQL = """
         (SELECT MIN(ts) FROM system_samples WHERE ts >= (SELECT CAST(MAX(ts) / 60 AS INTEGER) * 60 FROM system_samples))
         """
+    /// The `last_seen` an open process reads as, over a `processes` row: `lastMinuteSQL`, never before `first_seen`.
+    static let openLastSeenSQL = "MAX(first_seen, IFNULL(\(lastMinuteSQL), first_seen))"
 
     public static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()

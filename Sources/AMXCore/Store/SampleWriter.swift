@@ -56,7 +56,7 @@ public final class SampleWriter {
         do {
             try db.write { db in
                 try db.execute(sql: """
-                    UPDATE processes SET last_seen = MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen))
+                    UPDATE processes SET last_seen = \(Schema.openLastSeenSQL)
                     WHERE last_seen = ?
                     """, arguments: [Schema.open])
             }
@@ -198,19 +198,15 @@ public final class SampleWriter {
         var out: [EventRecord] = []
         if let lastPressure = state.pressure, lastPressure != s.pressureLevel {
             let top = processes.max { $0.mem < $1.mem }.flatMap { state.ids[$0.identity] }
-            let word = [1: "normal", 2: "warning", 4: "critical"][s.pressureLevel] ?? "level \(s.pressureLevel)"
             out.append(EventRecord(ts: now, kind: "pressure", severity: [1: 0, 2: 1, 4: 2][s.pressureLevel] ?? 0,
-                                   processId: top, message: "Memory pressure \(word)", value: s.pressurePct))
+                                   processId: top, message: "Memory pressure \(SystemState.pressure(s.pressureLevel))",
+                                   value: s.pressurePct))
         }
         if let lastThermal = state.thermal, lastThermal != s.thermalState {
-            let word = ["nominal", "fair", "serious", "critical"][safe: s.thermalState] ?? "state \(s.thermalState)"
             out.append(EventRecord(ts: now, kind: "thermal", severity: s.thermalState,
-                                   message: "Thermal state \(word)", value: Double(s.thermalState)))
+                                   message: "Thermal state \(SystemState.thermal(s.thermalState))",
+                                   value: Double(s.thermalState)))
         }
         return out
     }
-}
-
-private extension Array {
-    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }

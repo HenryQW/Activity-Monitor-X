@@ -6,7 +6,14 @@ private let tables = ["processes", "process_samples", "process_minute", "process
                       "system_samples", "system_minute", "system_hour", "events", "meta"]
 
 func usage() -> Never {
-    FileHandle.standardError.write(Data("usage: amx ping\n       amx stats [--db <path>]\n".utf8))
+    FileHandle.standardError.write(Data("""
+        usage: amx ping
+               amx stats [--db <path>]
+               amx tools
+               amx call <tool> [<json-object>] [--db <path>] [--groups <path>]
+               amx mcp [--db <path>] [--groups <path>]
+
+        """.utf8))
     exit(64)
 }
 
@@ -45,18 +52,72 @@ func stats(path: String) -> Never {
     exit(0)
 }
 
+func context(_ options: [String: String]) -> AgentContext {
+    let groups = options["--groups"].map { URL(fileURLWithPath: $0) } ?? GroupStore.defaultURL
+    do {
+        let pool = try Store.openReader(path: options["--db"] ?? AMX.databasePath, prepare: AgentSQL.views)
+        return AgentContext(pool: pool, groups: { try GroupStore.load(from: groups) })
+    } catch {
+        fail("\(error)")
+    }
+}
+
+func call(_ tool: String, arguments: String, context: AgentContext) -> Never {
+    do {
+        print(String(decoding: try AgentTools.call(tool, arguments: Data(arguments.utf8), context: context), as: UTF8.self))
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
+
+func mcp(context: AgentContext) -> Never {
+    while let line = readLine() {
+        guard let reply = MCPHandler.handle(line: line, context: context) else { continue }
+        print(reply)
+        fflush(stdout)
+    }
+    exit(0)
+}
+
+/// Splits `--db <path>` and `--groups <path>` from positional arguments.
+func parse(_ args: ArraySlice<String>, options allowed: Set<String>) -> (positional: [String], options: [String: String]) {
+    var (args, positional, options) = (args, [String](), [String: String]())
+    while let arg = args.popFirst() {
+        if allowed.contains(arg) {
+            guard let value = args.popFirst() else { usage() }
+            options[arg] = value
+        } else {
+            guard !arg.hasPrefix("--") else { usage() }
+            positional.append(arg)
+        }
+    }
+    return (positional, options)
+}
+
 var args = CommandLine.arguments.dropFirst()
 switch args.popFirst() {
 case "ping":
     guard args.isEmpty else { usage() }
     ping()
 case "stats":
-    var path = AMX.databasePath
-    while let arg = args.popFirst() {
-        guard arg == "--db", let value = args.popFirst() else { usage() }
-        path = value
+    let (positional, options) = parse(args, options: ["--db"])
+    guard positional.isEmpty else { usage() }
+    stats(path: options["--db"] ?? AMX.databasePath)
+case "tools":
+    guard args.isEmpty else { usage() }
+    for spec in AgentTools.catalog {
+        print("\(spec.name)\t\(spec.description.prefix { $0 != "\n" })")
     }
-    stats(path: path)
+    exit(0)
+case "call":
+    let (positional, options) = parse(args, options: ["--db", "--groups"])
+    guard (1...2).contains(positional.count) else { usage() }
+    call(positional[0], arguments: positional.count == 2 ? positional[1] : "{}", context: context(options))
+case "mcp":
+    let (positional, options) = parse(args, options: ["--db", "--groups"])
+    guard positional.isEmpty else { usage() }
+    mcp(context: context(options))
 default:
     usage()
 }

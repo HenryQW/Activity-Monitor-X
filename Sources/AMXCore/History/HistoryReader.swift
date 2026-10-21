@@ -64,8 +64,12 @@ public struct HistoryReader {
     }
 
     public func tracks(range: HistoryRange, metric: Metric, end: Double) throws -> [ProcessTrack] {
+        try tracks(source: range.source, from: end - range.seconds, to: end, metric: metric)
+    }
+
+    public func tracks(source: HistorySource, from start: Double, to end: Double, metric: Metric) throws -> [ProcessTrack] {
         let tier: Tier
-        switch range.source {
+        switch source {
         case .live: preconditionFailure("live range is served over XPC, not the database")
         case .raw: tier = Tier(table: "process_samples", time: "ts", hold: 65, isRaw: true)
         case .minute: tier = Tier(table: "process_minute", time: "bucket", hold: 3660, isRaw: false)
@@ -80,12 +84,11 @@ public struct HistoryReader {
         }
         let value = sum(tier.isRaw ? "" : "_avg")
         let peak = tier.isRaw ? value : sum("_max")
-        let start = end - range.seconds
         // A slice reaching `start` needs `last_seen + 60 > start`, so other processes are skipped.
         // An open process was last seen in the writer's last minute.
         let metaSQL = """
             SELECT id, pid, start_time, name, app_path, app_name, first_seen,
-                   IIF(last_seen = ?1, MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen)), last_seen), path,
+                   IIF(last_seen = ?1, \(Schema.openLastSeenSQL), last_seen), path,
                    bundle_id, team_id
             FROM processes WHERE last_seen > ?2 ORDER BY id
             """
@@ -155,6 +158,18 @@ public struct SystemPoint: Sendable {
     public let thermalState: Int
 }
 
+/// Words for a stored memory pressure level (the kernel's 1, 2, 4) and thermal state (0 to 3).
+public enum SystemState {
+    public static func pressure(_ level: Int) -> String {
+        [1: "normal", 2: "warning", 4: "critical"][level] ?? "level \(level)"
+    }
+
+    public static func thermal(_ state: Int) -> String {
+        let words = ["nominal", "fair", "serious", "critical"]
+        return words.indices.contains(state) ? words[state] : "state \(state)"
+    }
+}
+
 public struct EventMark: Sendable {
     public let ts: Double
     public let kind: String
@@ -166,16 +181,19 @@ public struct EventMark: Sendable {
 extension HistoryReader {
     /// System tiers are dense, so each chart bucket averages the rows inside it; empty buckets are omitted.
     public func system(range: HistoryRange, end: Double) throws -> [SystemPoint] {
+        try system(source: range.source, from: end - range.seconds, to: end, bucket: range.chartBucket)
+    }
+
+    public func system(source: HistorySource, from start: Double, to end: Double, bucket: Double) throws -> [SystemPoint] {
         let table: String, time: String, cpu: String, mem: String, pressure: String, thermal: String
-        switch range.source {
+        switch source {
         case .live: preconditionFailure("live range is served over XPC, not the database")
         case .raw:
             (table, time, cpu, mem, pressure, thermal) = ("system_samples", "ts", "cpu", "mem_used", "pressure_level", "thermal_state")
         case .minute, .hour:
-            table = range.source == .minute ? "system_minute" : "system_hour"
+            table = source == .minute ? "system_minute" : "system_hour"
             (time, cpu, mem, pressure, thermal) = ("bucket", "cpu_avg", "mem_used_avg", "pressure_level_max", "thermal_state_max")
         }
-        let start = end - range.seconds
         let sql = """
             SELECT CAST((\(time) - ?1) / ?3 AS INTEGER) AS b,
                    AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal
@@ -183,8 +201,8 @@ extension HistoryReader {
             GROUP BY b ORDER BY b
             """
         return try pool.read { db in
-            try Row.fetchAll(db, sql: sql, arguments: [start, end, range.chartBucket]).map {
-                SystemPoint(bucket: start + Double($0["b"] as Int) * range.chartBucket,
+            try Row.fetchAll(db, sql: sql, arguments: [start, end, bucket]).map {
+                SystemPoint(bucket: start + Double($0["b"] as Int) * bucket,
                             cpu: $0["cpu"] ?? 0, memUsed: $0["mem"] ?? 0,
                             pressureLevel: $0["pressure"] ?? 0, thermalState: $0["thermal"] ?? 0)
             }

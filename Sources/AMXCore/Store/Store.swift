@@ -30,10 +30,12 @@ public enum Store {
         }
     }
 
-    public static func openReader(path: String) throws -> DatabasePool {
+    /// `prepare` runs on each new connection, e.g. `AgentSQL.views`.
+    public static func openReader(path: String, prepare: (@Sendable (Database) throws -> Void)? = nil) throws -> DatabasePool {
         var config = Configuration()
         config.readonly = true
         config.busyMode = .timeout(5)
+        if let prepare { config.prepareDatabase(prepare) }
         return try DatabasePool(path: path, configuration: config)
     }
 }
