@@ -1,0 +1,7 @@
+time,,bytes_in,bytes_out,
+17:59:46.938972,ExampleApp.101,0,0,
+17:59:46.938973,ExampleHelper.202,2620529,7151871,
+17:59:46.938974,ExampleDaemon.303,15,40,
+time,,bytes_in,bytes_out,
+17:59:51.938972,ExampleApp.101,100,200,
+17:59:51.938973,ExampleHelper.202,2620629,7151971,

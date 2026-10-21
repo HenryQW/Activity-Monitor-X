@@ -1,0 +1,21 @@
+// swift-tools-version: 6.0
+import PackageDescription
+
+let package = Package(
+    name: "ActivityMonitorX",
+    platforms: [.macOS("26.0")],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift", exact: "7.11.1"),
+    ],
+    targets: [
+        .target(name: "CAMX"),
+        .target(name: "AMXCore", dependencies: [
+            "CAMX",
+            .product(name: "GRDB", package: "GRDB.swift"),
+        ]),
+        .executableTarget(name: "amxd", dependencies: ["AMXCore"]),
+        .executableTarget(name: "amx", dependencies: ["AMXCore"]),
+        .testTarget(name: "AMXCoreTests", dependencies: ["AMXCore"]),
+    ],
+    swiftLanguageModes: [.v6]
+)
