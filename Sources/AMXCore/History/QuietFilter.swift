@@ -10,6 +10,7 @@ public enum QuietFilter {
     public static func threshold(_ metric: Metric) -> Double {
         switch metric {
         case .cpu, .energy, .gpu: 1
+        case .score: 0.5
         case .memory: 100_000_000
         case .disk, .network: 100_000
         }
@@ -20,8 +21,7 @@ public enum QuietFilter {
         let limit = threshold(metric)
         var result = Set<Int>()
         for (i, track) in tracks.enumerated() where isSystem(path: track.path) {
-            let area = track.slices.reduce(0) { $0 + $1.value * max(min($1.end, to) - max($1.start, from), 0) }
-            if area / (to - from) < limit { result.insert(i) }
+            if track.average(from: from, to: to) < limit { result.insert(i) }
         }
         return result
     }

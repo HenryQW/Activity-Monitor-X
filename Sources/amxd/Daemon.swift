@@ -30,6 +30,7 @@ final class Daemon: @unchecked Sendable {
     private var xpcService: XPCService?
     /// Team ID per executable path; nil means unsigned or no team.
     private var teamIDs: [String: String?] = [:]
+    private var backfill = TeamIDBackfill()
     private var ticks = 0
     private var timer: DispatchSourceTimer?
     private var sigterm: DispatchSourceSignal?
@@ -49,6 +50,11 @@ final class Daemon: @unchecked Sendable {
         writer = try SampleWriter(db: db, path: dbPath, ticksPerCommit: AMX.ticksPerCommit)
         self.xpc = xpc
         self.dbPath = dbPath
+        do {
+            backfill.enqueue(try writer.pathsWithoutTeamID())
+        } catch {
+            log.error("backfill scan failed: \(String(describing: error), privacy: .public)")
+        }
     }
 
     func run() -> Never {
@@ -104,17 +110,17 @@ final class Daemon: @unchecked Sendable {
 
         var budget = Self.teamIDBudget
         let attributed = sampled.new.map { raw -> (RawProcess, AppInfo, teamID: String?) in
-            let app = AppAttribution.app(forExecutable: raw.path, processName: raw.name)
+            let app = attribute(raw)
             var team: String?
-            // Over budget: written without a team ID (no backfill in M1).
+            // Over budget: written without a team ID, which the backfill fills in later.
             if let path = raw.path {
                 if let cached = teamIDs[path] {
                     team = cached
                 } else if budget > 0 {
                     budget -= 1
-                    if teamIDs.count >= 4096 { teamIDs.removeAll() }
-                    team = CodeSigning.teamID(forPath: path)
-                    teamIDs[path] = team
+                    team = resolveTeamID(path)
+                } else {
+                    backfill.enqueue([path])
                 }
             }
             return (raw, app, team)
@@ -126,6 +132,13 @@ final class Daemon: @unchecked Sendable {
             log.error("write failed: \(String(describing: error), privacy: .public)")
         }
 
+        // Unused budget. A cached path still takes a slot but needs no lookup, so no path is looked up twice.
+        var found: [String: String] = [:]
+        for path in backfill.take(budget) {
+            if let team = teamIDs[path] ?? resolveTeamID(path) { found[path] = team }
+        }
+        if !found.isEmpty { writer.backfillTeamIDs(found) }
+
         ticks += 1
         if ticks % Self.rollupEvery == 0 {
             flush()  // the rollup reads every tick so far
@@ -136,6 +149,19 @@ final class Daemon: @unchecked Sendable {
             }
         }
         if ticks % AMX.ticksPerCheckpoint == 0 { checkpoint() }
+    }
+
+    private func resolveTeamID(_ path: String) -> String? {
+        if teamIDs.count >= 4096 { teamIDs.removeAll() }
+        let team = CodeSigning.teamID(forPath: path)
+        teamIDs[path] = team
+        return team
+    }
+
+    /// Recording and Live share this rule. Rows already written keep their app (M3-D5).
+    private func attribute(_ raw: RawProcess) -> AppInfo {
+        AppAttribution.app(forExecutable: raw.path, processName: raw.name,
+                           responsiblePath: Responsibility.responsiblePath(of: raw.identity.pid))
     }
 
     private func flush() {
@@ -173,7 +199,7 @@ final class Daemon: @unchecked Sendable {
         let sampled = live.processes.sample(now: now, gpuNanos: GPUReader.processNanos())
         let sys = live.system.sample(now: now)
         for raw in sampled.new {
-            live.apps[raw.identity] = (raw.name, raw.path, AppAttribution.app(forExecutable: raw.path, processName: raw.name))
+            live.apps[raw.identity] = (raw.name, raw.path, attribute(raw))
         }
         let alive = Set(sampled.samples.map(\.identity))
         live.apps = live.apps.filter { alive.contains($0.key) }
@@ -189,7 +215,8 @@ final class Daemon: @unchecked Sendable {
             return LiveProcess(pid: s.identity.pid, startTime: s.identity.startTime, name: name,
                                appKey: app.appPath ?? name, appName: app.appName, path: path, cpu: s.cpu, mem: s.mem,
                                diskR: s.diskR, diskW: s.diskW, netIn: net?.inPerSec ?? 0,
-                               netOut: net?.outPerSec ?? 0, gpu: s.gpu, energy: s.energy)
+                               netOut: net?.outPerSec ?? 0, gpu: s.gpu, energy: s.energy,
+                               bundleID: app.bundleID, teamID: path.flatMap { teamIDs[$0] ?? nil })
         }
         let snapshot = LiveSnapshot(ts: now, system: LiveSystem(cpu: sys.cpu, memUsed: sys.memUsed,
                                                                 pressureLevel: sys.pressureLevel,

@@ -15,6 +15,23 @@ import Testing
         #expect(decoded == snapshot)
     }
 
+    @Test func liveSnapshotWithoutNewFieldsDecodes() throws {
+        let json = """
+            {"pid":1,"startTime":2,"name":"p","appKey":"p","appName":"p","cpu":0,"mem":0,"diskR":0,"diskW":0,
+             "netIn":0,"netOut":0,"gpu":0,"energy":0}
+            """
+        let p = try JSONDecoder().decode(LiveProcess.self, from: Data(json.utf8))
+        #expect(p.bundleID == nil && p.teamID == nil)
+    }
+
+    @Test func liveScore() {
+        let p = LiveProcess(pid: 7, startTime: 1, name: "p", appKey: "p", appName: "p", path: nil, cpu: 100, mem: 0,
+                            diskR: 0, diskW: 0, netIn: 0, netOut: 0, gpu: 0, energy: 0)
+        let snap = LiveSnapshot(ts: 0, system: LiveSystem(cpu: 0, memUsed: 0, pressureLevel: 0, thermalState: 0), processes: [p])
+        let device = Device(cores: 10, memory: 17_179_869_184)
+        #expect(LiveTracks.build([snap], metric: .score, device: device)[0].slices[0].value == 5)
+    }
+
     @Test func liveDemandStopsAfterThreeSeconds() {
         var demand = LiveDemand()
         #expect(!demand.shouldSample(now: 0))

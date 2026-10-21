@@ -29,18 +29,34 @@ public struct ProcessTrack: Sendable {
     /// `processes.last_seen` (a minute's first tick); for Live tracks, the ts of the last snapshot holding the process.
     public let lastSeen: Double
     public let slices: [Slice]
+    /// The attributed app's bundle ID and the executable's team ID, for group rules.
+    public let bundleID: String?
+    public let teamID: String?
 
     public init(processID: Int64, pid: Int32, startTime: Double, name: String, app: AppKey, path: String? = nil,
-                lastSeen: Double = 0, slices: [Slice]) {
+                lastSeen: Double = 0, slices: [Slice], bundleID: String? = nil, teamID: String? = nil) {
         (self.processID, self.pid, self.startTime, self.name, self.app, self.path, self.lastSeen, self.slices)
             = (processID, pid, startTime, name, app, path, lastSeen, slices)
+        (self.bundleID, self.teamID) = (bundleID, teamID)
+    }
+
+    public var candidate: GroupCandidate { GroupCandidate(name: name, path: path, bundleID: bundleID, teamID: teamID) }
+
+    /// Time-weighted mean over [from, to): the slices clipped to the window, a gap counting as 0.
+    public func average(from: Double, to: Double) -> Double {
+        slices.reduce(0) { $0 + $1.value * max(min($1.end, to) - max($1.start, from), 0) } / (to - from)
     }
 }
 
 public struct HistoryReader {
     public let pool: DatabasePool
 
-    public init(pool: DatabasePool) { self.pool = pool }
+    public let device: Device
+
+    public init(pool: DatabasePool, device: Device = .current) {
+        self.pool = pool
+        self.device = device
+    }
 
     private struct Tier {
         let table: String, time: String, hold: Double
@@ -57,7 +73,10 @@ public struct HistoryReader {
         }
         // Raw rows carry no max; the peak of a raw value is the value.
         func sum(_ suffix: String) -> String {
-            metric.columns.map { "IFNULL(t.\($0)\(suffix), 0)" }.joined(separator: " + ")
+            if metric == .score {
+                return "0.5 * IFNULL(t.cpu\(suffix), 0) / \(device.cores) + 50.0 * IFNULL(t.mem\(suffix), 0) / \(device.memory)"
+            }
+            return metric.columns.map { "IFNULL(t.\($0)\(suffix), 0)" }.joined(separator: " + ")
         }
         let value = sum(tier.isRaw ? "" : "_avg")
         let peak = tier.isRaw ? value : sum("_max")
@@ -66,7 +85,8 @@ public struct HistoryReader {
         // An open process was last seen in the writer's last minute.
         let metaSQL = """
             SELECT id, pid, start_time, name, app_path, app_name, first_seen,
-                   IIF(last_seen = ?1, MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen)), last_seen), path
+                   IIF(last_seen = ?1, MAX(first_seen, IFNULL(\(Schema.lastMinuteSQL), first_seen)), last_seen), path,
+                   bundle_id, team_id
             FROM processes WHERE last_seen > ?2 ORDER BY id
             """
         // In time order the key serves the order and each process folds its rows as they come:
@@ -79,6 +99,7 @@ public struct HistoryReader {
             """
         struct Builder {
             let id: Int64, pid: Int32, startTime: Double, name: String, app: AppKey, path: String?, firstSeen: Double, lastSeen: Double
+            let bundleID: String?, teamID: String?
             var slices: [Slice] = []
             var last: (t: Double, v: Double, pk: Double)?
         }
@@ -102,7 +123,8 @@ public struct HistoryReader {
                 slot[id] = builders.count
                 builders.append(Builder(id: id, pid: r[1], startTime: r[2], name: name,
                                         app: AppKey(key: appPath ?? name, name: appName ?? name),
-                                        path: r[8], firstSeen: r[6], lastSeen: r[7]))
+                                        path: r[8], firstSeen: r[6], lastSeen: r[7],
+                                        bundleID: r[9], teamID: r[10]))
             }
             let rows = try Row.fetchCursor(db, sql: sql, arguments: [start - tier.hold, end])
             while let r = try rows.next() {
@@ -117,7 +139,8 @@ public struct HistoryReader {
             close(&b, next: .infinity)
             if !b.slices.isEmpty {
                 result.append(ProcessTrack(processID: b.id, pid: b.pid, startTime: b.startTime, name: b.name,
-                                           app: b.app, path: b.path, lastSeen: b.lastSeen, slices: b.slices))
+                                           app: b.app, path: b.path, lastSeen: b.lastSeen, slices: b.slices,
+                                           bundleID: b.bundleID, teamID: b.teamID))
             }
         }
         return result

@@ -41,6 +41,8 @@ public final class SampleWriter {
     private let ticksPerCommit: Int
     private var state = State()
     private var queued: [Tick] = []
+    /// Team IDs found for paths already stored without one; written by the next commit.
+    private var backfill: [String: String] = [:]
     /// New processes of a failed write; the sampler reports a process as new only once.
     private var pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)] = [:]
     var ids: [ProcessIdentity: Int64] { state.ids }
@@ -69,9 +71,22 @@ public final class SampleWriter {
         if queued.count >= ticksPerCommit { try flush() }
     }
 
+    /// Queued, not written: it rides the next commit, so it adds no transaction.
+    public func backfillTeamIDs(_ found: [String: String]) {
+        backfill.merge(found) { $1 }
+    }
+
+    public func pathsWithoutTeamID() throws -> [String] {
+        try db.read { db in
+            try ProcessRecord.select(Column("path"), as: String.self)
+                .filter(Column("team_id") == nil && Column("path") != nil).distinct().fetchAll(db)
+        }
+    }
+
     public func flush() throws {
-        guard let lastTick = queued.last else { return }
+        guard !queued.isEmpty || !backfill.isEmpty else { return }
         let ticks = queued
+        let found = backfill
         queued = []
         var next = state
         do {
@@ -81,14 +96,21 @@ public final class SampleWriter {
                     try apply(tick, carrying: carried, to: &next, db)
                     carried = [:]
                 }
+                for (path, team) in found {
+                    try ProcessRecord.filter(Column("path") == path && Column("team_id") == nil)
+                        .updateAll(db, Column("team_id").set(to: team))
+                }
             }
         } catch {
-            let live = Set(lastTick.processes.map(\.identity))
-            for n in ticks.flatMap(\.newProcesses) { pending[n.0.identity] = n }
-            pending = pending.filter { live.contains($0.key) }
+            if let lastTick = ticks.last {
+                let live = Set(lastTick.processes.map(\.identity))
+                for n in ticks.flatMap(\.newProcesses) { pending[n.0.identity] = n }
+                pending = pending.filter { live.contains($0.key) }
+            }
             throw StoreError(path: path, underlying: error)
         }
-        pending = [:]
+        if !ticks.isEmpty { pending = [:] }
+        backfill = [:]
         state = next
     }
 

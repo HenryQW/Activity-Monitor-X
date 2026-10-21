@@ -41,12 +41,13 @@ extension Metric {
         case .network: "Network"
         case .energy: "Energy"
         case .gpu: "GPU"
+        case .score: "Score"
         }
     }
 
     func format(_ value: Double) -> String {
         switch self {
-        case .cpu, .gpu: (value / 100).formatted(.percent.precision(.fractionLength(1)))
+        case .cpu, .gpu, .score: (value / 100).formatted(.percent.precision(.fractionLength(1)))
         case .memory: Int64(value.rounded()).formatted(.byteCount(style: .memory))
         case .disk, .network: Int64(value.rounded()).formatted(.byteCount(style: .file)) + "/s"
         case .energy: value.formatted(.number.precision(.fractionLength(1)))

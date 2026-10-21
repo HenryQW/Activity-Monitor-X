@@ -10,7 +10,7 @@ struct MainToolbar: CustomizableToolbarContent {
     var body: some CustomizableToolbarContent {
         ToolbarItem(id: "metric", placement: .principal) {
             Picker("Metric", selection: Bindable(history).metric) {
-                ForEach(Metric.allCases, id: \.self) { Text($0.label).tag($0) }
+                ForEach(Metric.recorded, id: \.self) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
         }

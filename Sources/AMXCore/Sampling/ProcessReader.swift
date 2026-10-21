@@ -31,8 +31,6 @@ enum ProcessReader {
         guard camx_rusage(pid, &footprint, &diskRead, &diskWritten, &wakeups) == 0 else { return nil }
 
         let name = cString(info.pbsd.pbi_name).nonEmpty ?? cString(info.pbsd.pbi_comm)
-        var pathBuf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
-        let pathLen = proc_pidpath(pid, &pathBuf, UInt32(pathBuf.count))
         let cpu = info.ptinfo.pti_total_user &+ info.ptinfo.pti_total_system
 
         return RawProcess(
@@ -40,8 +38,7 @@ enum ProcessReader {
                 pid: pid,
                 startTime: Double(info.pbsd.pbi_start_tvsec) + Double(info.pbsd.pbi_start_tvusec) / 1e6),
             name: name,
-            path: pathLen > 0
-                ? String(decoding: pathBuf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) : nil,
+            path: path(pid: pid),
             uid: info.pbsd.pbi_uid,
             cpuNanos: CPUMath.machToNanos(cpu, numer: timebase.numer, denom: timebase.denom),
             footprint: footprint,
@@ -49,6 +46,13 @@ enum ProcessReader {
             diskWritten: diskWritten,
             wakeups: wakeups,
             translated: camx_is_translated(pid) == 1)
+    }
+
+    /// nil when the process is gone or its path is unreadable.
+    static func path(pid: Int32) -> String? {
+        var buf = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
+        return String(decoding: buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     private static func cString<T>(_ tuple: T) -> String {

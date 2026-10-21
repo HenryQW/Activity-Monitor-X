@@ -1,6 +1,8 @@
 // Derived from mac-performance-monitor (Zesty0wl), MIT License.
 #include "CAMX.h"
+#include <dlfcn.h>
 #include <errno.h>
+#include <pthread.h>
 #include <string.h>
 #include <libproc.h>
 #include <sys/proc.h>
@@ -38,4 +40,16 @@ int camx_rusage(pid_t pid,
     *disk_written = ru.ri_diskio_byteswritten;
     *idle_wakeups = ru.ri_pkg_idle_wkups + ru.ri_interrupt_wkups;
     return 0;
+}
+
+static pid_t (*responsible_fn)(pid_t);
+static pthread_once_t responsible_once = PTHREAD_ONCE_INIT;
+
+static void resolve_responsible(void) {
+    responsible_fn = (pid_t (*)(pid_t))dlsym(RTLD_DEFAULT, "responsibility_get_pid_responsible_for_pid");
+}
+
+pid_t camx_responsible_pid(pid_t pid) {
+    pthread_once(&responsible_once, resolve_responsible);
+    return responsible_fn ? responsible_fn(pid) : -1;
 }

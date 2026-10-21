@@ -46,7 +46,7 @@ struct DataCommands: Commands {
             }
         }
         CommandMenu("Metric") {
-            ForEach(Array(Metric.allCases.enumerated()), id: \.offset) { i, metric in
+            ForEach(Array(Metric.recorded.enumerated()), id: \.offset) { i, metric in
                 Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
             }

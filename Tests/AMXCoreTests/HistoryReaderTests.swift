@@ -7,13 +7,13 @@ private struct Rig {
     let db: DatabaseQueue
     let pool: DatabasePool
     let pid: Int64
-    init(lastSeen: Double, firstSeen: Double = 0) throws {
+    init(lastSeen: Double, firstSeen: Double = 0, bundleId: String? = nil, teamId: String? = nil) throws {
         let path = NSTemporaryDirectory() + "amx-\(UUID().uuidString).sqlite"
         db = try Store.openWriter(path: path)
         pool = try Store.openReader(path: path)
         pid = try db.write { db in
             let p = ProcessRecord(id: nil, pid: 1, startTime: 0, name: "p", path: nil, appPath: nil, appName: nil,
-                                  bundleId: nil, teamId: nil, uid: 0, translated: false, firstSeen: firstSeen, lastSeen: lastSeen)
+                                  bundleId: bundleId, teamId: teamId, uid: 0, translated: false, firstSeen: firstSeen, lastSeen: lastSeen)
             try p.insert(db)
             return db.lastInsertedRowID
         }
@@ -40,14 +40,33 @@ private struct Rig {
                 """, arguments: [pid, bucket, diskR, diskR, diskW, diskW])
         }
     }
-    func tracks(_ range: HistoryRange, _ metric: Metric, end: Double) throws -> [ProcessTrack] {
-        try HistoryReader(pool: pool).tracks(range: range, metric: metric, end: end)
+    func tracks(_ range: HistoryRange, _ metric: Metric, end: Double, device: Device = .current) throws -> [ProcessTrack] {
+        try HistoryReader(pool: pool, device: device).tracks(range: range, metric: metric, end: end)
     }
 }
 
 private func spans(_ t: ProcessTrack) -> [[Double]] { t.slices.map { [$0.start, $0.end, $0.value] } }
 
+private let testDevice = Device(cores: 10, memory: 17_179_869_184)
+
 @Suite struct HistoryReaderTests {
+    @Test func scoreTracksFromTiers() throws {
+        let r = try Rig(lastSeen: 3600)
+        try r.tier("process_minute", 0, cpu: 100, mem: 4_294_967_296, memMax: 4_294_967_296)
+        let minute = try #require(try r.tracks(.day, .score, end: 86_400, device: testDevice).first)
+        #expect(minute.slices.first?.value == 17.5)
+        let raw = try Rig(lastSeen: 59)
+        try raw.raw(0, cpu: 50)
+        #expect(try #require(try raw.tracks(.hour, .score, end: 60, device: testDevice).first).slices.first?.value == 2.5)
+    }
+
+    @Test func tracksCarryBundleAndTeam() throws {
+        let r = try Rig(lastSeen: 59, bundleId: "com.x", teamId: "T1")
+        try r.raw(0, cpu: 1)
+        let t = try #require(try r.tracks(.hour, .cpu, end: 60).first)
+        #expect(t.candidate == GroupCandidate(name: "p", path: nil, bundleID: "com.x", teamID: "T1"))
+    }
+
     @Test func emptyDatabaseGivesNoTracks() throws {
         let r = try Rig(lastSeen: 0)
         #expect(try r.tracks(.day, .cpu, end: 86_400).isEmpty)

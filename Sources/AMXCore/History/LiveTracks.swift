@@ -2,7 +2,7 @@ public enum LiveTracks {
     /// Process tracks from Live snapshots ordered by `ts`. Live rows have no DB id (processID 0).
     /// A snapshot holds until the next one but at most 2 s, so a gap (Live left and resumed, or a
     /// daemon stall) shows no value instead of the old one.
-    public static func build(_ snapshots: [LiveSnapshot], metric: Metric) -> [ProcessTrack] {
+    public static func build(_ snapshots: [LiveSnapshot], metric: Metric, device: Device = .current) -> [ProcessTrack] {
         struct Key: Hashable { let pid: Int32, startTime: Double }
         var slices: [Key: [Slice]] = [:]
         var latest: [Key: (p: LiveProcess, ts: Double)] = [:]
@@ -10,7 +10,7 @@ public enum LiveTracks {
             let end = i + 1 < snapshots.count ? min(snapshots[i + 1].ts, snapshot.ts + 2) : snapshot.ts + 1
             for p in snapshot.processes {
                 let key = Key(pid: p.pid, startTime: p.startTime)
-                let v = value(p, metric)
+                let v = value(p, metric, device)
                 slices[key, default: []].append(Slice(start: snapshot.ts, end: end, value: v, peak: v))
                 latest[key] = (p, snapshot.ts)
             }
@@ -19,11 +19,11 @@ public enum LiveTracks {
             let p = last.p
             return ProcessTrack(processID: 0, pid: p.pid, startTime: p.startTime, name: p.name,
                                 app: AppKey(key: p.appKey, name: p.appName), path: p.path, lastSeen: last.ts,
-                                slices: slices[key]!)
+                                slices: slices[key]!, bundleID: p.bundleID, teamID: p.teamID)
         }
     }
 
-    private static func value(_ p: LiveProcess, _ metric: Metric) -> Double {
+    private static func value(_ p: LiveProcess, _ metric: Metric, _ device: Device) -> Double {
         switch metric {
         case .cpu: p.cpu
         case .memory: Double(p.mem)
@@ -31,6 +31,7 @@ public enum LiveTracks {
         case .network: p.netIn + p.netOut
         case .energy: p.energy
         case .gpu: p.gpu
+        case .score: device.score(cpu: p.cpu, mem: Double(p.mem))
         }
     }
 
@@ -45,12 +46,14 @@ public enum LiveTracks {
             guard !slices.isEmpty else { continue }
             earlier[Key(pid: track.pid, startTime: track.startTime)] = ProcessTrack(
                 processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name, app: track.app,
-                path: track.path, lastSeen: track.lastSeen, slices: slices)
+                path: track.path, lastSeen: track.lastSeen, slices: slices,
+                bundleID: track.bundleID, teamID: track.teamID)
         }
         let merged = live.map { track in
             guard let before = earlier.removeValue(forKey: Key(pid: track.pid, startTime: track.startTime)) else { return track }
             return ProcessTrack(processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
-                                app: track.app, path: track.path, lastSeen: track.lastSeen, slices: before.slices + track.slices)
+                                app: track.app, path: track.path, lastSeen: track.lastSeen, slices: before.slices + track.slices,
+                                bundleID: track.bundleID, teamID: track.teamID)
         }
         return merged + earlier.values
     }
