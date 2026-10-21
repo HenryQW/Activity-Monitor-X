@@ -17,16 +17,16 @@ final class SMCReader {
     private var didOpen = false
     private var keys: [(key: UInt32, group: Group)] = []
     private var lastDiscovery: Double?
-    private var lastRead: Double?
+    private(set) var lastRead: Double?
     private var cached = Temperatures()
 
     deinit {
         if connection != 0 { IOServiceClose(connection) }
     }
 
-    /// Hottest sensor per group, read at most every 5 s; keys rediscovered every 300 s.
+    /// Hottest sensor per group, read at most every 4 s (5 s ticks jitter); keys rediscovered every 300 s.
     func read(now: Double) -> Temperatures {
-        if let lastRead, (0..<5).contains(now - lastRead) { return cached }
+        if let lastRead, (0..<4).contains(now - lastRead) { return cached }
         guard open() else { return Temperatures() }
         if lastDiscovery.map({ !(0..<300).contains(now - $0) }) ?? true {
             discover()

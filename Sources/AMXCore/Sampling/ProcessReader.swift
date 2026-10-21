@@ -40,7 +40,8 @@ enum ProcessReader {
                 pid: pid,
                 startTime: Double(info.pbsd.pbi_start_tvsec) + Double(info.pbsd.pbi_start_tvusec) / 1e6),
             name: name,
-            path: pathLen > 0 ? String(cString: pathBuf) : nil,
+            path: pathLen > 0
+                ? String(decoding: pathBuf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self) : nil,
             uid: info.pbsd.pbi_uid,
             cpuNanos: CPUMath.machToNanos(cpu, numer: timebase.numer, denom: timebase.denom),
             footprint: footprint,

@@ -33,4 +33,15 @@ import Testing
         #expect(s.memUsed > 0)
         #expect((0...3).contains(s.thermalState))
     }
+
+    /// Reads the real SMC. 5 s ticks arrive with jitter, so a read 4 s after the last one is not skipped.
+    @Test func smcThrottleUnderFourSeconds() throws {
+        let smc = SMCReader()
+        _ = smc.read(now: 1000)
+        try #require(smc.lastRead == 1000)
+        _ = smc.read(now: 1004)
+        #expect(smc.lastRead == 1004)
+        _ = smc.read(now: 1007.9)
+        #expect(smc.lastRead == 1004)
+    }
 }

@@ -15,7 +15,7 @@ let package = Package(
         ]),
         .executableTarget(name: "amxd", dependencies: ["AMXCore"]),
         .executableTarget(name: "amx", dependencies: ["AMXCore"]),
-        .testTarget(name: "AMXCoreTests", dependencies: ["AMXCore"]),
+        .testTarget(name: "AMXCoreTests", dependencies: ["AMXCore"], exclude: ["Fixtures"]),
     ],
     swiftLanguageModes: [.v6]
 )

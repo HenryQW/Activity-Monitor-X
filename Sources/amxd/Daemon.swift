@@ -19,7 +19,8 @@ final class Daemon: @unchecked Sendable {
     private let dbPath: String
     private var listener: NSXPCListener?
     private var xpcService: XPCService?
-    private var resolvedPaths = Set<String>()
+    /// Team ID per executable path; nil means unsigned or no team.
+    private var teamIDs: [String: String?] = [:]
     private var ticks = 0
     private var timer: DispatchSourceTimer?
     private var sigterm: DispatchSourceSignal?
@@ -87,13 +88,15 @@ final class Daemon: @unchecked Sendable {
         let attributed = sampled.new.map { raw -> (RawProcess, AppInfo, teamID: String?) in
             let app = AppAttribution.app(forExecutable: raw.path, processName: raw.name)
             var team: String?
+            // Over budget: written without a team ID (no backfill in M1).
             if let path = raw.path {
-                if resolvedPaths.contains(path) {
-                    team = CodeSigning.teamID(forPath: path)
+                if let cached = teamIDs[path] {
+                    team = cached
                 } else if budget > 0 {
                     budget -= 1
-                    resolvedPaths.insert(path)
+                    if teamIDs.count >= 4096 { teamIDs.removeAll() }
                     team = CodeSigning.teamID(forPath: path)
+                    teamIDs[path] = team
                 }
             }
             return (raw, app, team)
@@ -118,7 +121,14 @@ final class Daemon: @unchecked Sendable {
 
     private func checkpoint() {
         do {
-            try db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_checkpoint(TRUNCATE)") }
+            let row = try db.writeWithoutTransaction { try Row.fetchOne($0, sql: "PRAGMA wal_checkpoint(TRUNCATE)") }
+            // Busy: a reader blocked the checkpoint and the WAL keeps growing until one succeeds.
+            if let row, row[0] as Int != 0 {
+                log.error("""
+                    checkpoint busy: log \(row[1] as Int, privacy: .public) frames, \
+                    checkpointed \(row[2] as Int, privacy: .public)
+                    """)
+            }
         } catch {
             log.error("checkpoint failed: \(String(describing: error), privacy: .public)")
         }

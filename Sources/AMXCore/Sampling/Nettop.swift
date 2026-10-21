@@ -36,6 +36,7 @@ public final class NettopStream: @unchecked Sendable {
 
     private static let log = Logger(subsystem: "com.henryqw.activitymonitorx.daemon", category: "nettop")
     private let launch: () -> Launched?
+    private let clock: () -> Date
     private let retryDelay: TimeInterval
     private let lock = NSLock()
     private var generation = 0
@@ -45,8 +46,10 @@ public final class NettopStream: @unchecked Sendable {
     private var complete: [(at: Date, counters: Counters)] = []  // last two complete blocks
     private var previousAlive: [Int32: ProcessIdentity] = [:]
 
-    public init(retryDelay: TimeInterval = 2, launch: @escaping () -> Launched? = NettopStream.launchNettop) {
+    public init(retryDelay: TimeInterval = 2, launch: @escaping () -> Launched? = NettopStream.launchNettop,
+                clock: @escaping () -> Date = Date.init) {
         self.launch = launch
+        self.clock = clock
         self.retryDelay = retryDelay
     }
 
@@ -81,6 +84,8 @@ public final class NettopStream: @unchecked Sendable {
         lock.lock()
         running = false
         generation += 1
+        current = nil
+        complete = []
         let a = active
         lock.unlock()
         a?.terminate()  // EOF follows; the reader closes its own handle
@@ -108,7 +113,7 @@ public final class NettopStream: @unchecked Sendable {
                 while isCurrent(gen), case let chunk = l.handle.availableData, !chunk.isEmpty {
                     buffer.append(chunk)
                     while isCurrent(gen), let nl = buffer.firstIndex(of: 0x0A) {
-                        ingest(line: String(decoding: buffer[buffer.startIndex..<nl], as: UTF8.self), at: Date())
+                        ingest(line: String(decoding: buffer[buffer.startIndex..<nl], as: UTF8.self), at: clock())
                         buffer.removeSubrange(buffer.startIndex...nl)
                     }
                 }
@@ -117,7 +122,9 @@ public final class NettopStream: @unchecked Sendable {
                 lock.lock()
                 if generation == gen {
                     active = nil
-                    current = nil  // a partial block must not pair with the next run
+                    // Blocks of an ended run must not pair with the next run or give stale rates.
+                    current = nil
+                    complete = []
                 }
                 lock.unlock()
             }
@@ -141,13 +148,13 @@ public final class NettopStream: @unchecked Sendable {
     }
 
     /// Bytes per second since the previous block. A pid not alive, or whose identity changed since the
-    /// previous call, gets no rate.
+    /// previous call, gets no rate. No rates when the newest block is over 12 s old (nettop stalled).
     public func rates(alive: [Int32: ProcessIdentity]) -> [Int32: (inPerSec: Double, outPerSec: Double)] {
         lock.lock()
         defer { lock.unlock() }
         let before = previousAlive
         previousAlive = alive
-        guard complete.count == 2 else { return [:] }
+        guard complete.count == 2, clock().timeIntervalSince(complete[1].at) <= 12 else { return [:] }
         let (old, new) = (complete[0], complete[1])
         let dt = new.at.timeIntervalSince(old.at)
         guard dt > 0 else { return [:] }

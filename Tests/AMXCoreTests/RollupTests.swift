@@ -24,11 +24,14 @@ private struct Rig {
             return db.lastInsertedRowID
         }
     }
-    func raw(_ ts: Double, cpu: Double) throws {
+    func raw(_ ts: Double, cpu: Double, netIn: Double = 0) throws {
         try db.write {
             try ProcessSampleRecord(processId: pid, ts: ts, cpu: cpu, mem: 0, diskR: 0, diskW: 0, energy: 0, gpu: 0,
-                                    netIn: 0, netOut: 0).insert($0)
+                                    netIn: netIn, netOut: 0).insert($0)
         }
+    }
+    func buckets(_ table: String) throws -> [Double] {
+        try db.read { try Double.fetchAll($0, sql: "SELECT bucket FROM \(table) ORDER BY bucket") }
     }
     func exec(_ sql: String) throws { try db.write { try $0.execute(sql: sql) } }
     func row(_ sql: String) throws -> Row? { try db.read { try Row.fetchOne($0, sql: sql) } }
@@ -105,12 +108,14 @@ private struct Rig {
 
     @Test func holdSpansThreeBuckets() throws {
         let r = try Rig()
+        try r.raw(b, cpu: 0)
         try r.raw(b + 59, cpu: 10)
-        try r.raw(b + 124, cpu: 10)
+        try r.raw(b + 124, cpu: 30)
         try r.run(b + 180 + 65)
         // [b+59, b+124) gives 1 s, 60 s, 4 s; the row at b+124 adds one tick to bucket b+120.
-        let samples = try r.db.read { try Int.fetchAll($0, sql: "SELECT samples FROM process_minute ORDER BY bucket") }
-        #expect(samples == [1, 60, 9])
+        let rows = try r.db.read { try Row.fetchAll($0, sql: "SELECT samples, cpu_avg FROM process_minute ORDER BY bucket") }
+        #expect(rows.map { $0["samples"] as Int } == [60, 60, 9])
+        #expect(rows.map { $0["cpu_avg"] as Double } == [10.0 / 60, 10, 190.0 / 9])
     }
 
     @Test func nullMetricDoesNotDilute() throws {
@@ -124,22 +129,48 @@ private struct Rig {
         #expect(p["gpu_avg"] as Double == 50 && p["samples"] as Int == 60)
     }
 
-    @Test func hourRollupWeightsBySamples() throws {
+    @Test func retentionDefaults() {
+        let p = RetentionPolicy()
+        #expect(p.raw == 86_400 && p.minute == 2_592_000 && p.hour == 7_776_000)
+    }
+
+    /// Rows every 60 s: each one holds one full minute bucket, so a bucket's average is that row's value.
+    @Test func minuteTierIsSparse() throws {
+        let r = try Rig()
+        // 10.4 is within 0.5 of the last written 10; 10.8 is not (it would be within 0.5 of 10.4).
+        let cpu = [10, 10.4, 10.8, 10.8] + Array(repeating: 10.8, count: 63)
+        for (i, v) in cpu.enumerated() { try r.raw(b + Double(i) * 60, cpu: v, netIn: i == 4 ? 1 : 0) }
+        try r.run(b + 66 * 60 + 65)
+        // 0: first row; 2: cpu moved 0.8; 4 and 5: net_in_max crossed zero; 65: 60 min heartbeat after 5.
+        #expect(try r.buckets("process_minute") == [0, 2, 4, 5, 65].map { b + Double($0) * 60 })
+    }
+
+    @Test func hourTierFromRawAndSparse() throws {
+        let r = try Rig()
+        for i in 0...120 { try r.raw(b + Double(i) * 60, cpu: 10) }
+        try r.run(b + 7200 + 65)
+        // The minute tier holds one row for both hours, so the hour must come from raw rows.
+        #expect(try r.buckets("process_minute") == [b, b + 3600])
+        let h = try r.db.read { try Row.fetchAll($0, sql: "SELECT * FROM process_hour") }
+        // Hour b + 3600 equals hour b, so it is not written.
+        #expect(h.count == 1)
+        #expect(h.first?["bucket"] as Double? == b && h.first?["samples"] as Int? == 3600)
+        #expect(h.first?["cpu_avg"] as Double? == 10 && h.first?["cpu_max"] as Double? == 10)
+    }
+
+    @Test func systemTiersAreDense() throws {
         let r = try Rig()
         try r.exec("""
-            INSERT INTO process_minute(process_id, bucket, samples, cpu_avg, cpu_max)
-              VALUES (\(r.pid), \(b), 60, 10, 15), (\(r.pid), \(b + 60), 30, 40, 50);
-            INSERT INTO system_minute(bucket, samples, cpu_avg, cpu_max, thermal_state_max)
-              VALUES (\(b), 60, 10, 15, 1), (\(b + 60), 30, 40, 50, 3);
+            INSERT INTO system_samples(ts, cpu, thermal_state)
+              VALUES (\(b), 10, 1), (\(b + 60), 40, 3), (\(b + 120), 40, 3), (\(b + 3600), 40, 3)
             """)
         // The hour rolls only once the minute watermark reaches b + 3600.
         try r.run(b + 3610)
-        #expect(try r.count("process_hour") == 0)
+        #expect(try r.count("system_hour") == 0)
         try r.run(b + 3665)
-        let p = try #require(try r.row("SELECT * FROM process_hour WHERE bucket = \(b)"))
-        #expect(p["cpu_avg"] as Double == 20 && p["cpu_max"] as Double == 50 && p["samples"] as Int == 90)
+        #expect(try r.buckets("system_minute") == [b, b + 60, b + 120])
         let s = try #require(try r.row("SELECT * FROM system_hour WHERE bucket = \(b)"))
-        #expect(s["cpu_avg"] as Double == 20 && s["cpu_max"] as Double == 50 && s["samples"] as Int == 90)
+        #expect(s["cpu_avg"] as Double == 30 && s["cpu_max"] as Double == 40 && s["samples"] as Int == 3)
         #expect(s["thermal_state_max"] as Double == 3)
     }
 
@@ -209,27 +240,47 @@ private struct Rig {
         #expect(try r.db.read { try ProcessRecord.exists($0, key: later) })
     }
 
-    @Test func sizeCapDropsFinestFirst() throws {
+    @Test func trimKeepsRawTheHourNeeds() throws {
+        let r = try Rig()
+        for i in 0..<30 { try r.raw(b + Double(i) * 60, cpu: Double(i)) }
+        var policy = RetentionPolicy()
+        policy.raw = 60
+        // Minutes up to b + 1800 are rolled, but hour b is not: its raw rows must stay.
+        try r.run(b + 1800 + 65, policy)
+        #expect(try r.count("process_minute") == 30)
+        #expect(try r.count("process_samples") == 30)
+    }
+
+    @Test func sizeCapKeepsUnrolledRaw() throws {
         let r = try Rig()
         let minute = 2_000_000_040.0
         for i in 0..<50 {
             try r.exec("INSERT INTO process_hour(process_id, bucket, samples) VALUES (\(r.pid), \(minute - Double(i) * 3600), 60)")
         }
-        let used = "SELECT (SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)"
-        let pageSize = try r.db.read { try Int64.fetchOne($0, sql: "PRAGMA page_size")! }
-        let baseline = try r.db.read { try Int64.fetchOne($0, sql: used)! } * pageSize
-        // 15_000 rows in the current, incomplete minute: two delete batches, nothing rolls up.
+        // 15_000 rows in the current, incomplete minute: no tier has them yet.
         try r.db.write { db in
             for i in 0..<15_000 {
                 try ProcessSampleRecord(processId: r.pid, ts: minute + Double(i) * 0.003, cpu: 1, mem: 0, diskR: 0,
                                         diskW: 0, energy: 0, gpu: 0, netIn: 0, netOut: 0).insert(db)
             }
         }
+        let used = "SELECT (SELECT page_count FROM pragma_page_count) - (SELECT freelist_count FROM pragma_freelist_count)"
+        let pageSize = try r.db.read { try Int64.fetchOne($0, sql: "PRAGMA page_size")! }
+        let baseline = try r.db.read { try Int64.fetchOne($0, sql: used)! } * pageSize
+        for i in 1...15_000 {
+            try r.exec("INSERT INTO process_minute(process_id, bucket, samples) VALUES (\(r.pid), \(minute - Double(i) * 60), 60)")
+        }
         var policy = RetentionPolicy()
         policy.maxBytes = baseline + 4 * pageSize
         #expect(try r.db.read { try Int64.fetchOne($0, sql: used)! } * pageSize > policy.maxBytes)
         try r.run(minute + 50, policy)
-        #expect(try r.count("process_samples") == 0)
+        // Minute rows go before hour rows; the raw rows are never deleted.
+        #expect(try r.count("process_minute") == 0)
         #expect(try r.count("process_hour") == 50)
+        #expect(try r.count("process_samples") == 15_000)
+        policy.maxBytes = 1
+        try r.run(minute + 55, policy)
+        #expect(try r.count("process_hour") == 0)
+        #expect(try r.count("process_samples") == 15_000)
     }
 }

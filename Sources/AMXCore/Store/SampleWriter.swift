@@ -12,9 +12,11 @@ public final class SampleWriter {
 
     private let db: DatabaseQueue
     private let path: String
-    private var ids: [ProcessIdentity: Int64] = [:]
+    private(set) var ids: [ProcessIdentity: Int64] = [:]
     private var last: [ProcessIdentity: Last] = [:]
     private var lastSeenBucket: [ProcessIdentity: Int] = [:]
+    /// New processes of a failed write; the sampler reports a process as new only once.
+    private var pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)] = [:]
     private var lastPressure: Int?
     private var lastThermal: Int?
 
@@ -28,10 +30,13 @@ public final class SampleWriter {
         // State is applied only after the transaction commits.
         var newIds = ids, newLast = last, newBuckets = lastSeenBucket
         let bucket = Int((now / 60).rounded(.down))
+        let live = Set(processes.map(\.identity))
+        var inserts = pending.filter { live.contains($0.key) }
+        for n in newProcesses { inserts[n.0.identity] = n }
         do {
             try db.write { db in
-                for (raw, app, teamID) in newProcesses {
-                    var record = ProcessRecord(
+                for (raw, app, teamID) in inserts.values {
+                    let record = ProcessRecord(
                         pid: raw.identity.pid, startTime: raw.identity.startTime, name: raw.name, path: raw.path,
                         appPath: app.appPath, appName: app.appName, bundleId: app.bundleID, teamId: teamID,
                         uid: Int64(raw.uid), translated: raw.translated, firstSeen: now, lastSeen: now)
@@ -54,14 +59,16 @@ public final class SampleWriter {
                                                diskW: p.diskW, netIn: p.netIn, netOut: p.netOut)
                 }
                 try Self.record(system, now: now).insert(db)
-                try events(system, now: now, processes: processes, ids: newIds).forEach { var e = $0; try e.insert(db) }
+                try events(system, now: now, processes: processes, ids: newIds).forEach { try $0.insert(db) }
             }
         } catch {
+            pending = inserts
             throw StoreError(path: path, underlying: error)
         }
-        ids = newIds
-        last = newLast
-        lastSeenBucket = newBuckets
+        pending = [:]
+        ids = newIds.filter { live.contains($0.key) }
+        last = newLast.filter { live.contains($0.key) }
+        lastSeenBucket = newBuckets.filter { live.contains($0.key) }
         lastPressure = system.pressureLevel
         lastThermal = system.thermalState
     }

@@ -10,9 +10,10 @@ import Testing
         ProcessIdentity(pid: pid, startTime: start)
     }
 
-    /// Feeds blocks 5 s apart; the last header completes the final block.
-    private func stream(_ counters: [(UInt64, UInt64)]) -> NettopStream {
-        let s = NettopStream(launch: { nil })
+    /// Feeds blocks 5 s apart; the last header completes the final block, received `age` s before now.
+    private func stream(_ counters: [(UInt64, UInt64)], age: Double = 0) -> NettopStream {
+        let now = Date(timeIntervalSince1970: Double(counters.count - 1) * 5 + age)
+        let s = NettopStream(launch: { nil }, clock: { now })
         for (i, c) in counters.enumerated() {
             let t = Date(timeIntervalSince1970: Double(i) * 5)
             s.ingest(line: Self.header, at: t)
@@ -56,8 +57,41 @@ import Testing
         #expect(stream([(1, 1)]).rates(alive: [77: id(start: 1)]).isEmpty)
     }
 
+    @Test func staleBlocksGiveNoRate() {
+        #expect(stream([(1000, 100), (6000, 600)], age: 12).rates(alive: [77: id(start: 1)])[77] != nil)
+        #expect(stream([(1000, 100), (6000, 600)], age: 13).rates(alive: [77: id(start: 1)]).isEmpty)
+    }
+
+    @Test func runEndClearsRates() throws {
+        let stopped = stream([(1000, 100), (6000, 600)])
+        stopped.stop()
+        #expect(stopped.rates(alive: [77: id(start: 1)]).isEmpty)
+
+        let pipe = Pipe()
+        let attempts = OSAllocatedUnfairLock(initialState: 0)
+        let s = NettopStream(retryDelay: 0.01) {
+            attempts.withLock { $0 += 1; return $0 } == 1 ? NettopStream.Launched(handle: pipe.fileHandleForReading,
+                                                                                  terminate: {}) : nil
+        }
+        s.start()
+        defer { s.stop() }
+        for t in 0...2 {
+            pipe.fileHandleForWriting.write(Data("\(Self.header)\n12:00:00.000001,x.77,\(t * 100),0,\n".utf8))
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        pipe.fileHandleForWriting.write(Data("\(Self.header)\n".utf8))
+        let rates = { s.rates(alive: [77: id(start: 1)]) }
+        var deadline = Date().addingTimeInterval(5)
+        while rates().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        try #require(!rates().isEmpty)
+        try pipe.fileHandleForWriting.close()  // EOF: the run ends
+        deadline = Date().addingTimeInterval(5)
+        while !rates().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+        #expect(rates().isEmpty)
+    }
+
     @Test func reusedPidGetsNoRate() {
-        let s = NettopStream(launch: { nil })
+        let s = NettopStream(launch: { nil }, clock: { Date(timeIntervalSince1970: 15) })
         func feed(_ i: Int, _ n: UInt64) {
             let t = Date(timeIntervalSince1970: Double(i) * 5)
             s.ingest(line: Self.header, at: t)

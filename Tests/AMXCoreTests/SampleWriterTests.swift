@@ -122,6 +122,27 @@ private struct Rig {
         #expect(e?.kind == "thermal" && e?.severity == 2 && e?.processId == nil)
     }
 
+    @Test func failedWriteKeepsNewProcesses() throws {
+        let r = try Rig()
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 1") }
+        #expect(throws: StoreError.self) { try r.tick(1000, [sample(idA), sample(idB)], new: [idA, idB]) }
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 0") }
+        // The sampler reports a process as new only once; B has vanished since.
+        try r.tick(1005, [sample(idA)])
+        let pids = try r.db.read { try Int32.fetchAll($0, sql: "SELECT pid FROM processes") }
+        #expect(pids == [idA.pid])
+        let row = try r.db.read { try ProcessSampleRecord.fetchOne($0) }
+        #expect(row?.ts == 1005 && row?.cpu == 1)
+    }
+
+    @Test func vanishedIdentityIsDropped() throws {
+        let r = try Rig()
+        try r.tick(1000, [sample(idA), sample(idB)], new: [idA, idB])
+        #expect(r.writer.ids.count == 2)
+        try r.tick(1005, [sample(idA)])
+        #expect(r.writer.ids.keys.sorted { $0.pid < $1.pid } == [idA])
+    }
+
     @Test func writeFailureCarriesPath() throws {
         let path = NSTemporaryDirectory() + "amx-\(UUID().uuidString).sqlite"
         _ = try Store.openWriter(path: path)
