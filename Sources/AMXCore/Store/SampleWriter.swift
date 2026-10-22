@@ -164,8 +164,9 @@ public final class SampleWriter {
                                       diskW: p.diskW, netIn: p.netIn, netOut: p.netOut)
         }
         try Self.record(tick.system, now: now).insert(db)
+        // An ended writer is no longer in `ids`; its row stays in the database, so the alert still names it.
         for e in events {
-            try EventRecord(ts: e.ts, kind: e.kind, severity: e.severity, processId: e.identity.flatMap { s.ids[$0] },
+            try EventRecord(ts: e.ts, kind: e.kind, severity: e.severity, processId: try e.identity.flatMap { try s.ids[$0] ?? Self.fetchId(db, $0) },
                             rule: e.rule, message: e.message, value: e.value).insert(db)
         }
         s.minute = bucket

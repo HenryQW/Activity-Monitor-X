@@ -24,22 +24,37 @@ private struct Rig {
     var seen: Set<ProcessIdentity> = []
 
     mutating func tick(_ now: Double, _ procs: [(Proc, cpu: Double, mem: UInt64)], pressure: Int = 1) -> [EventDraft] {
-        let new = procs.filter { seen.insert($0.0.id).inserted }.map { p, _, _ in
+        tick(now, samples: procs.map { p, cpu, mem in
+            (p, ProcessSample(identity: p.id, cpu: cpu, mem: mem, diskR: 0, diskW: 0, energy: 0, gpu: 0, netIn: 0, netOut: 0))
+        }, pressure: pressure)
+    }
+
+    mutating func tick(_ now: Double, samples procs: [(Proc, ProcessSample)], pressure: Int = 1) -> [EventDraft] {
+        let new = procs.filter { seen.insert($0.0.id).inserted }.map { p, _ in
             (RawProcess(identity: p.id, name: p.name, path: nil, uid: 501, cpuNanos: 0, footprint: 0, diskRead: 0,
                         diskWritten: 0, wakeups: 0, translated: false), p.app)
         }
-        let samples = procs.map { p, cpu, mem in
-            ProcessSample(identity: p.id, cpu: cpu, mem: mem, diskR: 0, diskW: 0, energy: 0, gpu: 0, netIn: 0, netOut: 0)
-        }
         var system = SystemSample()
         system.pressureLevel = pressure
-        return engine.evaluate(now: now, processes: samples, new: new, system: system, rules: AlertRules())
+        return engine.evaluate(now: now, processes: procs.map(\.1), new: new, system: system, rules: AlertRules())
     }
 
     /// Alerts of one rule over 5 s ticks from `start` up to, not including, `end`.
     mutating func alerts(_ rule: String, from start: Double, to end: Double,
                          _ procs: (Double) -> [(Proc, cpu: Double, mem: UInt64)]) -> [EventDraft] {
         stride(from: start, to: end, by: 5).flatMap { t in tick(t, procs(t)).filter { $0.rule == rule } }
+    }
+
+    /// The same, for one process whose field read by the per-app `rule` is `value(t)`.
+    mutating func alerts(_ rule: String, of p: Proc, from start: Double, to end: Double,
+                         _ value: (Double) -> Double) -> [EventDraft] {
+        stride(from: start, to: end, by: 5).flatMap { t in
+            let v = value(t)
+            let s = ProcessSample(identity: p.id, cpu: 0, mem: gib, diskR: 0, diskW: rule == RuleName.diskWrites ? v : 0,
+                                  energy: rule == RuleName.energy ? v : 0, gpu: rule == RuleName.gpu ? v : 0,
+                                  netIn: rule == RuleName.network ? v : 0, netOut: 0)
+            return tick(t, samples: [(p, s)]).filter { $0.rule == rule }
+        }
     }
 }
 
@@ -95,6 +110,63 @@ private struct Rig {
     @Test func kernelTaskIsExempt() {
         var r = Rig()
         #expect(r.alerts("sustained_cpu", from: 0, to: 600) { _ in [(.solo(0, "kernel_task"), 400, gib)] }.isEmpty)
+    }
+
+    /// Network, energy and GPU at their `AlertRules()` values, which are Balanced.
+    @Test func heldAppRules() {
+        let cases: [(rule: String, threshold: Double, minutes: Int, message: String)] = [
+            (RuleName.network, 10_485_760, 5, "A received and sent 10 MB/s for 5 min"),
+            (RuleName.energy, 300, 10, "A had energy impact 300 for 10 min"),
+            (RuleName.gpu, 50, 5, "A used 50 % GPU for 5 min"),
+        ]
+        let p = Proc(1, "a")
+        for c in cases {
+            let window = Double(c.minutes * 60)
+            // quietBelowThreshold
+            var quiet = Rig()
+            #expect(quiet.alerts(c.rule, of: p, from: 0, to: 2 * window) { _ in c.threshold - 1 }.isEmpty, "\(c.rule)")
+            // firesAtThreshold: on the tick the ring is full.
+            var r = Rig()
+            var alerts = r.alerts(c.rule, of: p, from: 0, to: window) { _ in c.threshold }
+            #expect(alerts.map(\.ts) == [window - 5], "\(c.rule)")
+            #expect(alerts.first?.message == c.message && alerts.first?.value == c.threshold && alerts.first?.identity == p.id)
+            // respectsReAlert: a new spell alerts only 60 min after the last alert.
+            alerts += r.alerts(c.rule, of: p, from: window, to: 2 * window) { _ in 0 }
+            alerts += r.alerts(c.rule, of: p, from: 2 * window, to: window + 3595) { _ in c.threshold }
+            #expect(alerts.count == 1, "\(c.rule)")
+            alerts += r.alerts(c.rule, of: p, from: window + 3595, to: window + 3600) { _ in c.threshold }
+            #expect(alerts.map(\.ts) == [window - 5, window + 3595], "\(c.rule)")
+        }
+    }
+
+    @Test func diskWritesInOneHour() {
+        let p = Proc(1, "a"), limit = Double(20 << 30)
+        // quietBelowThreshold: 1 MB under the limit every hour.
+        var quiet = Rig()
+        #expect(quiet.alerts(RuleName.diskWrites, of: p, from: 0, to: 7200) { _ in (limit - 1_048_576) / 3600 }.isEmpty)
+        // firesAtThreshold: four ticks of a quarter each, without waiting for a full hour.
+        var r = Rig()
+        var alerts = r.alerts(RuleName.diskWrites, of: p, from: 0, to: 3605) { t in t < 20 ? limit / 20 : 0 }
+        #expect(alerts.map(\.ts) == [15])
+        #expect(alerts.first?.message == "A wrote 20.0 GB in 1 hour" && alerts.first?.value == limit)
+        // respectsReAlert: minute 0 leaves the hour at 3600, which ends the spell; the new spell is over the limit
+        // from 3610 but waits for 60 min after the alert.
+        alerts += r.alerts(RuleName.diskWrites, of: p, from: 3605, to: 3620) { _ in limit / 10 }
+        #expect(alerts.map(\.ts) == [15, 3615])
+    }
+
+    @Test func diskWritesAddUpAcrossProcessGaps() {
+        let limit = Double(20 << 30)
+        var r = Rig()
+        var alerts: [EventDraft] = []
+        // A new writer of the same app on the first tick of each minute, a quarter of the limit each; no process between.
+        for t in stride(from: 0.0, to: 240, by: 5) {
+            alerts += t.truncatingRemainder(dividingBy: 60) == 0
+                ? r.alerts(RuleName.diskWrites, of: Proc(Int32(t / 60) + 1, "a"), from: t, to: t + 5) { _ in limit / 20 }
+                : r.tick(t, samples: []).filter { $0.rule == RuleName.diskWrites }
+        }
+        #expect(alerts.map(\.ts) == [180])
+        #expect(alerts.first?.message == "A wrote 20.0 GB in 1 hour" && alerts.first?.identity == Proc(4, "a").id)
     }
 
     @Test func memoryGrowthSteady() {

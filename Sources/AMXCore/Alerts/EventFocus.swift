@@ -8,12 +8,16 @@ extension AlertRules {
         case RuleName.memoryGrowth: Double(memoryGrowth.minutes * 60)
         case RuleName.thermal: Double(thermal.minutes * 60)
         case RuleName.memoryJump: 50
+        case RuleName.diskWrites: 3600
+        case RuleName.network: Double(network.minutes * 60)
+        case RuleName.energy: Double(energy.minutes * 60)
+        case RuleName.gpu: Double(gpu.minutes * 60)
         default: 600
         }
     }
 }
 
-/// Where the Timeline opens for an alert.
+/// Where Apps opens for an alert.
 public enum EventFocus {
     private static let after = 300.0
 

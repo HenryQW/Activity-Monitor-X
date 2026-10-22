@@ -9,6 +9,9 @@ struct TimelineChart: View {
     private let marks: [Mark]
     private let colors: [AppKey: Color]
     private let bucket: Double
+    /// Live draws smooth curves (D27). A 1 s slide of the plot to each new second was measured at about 20 % CPU (the
+    /// plot layer is drawn again every display frame), so Live still steps once a second.
+    private let live: Bool
     private let metric: Metric
     private let events: [EventMark]
     private let span: ClosedRange<Date>?
@@ -27,17 +30,17 @@ struct TimelineChart: View {
     private let _hover = State<Date?>(initialValue: nil)
     /// The span while dragging; committed to the model once the drag rests, so ranking runs once per drag.
     private let _drag = State<ClosedRange<Date>?>(initialValue: nil)
-    /// The event marker under the pointer (its lead ts): its bubble replaces the value bubble.
+    /// The event marker under the pointer (its lead ts): its popover replaces the value bubble.
     private let _event = State<Double?>(initialValue: nil)
 
     /// `points` is non-empty and ordered by bucket; every bucket holds every series.
     /// `colors` holds every named app of `points`. With `highlighted` (search, or the hovered app key, "" for Other),
     /// the other series are dimmed.
-    init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, metric: Metric, events: [EventMark],
+    init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, live: Bool = false, metric: Metric, events: [EventMark],
          highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
          otherProcesses: @escaping (Double) -> [(name: String, value: Double)], hover: @escaping (String, Bool) -> Void) {
-        (self.points, self.colors, self.bucket, self.metric, self.events, self.span, self.commitSpan, self.otherProcesses)
-            = (points, colors, bucket, metric, events, span, commitSpan, otherProcesses)
+        (self.points, self.colors, self.bucket, self.live, self.metric, self.events, self.span, self.commitSpan, self.otherProcesses)
+            = (points, colors, bucket, live, metric, events, span, commitSpan, otherProcesses)
         self.hover = hover
         series = Self.series(points, colors: colors, highlighted: highlighted)
         let labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
@@ -67,6 +70,8 @@ struct TimelineChart: View {
                 .accessibilityLabel(\.label)
                 .accessibilityValue(\.valueText)
                 .foregroundStyle(by: .value("App", \.label))
+                // One band's top and the next band's bottom are the same values, so the curves still meet.
+                .interpolationMethod(live ? .monotone : .linear)
             if let shownSpan {
                 RectangleMark(xStart: .value("Start", shownSpan.lowerBound), xEnd: .value("End", shownSpan.upperBound))
                     .foregroundStyle(Color.accentColor.opacity(0.15))
@@ -177,7 +182,7 @@ struct TimelineChart: View {
                 }
             }
         }
-        .hoverBubble()
+        .font(.caption).fixedSize().padding()
     }
 
     private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
@@ -228,14 +233,7 @@ extension FormatStyle where Self == Date.FormatStyle {
     }
 }
 
-extension View {
-    /// The look of a chart's hover bubble.
-    func hoverBubble() -> some View {
-        font(.caption).fixedSize().padding(8).glassEffect(.regular, in: .rect(cornerRadius: 10))
-    }
-}
-
-/// The hover rule and value bubble over the plot; the bubble sits right of the rule and stays inside the plot. Only this
+/// The hover rule over the plot and the value bubble, a native popover that follows the rule. Only this
 /// layer reads the hover, so a mouse move does not rebuild the chart's marks.
 struct HoverLayer<Bubble: View>: View {
     let hover: Binding<Date?>
@@ -252,10 +250,11 @@ struct HoverLayer<Bubble: View>: View {
                         path.addLine(to: CGPoint(x: plot.minX + x, y: plot.maxY))
                     }
                     .stroke(.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    bubble(date)
-                        .alignmentGuide(.leading) { d in -min(plot.minX + x + 6, plot.maxX - d.width) }
-                        .alignmentGuide(.top) { _ in -plot.minY }
                 }
+                // A 1 pt anchor at the rule: the popover moves with it and stays open.
+                .popover(isPresented: Binding(get: { true }, set: { if !$0 { hover.wrappedValue = nil } }),
+                         attachmentAnchor: .rect(.rect(CGRect(x: plot.minX + x, y: plot.midY, width: 1, height: 1))),
+                         arrowEdge: .trailing) { bubble(date) }
             }
         }
         .allowsHitTesting(false)

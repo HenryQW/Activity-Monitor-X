@@ -4,12 +4,16 @@ import Observation
 import os
 import ServiceManagement
 
+enum MenuBarStyle: String {
+    case text, chart
+}
+
 /// App choices kept in the app: the menu bar item (M4-D11), appearance and launch at login.
 @Observable @MainActor
 final class Preferences {
     enum Appearance: String, CaseIterable { case system, light, dark }
 
-    private static let menuBarKey = "menuBarShown", appearanceKey = "appearance"
+    private static let menuBarKey = "menuBarShown", appearanceKey = "appearance", styleKey = "menuBarStyle"
     private static let log = Logger(subsystem: AMX.bundleID, category: "preferences")
     /// Nil outside the app bundle (`swift run`): a login item needs the bundle.
     private static let service = Bundle.main.bundleIdentifier == AMX.bundleID ? SMAppService.mainApp : nil
@@ -33,6 +37,10 @@ final class Preferences {
         case .light: NSAppearance(named: .aqua)
         case .dark: NSAppearance(named: .darkAqua)
         }
+    }
+
+    var menuBarStyle = UserDefaults.standard.string(forKey: Preferences.styleKey).flatMap(MenuBarStyle.init) ?? .chart {
+        didSet { UserDefaults.standard.set(menuBarStyle.rawValue, forKey: Self.styleKey) }
     }
 
     /// On while registered, also while Login Items waits for approval. Setting it registers or unregisters.

@@ -8,8 +8,6 @@ final class LiveModel {
     private(set) var stacked: [SeriesPoint] = []
     private(set) var ranking: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
-    /// Sparklines cost a second pass per 1 s rebuild, so they are built only while the Apps screen is shown.
-    var sparklinesShown = false { didSet { if sparklinesShown { rankedAt = -.infinity; Task { await rebuild() } } } }
     private(set) var state: LoadState = .loading
 
     private static let log = Logger(subsystem: AMX.bundleID, category: "live")
@@ -101,8 +99,8 @@ final class LiveModel {
         generation += 1
         let end = last + 1
         let withRanking = end - rankedAt >= 5
-        let (generation, all, metric, scope, hideQuiet, withSparklines) =
-            (generation, live.tracks, live.metric, history.scope, history.hidesQuiet, sparklinesShown)
+        let (generation, all, metric, scope, hideQuiet) =
+            (generation, live.tracks, live.metric, history.scope, history.hidesQuiet)
         let built = await Task.detached {
             let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
             let from = AppSeries.recordedStart(all, from: end - 300)
@@ -110,7 +108,7 @@ final class LiveModel {
             return (tracks: tracks, hidden: hidden, start: from,
                     stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),
                     ranking: withRanking ? AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last) : [],
-                    sparklines: withRanking && withSparklines ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
+                    sparklines: withRanking ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
         }.value
         guard generation == self.generation else { return }
         (self.end, start, tracks, hidden, stacked) = (end, built.start, built.tracks, built.hidden, built.stacked)

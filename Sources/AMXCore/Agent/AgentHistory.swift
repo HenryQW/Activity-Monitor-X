@@ -110,7 +110,7 @@ enum AgentHistory {
         kind is pressure (memory pressure; severity 0 normal, 1 warning, 2 critical) or thermal \
         (severity 0 nominal, 1 fair, 2 serious, 3 critical), or alert. An alert is any event with a rule; \
         pressure alerts are kind \(EventKind.pressure) with rule \(RuleName.pressure); kind \(EventKind.alert) holds \
-        the process rules and the sustained thermal state rule. Rules: \(RuleName.all.joined(separator: ", ")) \
+        the process and app rules and the thermal, swap and free space rules. Rules: \(RuleName.all.joined(separator: ", ")) \
         (alert severity 1 warning, 2 critical). app is the app of the process, if any. \(AgentTools.times)
         """,
         schema: AgentTools.schema([AgentTools.timeProperties,

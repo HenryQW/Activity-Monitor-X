@@ -38,8 +38,8 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D4. Milestone 3 open decisions (M3-D1 to M3-D18)
 
 - **Goal:** settle every choice the spec leaves open for Groups, attribution, the CLI and MCP, so M3 can be built tonight.
-- **Options and recommendations:** the plan lists 2-3 options and a recommendation for each (docs/plans/2026-10-22-m3-groups-mcp.md, "Open decisions").
-- **Opus opinion:** agrees with 16, disagrees on D10 (hand-written stdio server instead of swift-sdk) and D14 (follows D10), and adds conditions to D1, D2, D3, D6, D11, D12, D18 (docs/research/2026-10-22-m3-decisions-opinion.md).
+- **Options and recommendations:** the plan lists 2-3 options and a recommendation for each (the milestone plan (removed; see git history), "Open decisions").
+- **Opus opinion:** agrees with 16, disagrees on D10 (hand-written stdio server instead of swift-sdk) and D14 (follows D10), and adds conditions to D1, D2, D3, D6, D11, D12, D18.
 - **Call:** the plan's recommendations, with all of Opus's conditions, and D10 = hand-written stdio server. Listed in the plan's "Final decisions" section.
 - **D10 reasoning (this reverses your earlier choice of swift-sdk):** you accepted the SDK because it would save a lot of work. The facts tonight say it does not: a tools-only MCP server needs four JSON-RPC methods (~80-150 lines), the SDK glue is about the same size, the SDK is pre-1.0 (0.12.1), and SwiftPM resolves swift-nio and a `swift-docc-plugin` pinned to `branch: main`. Your policy is "a package only when it removes a lot of work". Cost if wrong: swapping to the SDK later replaces one file (`MCPHandler.swift`).
 - **Cost if wrong (others):** each is local to one task; see the plan.
@@ -47,7 +47,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D5. UI pass 1 (toolbar, search, palette, legend, Live)
 
 - **Goal:** remove the toolbar overflow (») the user called "ugly and confusing", and fix what the first screenshot pass found, the native way.
-- **Inputs:** design scout (research/2026-10-22-design-scout.md), a UI critic's proposal (research/2026-10-22-ui-pass1-proposal.md) and an Opus designer's challenge to it (research/2026-10-22-ui-pass1-debate.md); the user wants a search field.
+- **Inputs:** design scout, a UI critic's proposal and an Opus designer's challenge to it; the user wants a search field.
 - **Options and calls:**
   - Toolbar. (1) Range segmented in the centre, Metric as a pop-up; (2) Metric segmented in the centre, Range as a pop-up in a compact trailing group (Range, filter, Inspector, search). My pick and call: **(2)**. The user flips Metric often and sets Range once; the trailing group keeps the pop-up out of the way.
   - Search placement. (1) top of the sidebar; (2) trailing toolbar field; (3) content header. Critic: (1); challenger: (2). Call: **(2)**, with ⌘F (Edit > Find). The HIG puts sidebar search where it filters the sidebar itself; ours filters the tables, and a sidebar field vanishes when the sidebar is hidden. Search matches app name, process name, path and exact PID; it filters the tables and Pinned Apps, not the chart (totals stay true), and shows a count ("3 of 112 apps").
@@ -88,23 +88,23 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D9. UI pass 2 list
 
 - **Goal:** fix what the pass-1 screenshots still show.
-- **Options:** my list (i)-(vii) in research/2026-10-22-ui-pass2-opinion.md, each keep/drop.
+- **Options:** my list (i)-(vii) in local notes, each keep/drop.
 - **Opus opinion and call (taken as given):** (i) hover bubble: apps by value, Other last, hide 0.0 %, total on top; (ii) event lane: cluster markers closer than ~12 pt into one with a count coloured by the highest severity, show warning and higher by default, info events in the cluster's hover list; (iii) one peak definition (max chart-bucket value) in the inspector, the Timeline and the Apps tables, so a process peak is never above its app's; (iv) Quit / Force Quit in a solid bottom bar of the inspector (`.safeAreaInset(edge: .bottom)`, bar material, divider); (v) inspector processes: running first, then the top 20 exited by average, then "Show All N"; (vi) draw the last chart bucket; (vii) subtitle in the locale's format without repeating the range ("Since 11:06 PM", "Since Yesterday, 11:06 PM", "Since 21 Oct"); plus: search dims chart series that do not match; fewer x ticks in the inspector chart; no more leading row marks; check the palette under a protanopia filter.
 
 ## D10. Milestone 4 open decisions (M4-D1 to M4-D18)
 
 - **Goal:** settle the M4 plan (alerts, notifications, menu bar item, Settings, glossary) so that it can run without the owner.
 - **Options and my recommendations:** the "Decisions" section of plans/2026-10-22-m4-alerts-menubar.md. Each decision has options and a recommendation.
-- **Research:** research/2026-10-22-m4-macos-probes.md (notifications and login items for a self-signed app are not confirmed by any source; MenuBarExtra window reopen and `openSettings` have known macOS 26 problems).
-- **Opus opinion:** research/2026-10-22-m4-decisions-opinion.md. It agrees on 17 of 18. It differs on D5: sustained CPU should be 80 % for 30 min, because at 5 min every long build gives a notification. Pre-flight: start alert polling at app level, not in the window; probe the app lifetime chain first (new Task 0); the memory-jump check needs a 30 s wait before the allocation.
+- **Research:** local notes (notifications and login items for a self-signed app are not confirmed by any source; MenuBarExtra window reopen and `openSettings` have known macOS 26 problems).
+- **Opus opinion:** local notes. It agrees on 17 of 18. It differs on D5: sustained CPU should be 80 % for 30 min, because at 5 min every long build gives a notification. Pre-flight: start alert polling at app level, not in the window; probe the app lifetime chain first (new Task 0); the memory-jump check needs a 30 s wait before the allocation.
 - **Call:** all recommendations, with the Opus conditions. D5: keep the spec value (80 % for 5 min, which the owner approved), but re-arm per app only after 60 min, so one long build gives one alert. The morning report asks the owner to choose 5 or 30 min. Task 0 probes the app lifetime chain and fixes each fallback before the UI tasks.
 - **Cost if wrong:** D5 is one settings default. A failed Task 0 probe changes the menu bar task to `NSStatusItem`.
 
 ## D11. UI pass 3 list and its timing
 
 - **Goal:** fix what the pass-2 screenshots still show, without merge conflicts with the M3 view tasks.
-- **Options:** the ranked list in research/2026-10-22-ui-pass2-review.md (Opus review of the pass-2 screenshots); run pass 3 now on feat/m2-window, or after M3 Tasks 10 and 11 on the M3 branch.
-- **My recommendation:** take items 1 to 8 and the "would not do" list as given; profile the Live CPU first (research/2026-10-22-live-cpu-profile.md); run pass 3 after M3 Tasks 10 and 11, on the M3 branch, because those tasks edit the same views (sidebar, inspector, toolbar).
+- **Options:** the ranked list in local notes (Opus review of the pass-2 screenshots); run pass 3 now on feat/m2-window, or after M3 Tasks 10 and 11 on the M3 branch.
+- **My recommendation:** take items 1 to 8 and the "would not do" list as given; profile the Live CPU first; run pass 3 after M3 Tasks 10 and 11, on the M3 branch, because those tasks edit the same views (sidebar, inspector, toolbar).
 - **Opus opinion:** the review itself ranks the toolbar overflow with the inspector open (1320 pt) first and app CPU in Live (25 to 43 % of a core) second; it advises against a 1360 pt minimum width and a custom overflow menu.
 - **Call:** as recommended. The CPU profile runs now (read-only); the pass-3 changes start when M3 Task 11 is complete.
 - **Cost if wrong:** pass 3 starts a few hours later.
@@ -112,7 +112,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D12. Live CPU fixes: order and split
 
 - **Goal:** bring Live to the targets (app under 5 %, amxd under 3 %) and cut idle daemon CPU (2.6 %, target 2 %).
-- **Evidence:** research/2026-10-22-live-cpu-profile.md (screen locked, so app numbers are a lower limit): app 17 % and amxd 15 % in Live; the app rebuilds all 300 snapshots each second; amxd reads `translated`, path and name for every process every second.
+- **Evidence:** local notes (screen locked, so app numbers are a lower limit): app 17 % and amxd 15 % in Live; the app rebuilds all 300 snapshots each second; amxd reads `translated`, path and name for every process every second.
 - **Options:** (1) one task for app and daemon after M3 Task 11; (2) daemon fixes now in their own worktree (files no M3 task touches), app fixes with UI pass 3 after Task 11 (the same files as Task 10).
 - **My recommendation and call:** (2). The profile ranks the fixes; fix 4 (stop Live polling while the window is not visible) goes with the app fixes. Getting amxd under 3 % needs a root `sample` of amxd, which needs sudo outside the helper: "needs owner".
 - **Opus opinion:** not asked separately; the profile is an Opus report and ranks the same split by file.
@@ -122,7 +122,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 
 - **Goal:** settle the M5 plan (Disk, Disk Map, Hardware) so that it can run without the owner.
 - **Options and my recommendations:** the "Decisions" section of plans/2026-10-22-m5-disk-hardware.md.
-- **Opus opinion:** research/2026-10-22-m5-decisions-opinion.md. It agrees on 15 of 17, with conditions. D6: if the user-side SMART read fails, fall back to `smart_status` from `system_profiler`, not a root XPC call. D13: cut fans (one RPM reading on a screen read on open tells nothing). Pre-flight: Disk Live must not wake the daemon's 1 s tick; the key filter must drop GUID and UID keys; a TCC prompt may block a scan, so probe it first with a timer.
+- **Opus opinion:** local notes. It agrees on 15 of 17, with conditions. D6: if the user-side SMART read fails, fall back to `smart_status` from `system_profiler`, not a root XPC call. D13: cut fans (one RPM reading on a screen read on open tells nothing). Pre-flight: Disk Live must not wake the daemon's 1 s tick; the key filter must drop GUID and UID keys; a TCC prompt may block a scan, so probe it first with a timer.
 - **Call:** all recommendations with the Opus conditions, and both Opus differences (D6, D13). Interactive checks of the Disk, Disk Map and Hardware screens go to the morning list; each task gets an unattended check instead.
 - **Cost if wrong:** D6 shows less SMART detail; fans can return in a later pass.
 
@@ -181,7 +181,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D20: Scope of the UI review fix wave (window captures of 0.5.0, 2026-10-22 late morning)
 
 - **Goal:** fix what the first real look at the installed app found, without new features.
-- **Call:** fix 19 reviewer findings and 4 field findings in three parallel tasks by area (Timeline, System screens, shell), plan `docs/plans/2026-10-22-ui-review-fixes.md`. Not in scope: drag-to-recompute the top 5, a VoiceOver audio graph, the daemon and app CPU profile (D14 follow-up, next). Dark-mode captures need a relaunch with `-AppleInterfaceStyle Dark`; the system appearance is not changed.
+- **Call:** fix 19 reviewer findings and 4 field findings in three parallel tasks by area (Timeline, System screens, shell), plan `the milestone plan (removed; see git history)`. Not in scope: drag-to-recompute the top 5, a VoiceOver audio graph, the daemon and app CPU profile (D14 follow-up, next). Dark-mode captures need a relaunch with `-AppleInterfaceStyle Dark`; the system appearance is not changed.
 - **Cost if wrong:** some polish items wait for a later pass.
 
 ## D21: The inspector does not resize the window (user call)
@@ -218,7 +218,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 
 ## D25: Menu bar item with a CPU sparkline (user call)
 
-- **Goal:** a more useful menu bar item,. Research: [docs/research/menu-bar-research.md](../research/menu-bar-research.md).
+- **Goal:** a more useful menu bar item. Research: local notes.
 - **Options:** A. text only (as now); B. native `MenuBarExtra` with a template sparkline image plus the numbers, two tiles in the popover; C. `NSStatusItem` with drawn widgets.
 - **Call (user):** B. The label is a template image (24x12 pt CPU sparkline of the last 60 samples plus the CPU and memory pressure numbers), so light, dark and tint stay correct; pressure is not shown by colour. The popover gets two tiles (CPU with the same sparkline, Memory Pressure with its level word) above Top Apps and Recent Alerts. No custom glass or styling on the tiles (the user wants native views). One setting: "Text only" or "Text + chart". Cadence unchanged: 5 s closed, 1 s open. No third-party code, so no MIT notice is needed.
 - **Cost if wrong:** about 120 lines in the MenuBar folder and Settings.
@@ -226,7 +226,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 ## D26: Hover hints on every icon and button (user call)
 
 - **Goal:** when the pointer rests on an icon or a button for 3 s, a small hint says what it does.
-- **Call:** the native tooltip (`.help`) on every icon-only control, toolbar item, sidebar footer button, inspector action, table hover button and menu bar control, with text that says the action (for example "Show the inspector", "Pin Safari to the sidebar"). The app registers `NSInitialToolTipDelay` = 3000 ms in its own defaults, so the system tooltip waits 3 s in this app only. No custom hint views (ADR 0009).
+- **Call:** the native tooltip (`.help`) on every icon-only control, toolbar item, sidebar footer button, inspector action, table hover button and menu bar control, with text that says the action (for example "Show the inspector", "Pin Safari to the sidebar"). Hints use the system tooltip delay (about 1 s), as other Mac apps do (user call, revised from 3 s). No custom hint views (ADR 0009).
 - **Cost if wrong:** 3 s is longer than the system default (about 1 s); the value is one line to change.
 
 ## D27: Smooth Live chart and appearance setting (user calls)
@@ -245,6 +245,25 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Units:** GB and MB in alert rules are binary (2^30, 2^20 bytes), as in the memory rules.
 - **Boundaries:** every rule fires at its threshold (`>=`; free space at or below its percent).
 - **Ranges:** CPU and memory ranges scale with the Mac; the new rules have fixed ranges (for example disk writes 1 to 1,000 GB per hour, free space 1 to 50 %).
-- **Presets and switches:** choosing a preset sets thresholds only; each rule's on/off switch stays as the user left it. A new install has every rule on.
+- **Presets and switches:** choosing a preset sets thresholds only; each rule's on/off switch stays as the user left it, and turning a switch on or off does not change the picker to Custom. A new install has every rule on.
+- **Held rules start fresh:** an app whose samples were all zero needs a full new window of load before a held rule (CPU, network, energy, GPU) alerts.
 - **CPU row:** shows % of all cores with one decimal, and writes only on a real edit, so an old value (80 % of one core) keeps its stored value.
 - **Disk writes over gaps:** the hour total of an app survives ticks where the app has no live process, so bursty short-lived writers are caught.
+
+## D30: Hardware core squares show live usage (user idea)
+
+- **Goal:** the core squares on the Hardware screen show what each core does now.
+- **Call:** CPU squares: each square is one core, filled with the accent colour at an opacity that follows that core's usage (0 % is the plain grey square, 100 % is the full accent colour); per-core usage comes from `host_processor_info` in the app (no root), sampled every 2 s only while the Hardware screen shows. Cores map to the Super and Performance groups through `hw.perflevelN` (logical CPU counts and order); if the order cannot be proved, squares fill in index order and the screen says nothing more. GPU squares: macOS reports no per-core GPU use, so the number of lit squares follows total GPU utilisation (40 % of 16 lights 6). Each square has a hint ("Performance core 3: 42 %"). No red or yellow: those mean warning and critical only.
+- **Cost if wrong:** about 2 s of sampling work while the screen shows; none when hidden.
+
+## D31: Timeline and Apps become one Apps screen (user call)
+
+- **Goal:** one sidebar entry for the app list over a range; the two screens differed only by the chart.
+- **Call:** the sidebar's Monitor section has **Apps** and **Alerts**. Apps shows the chart (event lane, top 5 and Other) above one table; **Show Chart** (toolbar toggle and View menu item, on by default, saved) hides the chart. The one table keeps process expansion, sorting, the hover link to the chart band and the inspector path, and gains the Trend sparkline column (one shared scale per metric) and the Pin column; columns can be hidden with the native column menu. Pinned apps still open their own chart view. Window title "Apps". Command-number shortcuts follow the new order. Links that opened the Timeline at a time (alerts, notifications) open Apps at that time.
+- **Cost if wrong:** one screen to split again; the old Apps code is deleted, git keeps it.
+
+## D32: The inspector is a bento of native cards (user call)
+
+- **Goal:** a richer, calmer inspector than a plain list of sections.
+- **Call:** a scroll view with `GroupBox` cards in a `Grid` (bento): a header card (icon, name, path), two small tiles (Average, Peak), a full-width chart card, an About card beside a Peak Process card, an Alerts card, a Processes card (Running and Exited; a selectable `List` inside, so arrow keys still move the selection), and the actions (Show Processes, Pin, Quit, Force Quit) at the bottom. The group summary uses the same cards. Default `GroupBox` look; no glass on content cards (glass is for the control layer). Section titles say "Alerts", never "Events" or "Warnings".
+- **Cost if wrong:** layout only; the data and actions stay the same.

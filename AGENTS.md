@@ -10,7 +10,7 @@ Activity Monitor X: a root daemon (`amxd`) records per-process history in SQLite
 | Why it is built this way | `docs/adr/` (one decision per file) |
 | Words and their meaning | `GLOSSARY.md` |
 | Full decision log (D1 and later, with options and evidence) | `docs/decisions/2026-10-22-overnight.md` |
-| Plans per milestone, research | `docs/plans/`, `docs/research/`, `docs/research/` |
+| Active plans (deleted when done; git keeps them) | `docs/plans/` |
 | Resumable state (git-ignored) | `.context/progress.md` and the local work ledgers (git-ignored, kept out of the repo) |
 
 Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` (C shim), `Sources/amxd` (daemon, only DB writer), `Sources/ActivityMonitorX` (app), `Sources/amx` (CLI, MCP). Tests: `Tests/AMXCoreTests`.
@@ -29,6 +29,9 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - `ViewThatFits` does not work inside toolbar items; measure width instead.
 - SwiftUI `.inspector` grows the window; the inspector is an in-content pane (ADR 0007).
 - In agent worktrees plain `git` may be refused; use `/usr/bin/git`.
+- A `MenuBarExtra` alone does not keep a SwiftUI app running: `applicationShouldTerminateAfterLastWindowClosed` returns false while the item shows.
+- Notifications and login items need the app run from its bundle with the signing identifier equal to the bundle ID; dev builds (other ID) have both off.
+- `windowToolbarStyle` is ignored on the `Settings` scene; Liquid Glass on toolbar, sidebar and popovers is automatic.
 
 ## Rules for changes
 

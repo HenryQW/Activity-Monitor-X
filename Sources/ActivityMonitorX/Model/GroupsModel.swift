@@ -65,7 +65,7 @@ final class GroupsModel {
         (groups, loadError) = (fresh, nil)
     }
 
-    /// Without the history database the badges stay as they are; the Timeline shows the error.
+    /// Without the history database the badges stay as they are; the group screen shows the error.
     /// A save scores at once while the loop may be scoring too; only the newest run sets `scores`.
     private func score() async {
         guard !groups.isEmpty else { return }

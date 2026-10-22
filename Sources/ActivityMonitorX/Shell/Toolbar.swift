@@ -2,8 +2,9 @@ import AMXCore
 import SwiftUI
 
 /// Metric is flipped often, so it is the segmented control in the centre; Range is set once per question, so it is a
-/// pop-up in the trailing group with the filter and the inspector. Search is in the sidebar. System screens show no app
-/// data: their items are removed, not disabled; Disk keeps Range, Disk Map adds its target and Scan, Hardware has Refresh.
+/// pop-up in the trailing group with the filter and the inspector. Search is in the sidebar. Apps adds Show Chart. System
+/// screens show no app data: their items are removed, not disabled; Disk keeps Range, Disk Map adds its target and Scan,
+/// Hardware has Refresh.
 struct MainToolbar: CustomizableToolbarContent {
     let history: HistoryModel
     let selection: Selection
@@ -26,8 +27,9 @@ struct MainToolbar: CustomizableToolbarContent {
                     }
                     .accessibilityLabel("Metric")
                     .accessibilityValue(history.metric.label)
+                    .help("Choose the metric")
                 } else {
-                    metricPicker.pickerStyle(.segmented)
+                    metricPicker.pickerStyle(.segmented).help("Choose the metric")
                 }
             }
         }
@@ -42,6 +44,13 @@ struct MainToolbar: CustomizableToolbarContent {
             ToolbarItem(id: "refresh", placement: .primaryAction) {
                 // ⌘R lives on the View menu command.
                 Button("Refresh", systemImage: "arrow.clockwise") { selection.refreshes += 1 }
+                    .help("Refresh the hardware information")
+            }
+        }
+        if (selection.sidebar ?? .apps) == .apps {
+            ToolbarItem(id: "showChart", placement: .primaryAction) {
+                Toggle("Show Chart", systemImage: "chart.xyaxis.line", isOn: Bindable(selection).showChart)
+                    .help(selection.showChart ? "Hide the chart" : "Show the chart")
             }
         }
         if filters {
@@ -49,12 +58,14 @@ struct MainToolbar: CustomizableToolbarContent {
                 Toggle("Hide Quiet System Processes", systemImage: "line.3.horizontal.decrease", isOn: Bindable(history).hideQuietSystem)
                     // A group shows all its members.
                     .disabled(history.scope != nil)
+                    .help(history.hideQuietSystem ? "Show quiet system processes" : "Hide quiet system processes")
             }
         }
         if !selection.isSystem {
             ToolbarItem(id: "inspector", placement: .primaryAction) {
                 // ⌥⌘I lives on the View menu command.
                 Button("Inspector", systemImage: "sidebar.trailing") { selection.inspectorShown.toggle() }
+                    .help(selection.inspectorShown ? "Hide the inspector" : "Show the inspector")
             }
         }
     }
@@ -79,7 +90,7 @@ struct MainToolbar: CustomizableToolbarContent {
                 Label(history.range.label, systemImage: "clock")
             }
             .labelStyle(.titleOnly)
-            .help("Range")
+            .help("Choose the time range")
             .accessibilityLabel("Range")
             .accessibilityValue(history.range.spoken)
         }

@@ -8,7 +8,7 @@ A local, native macOS app that records the resource use of every process (system
 
 Success criteria:
 
-- After a slow period, one screen (Timeline) shows when it happened and which apps caused it.
+- After a slow period, one screen (Apps) shows when it happened and which apps caused it.
 - History goes back 90 days (decided 2026-10-21; was 1 year). Recording continues when the app is closed and when no user is logged in.
 - Root-owned processes (`WindowServer`, `mds_stores`, `backupd`, ...) are recorded.
 - The UI feels native to macOS 26+ and uses Liquid Glass the way the HIG says.
@@ -104,32 +104,31 @@ Size estimate (measured: ~1,160 live processes, ~63 active per minute): minute t
 
 ## 8. UI
 
-**HIG rules applied.** Liquid Glass only on the functional layer: floating sidebar, toolbar, inspector, popovers, sheets. The content layer (charts, tables) uses no glass and extends under the sidebar with `backgroundExtensionEffect`. Standard SwiftUI components first; custom glass only on the chart's hover bubble. Window title names the view, not the app. All commands in the menu bar with shortcuts; toolbar is customisable; sidebar icons follow the system accent colour; group colours carry meaning only.
+**HIG rules applied.** Liquid Glass only on the functional layer: floating sidebar, toolbar, inspector, popovers, sheets. The content layer (charts, tables) uses no glass and does not extend under the sidebar, so live charts never move behind it (user call, 2026-10-22). Standard SwiftUI components first; custom glass only on the chart's hover bubble. Window title names the view, not the app. All commands in the menu bar with shortcuts; toolbar is customisable; sidebar icons follow the system accent colour; group colours carry meaning only.
 
 **Window:** `NavigationSplitView` with a floating glass sidebar, content, and an inspector: a trailing pane inside the content area with a draggable divider and a material background. Opening it shrinks the content and never resizes the window (D21, D23).
 
 Sidebar:
 
-- **Monitor:** Timeline (default), Apps, Alerts (badge = unread count).
+- **Monitor:** Apps (default), Alerts (badge = unread count) (D31).
 - **Groups:** one item per user group (colour dot, current footprint score badge), "+" opens the editor sheet.
 - **System:** Disk, Disk Map, Hardware.
 - **Pinned Apps:** apps the user pins.
 
 Screens:
 
-- **Timeline:** toolbar range control (Live, 1H, 24H, 7D, 30D, 90D) and metric control (CPU, Memory, Disk, Energy, Network, GPU). Chart = **stacked areas for the top 5 apps in the visible range + Other**; app colours are stable across views. Event lane on top (pressure ▲, thermal ◆, alert ●). Hover rule with a glass value bubble. Drag selects a span. Below: native `Table` of apps ranked for the span (or the whole range), expandable to processes, sortable, columns can hide. Live = last 5 min, 1 s updates over XPC.
-- **Hide Quiet System Processes** (toolbar toggle and View menu item, on by default, saved): a process whose executable is under `/System/`, `/usr/` (not `/usr/local/`), `/bin/` or `/sbin/` is hidden from tables, the Apps screen and the top-5 choice while its average for the current metric and range is below: CPU 1 % of a core, memory 100 MB, disk and network 100 KB/s, energy 1, GPU 1 %. Hidden values add to Other, so totals stay true. A busy system process always shows. The inspector is not filtered.
-- **Apps:** all apps seen in the range, totals and a sparkline each; pin action.
-- **Group detail:** same layout as Timeline, scoped to the group. Metric control adds **Score** (CPU + memory as % of this Mac). Table = members with share of group.
-- **Alerts:** one list of alerts and insights, newest first, severity symbol. Click opens Timeline at that time with the app selected.
+- **Apps:** toolbar range control (Live, 1H, 24H, 7D, 30D, 90D) and metric control (CPU, Memory, Disk, Energy, Network, GPU). Chart = **stacked areas for the top 5 apps in the visible range + Other**; app colours are stable across views. Event lane on top (pressure ▲, thermal ◆, alert ●). Hover rule with a glass value bubble. Drag selects a span. Below: native `Table` of apps ranked for the span (or the whole range), expandable to processes, sortable, with a Trend sparkline over the range (one y scale for all rows) and a Pin button; columns can hide through the native column menu. **Show Chart** (toolbar toggle and View menu item, on by default, saved) hides the chart, event lane and span bar, and the table fills the screen; hiding it clears the span, and opening an alert shows it again. Live = last 5 min, 1 s updates over XPC (D31).
+- **Hide Quiet System Processes** (toolbar toggle and View menu item, on by default, saved): a process whose executable is under `/System/`, `/usr/` (not `/usr/local/`), `/bin/` or `/sbin/` is hidden from tables and the top-5 choice while its average for the current metric and range is below: CPU 1 % of a core, memory 100 MB, disk and network 100 KB/s, energy 1, GPU 1 %. Hidden values add to Other, so totals stay true. A busy system process always shows. The inspector is not filtered.
+- **Group detail:** same layout as Apps with the chart always shown, scoped to the group. Metric control adds **Score** (CPU + memory as % of this Mac). Table = members with share of group.
+- **Alerts:** one list of alerts and insights, newest first, severity symbol. Click opens Apps at that time with the app selected.
 - **Inspector:** selected app or process. Single-area history charts for the range, peak process and PID, glossary text, alerts in span, parent/child processes and run history, actions: Show Processes, Pin, Quit, Force Quit.
 - **Disk:** throughput, IOPS, latency, utilisation, free space history (purgeable not included); volumes, APFS containers, SMART health. Live on Disk is read in the app, not over XPC.
 - **Disk Map:** storage treemap of a chosen folder or volume. Works without Full Disk Access; shows which folders were refused and how to grant access.
 - **Hardware:** inventory tree and drawn overview. Read on open and on Refresh only.
 - **Group editor (sheet):** name, symbol, colour, rule tree (ALL/ANY/NOT over name, bundle ID, path, team ID), live list of matching processes.
-- **Settings:** standard Settings scene: size cap, alert thresholds, terminal apps, launch at login, helper status and install command.
+- **Settings:** standard Settings scene: appearance (System, Light, Dark), menu bar style, size cap, alert thresholds, terminal apps, launch at login, helper status and install command.
 
-**Menu bar:** one status item (CPU + memory pressure readout). Popover shows top apps now and the last alerts; it refreshes at 1 Hz only while open. Opens the window.
+**Menu bar:** one status item: CPU and memory pressure numbers, with a 24x12 pt CPU sparkline (last 60 samples, 5 min) drawn as one template image (a Settings picker chooses "Text only" or "Text + chart", default chart). Popover shows two tiles (CPU with the same sparkline, Memory Pressure with its level word), then top apps now and the last alerts; it refreshes at 1 Hz only while open. Opens the window.
 
 **Notifications:** the app posts one notification per new alert `events` row; click opens Alerts.
 
@@ -153,7 +152,7 @@ Rules run in `amxd` and write `events`, so they work while the app is closed. Ea
 | Swap used (system) | 100 % of RAM | 50 % of RAM | 25 % of RAM | 60 min |
 | Free space on the boot volume (system) | below 5 % | below 10 % | below 15 % | 24 h |
 
-Units in `settings.json` stay as the daemon uses them (CPU in % of one core, so a preset writes share × core count; bytes and bytes per second for disk and network, % of RAM for swap, % of the boot volume for free space), and the allowed ranges of each value scale with the Mac so that every preset is valid on any core count and memory size. Values in the table are rounded for display; the calibration (13 h of history on a 15-core, 48 GB Mac: Balanced gives about 12 alerts on a heavy developer day, most from pressure and energy) against recorded history is in `docs/research/alert-presets-calibration.md`.
+Units in `settings.json` stay as the daemon uses them (CPU in % of one core, so a preset writes share × core count; bytes and bytes per second for disk and network, % of RAM for swap, % of the boot volume for free space), and the allowed ranges of each value scale with the Mac so that every preset is valid on any core count and memory size. Values in the table are rounded for display; the calibration (13 h of history on a 15-core, 48 GB Mac: Balanced gives about 12 alerts on a heavy developer day, most from pressure and energy) against recorded history.
 
 Rule details kept from v1:
 - Rules for memory run per process, not per app, because helpers start and end all the time; the message names the app.

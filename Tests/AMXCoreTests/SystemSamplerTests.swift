@@ -71,4 +71,18 @@ import Testing
         _ = smc.read(now: 1007.9)
         #expect(smc.lastRead == 1004)
     }
+
+    @Test func perCoreDeltas() {
+        typealias T = SystemSampler.CoreTicks
+        let prev = [T(busy: 10, idle: 90), T(busy: UInt32.max, idle: 0)]
+        let now = [T(busy: 60, idle: 140), T(busy: 4, idle: 0)]
+        #expect(SystemSampler.corePercents(now, prev) == [50, 100])
+        #expect(SystemSampler.corePercents(now, [prev[0]]).isEmpty)
+    }
+
+    @Test func clusterIndexesStartWithSlowestLevel() {
+        let chip = ChipInfo(name: "", model: "", clusters: [.init(name: "Super", cores: 5), .init(name: "Performance", cores: 10)], memory: 0)
+        #expect(chip.cpuIndexes(cluster: 0) == 10..<15)
+        #expect(chip.cpuIndexes(cluster: 1) == 0..<10)
+    }
 }

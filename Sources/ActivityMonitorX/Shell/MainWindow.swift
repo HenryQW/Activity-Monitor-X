@@ -17,28 +17,50 @@ struct MainWindow: View {
     @Environment(AlertsModel.self) private var alerts
     @Environment(DiskMapModel.self) private var diskMap
     @Environment(\.openWindow) private var openWindow
-    /// The detail area's width, for the toolbar: items cannot read the room they have. The inspector pane lives inside
-    /// the detail area, so it does not change the room the toolbar has.
-    private let _width = State(initialValue: CGFloat(1000))
+    /// Whether the detail area is too narrow for the Metric segments: toolbar items cannot read the room they have. Only a
+    /// crossing of the threshold changes it, so a live resize does not rebuild the window at each point. The inspector pane
+    /// lives inside the detail area, so it does not change the room the toolbar has.
+    private let _compact = State(initialValue: false)
     /// The inspector pane's width, remembered; `InspectorPane` keeps it between 240 and 400 pt.
     @AppStorage("inspectorWidth") private var inspectorWidth = 280.0
 
-    /// Metric falls back to a menu where its segments no longer fit. Measured with the segments forced on, in a 1020 pt window
-    /// (the least it opens at): with the sidebar shown everything fits from 756 pt of detail and Range, Hide Quiet and Inspector
-    /// go into » at 752, with or without the Score segment; a hidden sidebar leaves 1020 pt or more, which fits.
-    private var compactToolbar: Bool { _width.wrappedValue < 760 }
+    /// Metric falls back to a menu where its segments no longer fit. Measured on Apps (the most items, with Show Chart) with the
+    /// 180 pt sidebar shown: everything fits from 800 pt of detail, and items go into » at 780.
+    private static let compactBelow: CGFloat = 800
+
+    private static let monitorKey = "sidebarOrderMonitor"
+    private static let systemKey = "sidebarOrderSystem"
+    private static let monitorDefaults = ["apps", "alerts"]
+    private static let systemDefaults = ["disk", "diskMap", "hardware"]
+    /// The saved order of the Monitor and System items; a drag stays inside its section.
+    private let _monitorOrder = State(initialValue: MainWindow.load(monitorKey, monitorDefaults))
+    private let _systemOrder = State(initialValue: MainWindow.load(systemKey, systemDefaults))
+
+    private static func load(_ key: String, _ defaults: [String]) -> [String] {
+        SidebarOrder.merge(saved: UserDefaults.standard.stringArray(forKey: key) ?? [], defaults: defaults)
+    }
+
+    private func move(_ from: IndexSet, _ to: Int, of order: State<[String]>, key: String) {
+        order.wrappedValue.move(fromOffsets: from, toOffset: to)
+        UserDefaults.standard.set(order.wrappedValue, forKey: key)
+    }
+
+    @ViewBuilder private func row(_ id: String) -> some View {
+        switch id {
+        case "apps": Label("Apps", systemImage: "square.grid.2x2").tag(SidebarItem.apps)
+        case "alerts": Label("Alerts", systemImage: "exclamationmark.triangle").badge(alerts.unread).tag(SidebarItem.alerts)
+        case "disk": Label("Disk", systemImage: "internaldrive").tag(SidebarItem.disk)
+        case "diskMap": Label("Disk Map", systemImage: "square.grid.3x3.square").tag(SidebarItem.diskMap)
+        default: Label("Hardware", systemImage: "cpu").tag(SidebarItem.hardware)
+        }
+    }
 
     var body: some View {
         NavigationSplitView(columnVisibility: _columns.projectedValue) {
             List(selection: Bindable(appSelection).sidebar) {
                 Section("Monitor") {
-                    Label("Timeline", systemImage: "chart.xyaxis.line")
-                        .tag(SidebarItem.timeline)
-                    Label("Apps", systemImage: "square.grid.2x2")
-                        .tag(SidebarItem.apps)
-                    Label("Alerts", systemImage: "exclamationmark.triangle")
-                        .badge(alerts.unread)
-                        .tag(SidebarItem.alerts)
+                    ForEach(_monitorOrder.wrappedValue, id: \.self) { row($0) }
+                        .onMove { move($0, $1, of: _monitorOrder, key: Self.monitorKey) }
                 }
                 if let error = groups.loadError {
                     Section("Groups") {
@@ -50,6 +72,7 @@ struct MainWindow: View {
                         if groups.groups.isEmpty {
                             Button("Add a Group…") { appSelection.editingGroup = .new }
                                 .buttonStyle(.plain)
+                                .help("Add a group of apps")
                                 .foregroundStyle(.secondary)
                         }
                         ForEach(groups.groups) { group in
@@ -71,18 +94,14 @@ struct MainWindow: View {
                             Spacer()
                             Button { appSelection.editingGroup = .new } label: { Label("New Group", systemImage: "plus").labelStyle(.iconOnly) }
                                 .buttonStyle(.borderless)
-                                .help("New Group")
+                                .help("Add a group of apps")
                                 .padding(.trailing, 6)
                         }
                     }
                 }
                 Section("System") {
-                    Label("Disk", systemImage: "internaldrive")
-                        .tag(SidebarItem.disk)
-                    Label("Disk Map", systemImage: "square.grid.3x3.square")
-                        .tag(SidebarItem.diskMap)
-                    Label("Hardware", systemImage: "cpu")
-                        .tag(SidebarItem.hardware)
+                    ForEach(_systemOrder.wrappedValue, id: \.self) { row($0) }
+                        .onMove { move($0, $1, of: _systemOrder, key: Self.systemKey) }
                 }
                 if !appSelection.pinned.isEmpty {
                     Section("Pinned Apps") {
@@ -103,9 +122,8 @@ struct MainWindow: View {
         } detail: {
             GeometryReader { proxy in
                 InspectorPane(shown: appSelection.inspectorShown, width: $inspectorWidth, available: proxy.size.width) {
-                    switch appSelection.sidebar ?? .timeline {
-                    case .timeline: TimelineView(focus: nil)
-                    case .apps: AppsView()
+                    switch appSelection.sidebar ?? .apps {
+                    case .apps: TimelineView(focus: nil)
                     case .alerts: AlertsView()
                     case .pinned(let app): TimelineView(focus: app)
                     case .group(let id): TimelineView(focus: nil, group: groups.groups.first { $0.id == id })
@@ -114,14 +132,14 @@ struct MainWindow: View {
                     case .hardware: HardwareView()
                     }
                 }
-                .onChange(of: proxy.size.width, initial: true) { _, width in _width.wrappedValue = width }
+                .onChange(of: proxy.size.width < Self.compactBelow, initial: true) { _, compact in _compact.wrappedValue = compact }
             }
-            // A new id drops toolbar layouts saved before Metric moved to the centre.
-            .toolbar(id: "window") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: compactToolbar) }
+            // A new id drops toolbar layouts saved before Metric moved to the centre and Show Chart came.
+            .toolbar(id: "window2") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: _compact.wrappedValue) }
             .frame(minHeight: 480)
             .navigationSplitViewColumnWidth(min: 620, ideal: 980)
         }
-        // The inspector never shows an app the search hides from the tables; a pinned Timeline keeps its own app.
+        // The inspector never shows an app the search hides from the tables; a pinned app's screen keeps its app.
         .onChange(of: appSelection.search) { _, query in
             if case .pinned = appSelection.sidebar { return }
             guard let app = appSelection.app, !query.isEmpty else { return }
@@ -156,12 +174,12 @@ struct MainWindow: View {
             if let group = groups.groups.first(where: { $0.id == id }) {
                 history.show(group, metric: history.metric)
             } else {
-                appSelection.sidebar = .timeline
+                appSelection.sidebar = .apps
             }
         }
         .onChange(of: history.liveSettings) { live.settingsChanged() }
         .onChange(of: appSelection.pinned) {
-            if case .pinned(let app) = appSelection.sidebar, !appSelection.isPinned(app) { appSelection.sidebar = .timeline }
+            if case .pinned(let app) = appSelection.sidebar, !appSelection.isPinned(app) { appSelection.sidebar = .apps }
         }
         // Activate after openWindow, or the window can open behind other apps (Task 0 probe 2). The menu bar label sets
         // the same closure, but it does not exist while the item is hidden in Settings.
@@ -180,7 +198,7 @@ struct MainWindow: View {
         }
     }
 
-    /// A group is shown by its Score; the Timeline never shows Score, so leaving a group resets it to CPU.
+    /// A group is shown by its Score; Apps never shows Score, so leaving a group resets it to CPU.
     private func scope(_ item: SidebarItem?) {
         if case .group(let id) = item, let group = groups.groups.first(where: { $0.id == id }) {
             history.show(group, metric: .score)
@@ -237,6 +255,7 @@ private struct InspectorPane<Content: View>: View {
                                 }
                                 .onEnded { _ in _dragStart.wrappedValue = nil })
                             .accessibilityElement()
+                            .help("Drag to change the inspector width")
                             .accessibilityLabel("Inspector width")
                             .accessibilityValue("\(Int(paneWidth)) points")
                             .accessibilityAdjustableAction { direction in

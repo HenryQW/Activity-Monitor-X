@@ -1,8 +1,9 @@
 import AMXCore
 import SwiftUI
 
-/// With `focus`, the Timeline of one pinned app: its single area and its processes. With `group`, the history model
-/// is scoped to the group's members, and the table shows each app's share of the group.
+/// The Apps screen: the chart above the app table, or the table alone while Show Chart is off. With `focus`, one pinned
+/// app: its single area and its processes. With `group`, the history model is scoped to the group's members, and the
+/// table shows each app's share of the group. Both always show the chart.
 struct TimelineView: View {
     let focus: AppKey?
     var group: ProcessGroup? = nil
@@ -21,6 +22,7 @@ struct TimelineView: View {
         let shown = AppSearch.filter(ranking, query: selection.search)
         let colors = AppPalette.colors(for: points)
         let title = focus?.name ?? group?.name
+        let chart = title != nil || selection.showChart
         Group {
             switch isLive ? live.state : history.state {
             case .loading:
@@ -38,35 +40,38 @@ struct TimelineView: View {
                 }
             case .ready:
                 VStack(spacing: 0) {
-                    TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, metric: history.metric,
-                                  events: isLive ? [] : history.events,
-                                  // An app without a band of its own is in Other's.
-                                  highlighted: _hovered.wrappedValue.map { key in [colors.keys.contains { $0.key == key } ? key : ""] }
-                                      ?? (selection.search.isEmpty ? nil : Set(shown.map(\.app.key))),
-                                  span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
-                                  commitSpan: isLive ? nil : { span in
-                                      history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970
-                                  },
-                                  otherProcesses: { b in
-                                      let named = Set(colors.keys)
-                                      return isLive ? live.otherProcesses(bucket: b, named: named)
-                                          : history.otherProcesses(bucket: b, named: named)
-                                  },
-                                  hover: hover)
-                        .frame(height: 280)
-                        .padding()
-                        .backgroundExtensionEffect()
-                        // Above the table, so an event bubble that reaches past the chart never draws under it.
-                        .zIndex(1)
-                    if let span = history.span, !isLive { spanBar(span) }
-                    AppTable(ranking: shown, colors: colors, metric: history.metric,
+                    if chart {
+                        TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, live: isLive, metric: history.metric,
+                                      events: isLive ? [] : history.events,
+                                      // An app without a band of its own is in Other's.
+                                      highlighted: _hovered.wrappedValue.map { key in [colors.keys.contains { $0.key == key } ? key : ""] }
+                                          ?? (selection.search.isEmpty ? nil : Set(shown.map(\.app.key))),
+                                      span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
+                                      commitSpan: isLive ? nil : { span in
+                                          history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970
+                                      },
+                                      otherProcesses: { b in
+                                          let named = Set(colors.keys)
+                                          return isLive ? live.otherProcesses(bucket: b, named: named)
+                                              : history.otherProcesses(bucket: b, named: named)
+                                      },
+                                      hover: hover)
+                            .frame(height: 280)
+                            .padding()
+                            // Above the table, so an event bubble that reaches past the chart never draws under it.
+                            .zIndex(1)
+                        if let span = history.span, !isLive { spanBar(span) }
+                    }
+                    AppTable(ranking: shown, colors: colors, metric: history.metric, sparklines: isLive ? live.sparklines : history.sparklines,
                              shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } }, live: isLive, hover: hover)
                         .equatable()
                 }
             }
         }
-        .navigationTitle(title ?? "Timeline")
+        .navigationTitle(title ?? "Apps")
         .navigationSubtitle(selection.subtitle(history.subtitle, shown: shown.count, of: ranking.count))
+        // A span hidden with the chart would rank the table for a time nobody sees.
+        .onChange(of: chart, initial: true) { _, shown in if !shown { history.span = nil } }
     }
 
     private func hover(_ key: String, _ inside: Bool) {
@@ -92,6 +97,7 @@ struct TimelineView: View {
             Button("Clear Selection", systemImage: "xmark.circle.fill") { history.span = nil }
                 .keyboardShortcut(.cancelAction)
                 .buttonStyle(.borderless)
+                .help("Clear the selected time span")
         }
         .font(.callout)
         .padding(.horizontal)

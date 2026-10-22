@@ -5,8 +5,8 @@ import SwiftUI
 /// Pressure ▲, thermal ◆ and alert ● markers on the chart's x scale, in the headroom strip at the top of the plot. Events closer
 /// than 12 pt share one marker with a count; shape and colour come from the most severe one: yellow warns, red is
 /// critical (the app palette uses neither); in light mode a warning has a dark outline, as yellow on white is under 3:1.
-/// A hover highlights the marker, shades its span and shows its events in a bubble; a click lists them, info events
-/// included, in a popover, and selects their span.
+/// A hover highlights the marker, shades its span and lists its events, info events included, in a popover; a click
+/// keeps the same popover open and selects their span.
 struct EventLane: View {
     let events: [EventMark]
     let proxy: ChartProxy
@@ -21,8 +21,9 @@ struct EventLane: View {
     /// The lead event's ts of the cluster under the pointer; the chart hides its value bubble meanwhile.
     let hovered: Binding<Double?>
     @Environment(\.colorScheme) private var colorScheme
-    /// The lead event's ts of the cluster whose popover is open: stable while a reload shifts the cluster indices.
-    private let _open = State<Double?>(initialValue: nil)
+    /// The lead event's ts of the cluster whose popover is open, stable while a reload shifts the cluster indices, and
+    /// whether a click opened it: a hover's popover closes when the pointer leaves the marker.
+    private let _open = State<(ts: Double, click: Bool)?>(initialValue: nil)
 
     /// The chart legend's key to the marker shapes.
     static let legend = [(symbol: "triangle.fill", name: "Pressure"), (symbol: "diamond.fill", name: "Thermal"),
@@ -36,9 +37,11 @@ struct EventLane: View {
                     proxy.position(forX: Date(timeIntervalSince1970: event.ts)).flatMap { (0...plot.width).contains($0) ? (x: $0, event: event) : nil }
                 }, gap: 12)
                 let active = clusters.first { $0.lead.ts == hovered.wrappedValue }
-                // A reload can drop the hovered cluster: the chart's value bubble must not stay hidden.
+                // A reload can drop the hovered or open cluster: the chart's value bubble must not stay hidden, and a
+                // later click must not find a popover open without its marker.
                 Color.clear.onChange(of: clusters.map(\.lead.ts)) { _, leads in
                     if let ts = hovered.wrappedValue, !leads.contains(ts) { hovered.wrappedValue = nil }
+                    if let ts = _open.wrappedValue?.ts, !leads.contains(ts) { _open.wrappedValue = nil }
                 }
                 if let active, let lo = proxy.position(forX: span(active).lowerBound), let hi = proxy.position(forX: span(active).upperBound) {
                     Rectangle()
@@ -50,7 +53,7 @@ struct EventLane: View {
                 ForEach(clusters.indices, id: \.self) { i in
                     let cluster = clusters[i]
                     Button {
-                        _open.wrappedValue = cluster.lead.ts
+                        _open.wrappedValue = (cluster.lead.ts, true)
                         select?(span(cluster))
                     } label: {
                         let symbol = Self.symbol(cluster.lead.kind)
@@ -80,61 +83,38 @@ struct EventLane: View {
                             .background(.primary.opacity(hovered.wrappedValue == cluster.lead.ts ? 0.15 : 0), in: .capsule)
                     }
                     .buttonStyle(.plain)
-                    // Exit clears whatever is hovered: a reload may have changed this cluster's lead.
-                    .onHover { hovered.wrappedValue = $0 ? cluster.lead.ts : nil }
-                    .popover(isPresented: Binding(get: { _open.wrappedValue == cluster.lead.ts },
-                                                  set: { if !$0 { _open.wrappedValue = nil } }),
+                    // An exit clears only this marker's hover and hover popover: the next marker's enter can come first.
+                    // One popover at a time: a click's popover stays until a click outside or Esc.
+                    .onHover { inside in
+                        let ts = cluster.lead.ts
+                        if inside {
+                            hovered.wrappedValue = ts
+                            if _open.wrappedValue?.click != true { _open.wrappedValue = (ts, false) }
+                        } else {
+                            if hovered.wrappedValue == ts { hovered.wrappedValue = nil }
+                            if let open = _open.wrappedValue, !open.click, open.ts == ts { _open.wrappedValue = nil }
+                        }
+                    }
+                    // Only this marker's own dismissal closes it, not a late one after the pointer moved to the next.
+                    .popover(isPresented: Binding(get: { _open.wrappedValue?.ts == cluster.lead.ts },
+                                                  set: { if !$0, _open.wrappedValue?.ts == cluster.lead.ts { _open.wrappedValue = nil } }),
                              arrowEdge: .bottom) {
                         EventList(events: cluster.events)
                     }
                     .accessibilityLabel(([label(cluster)] + cluster.events.prefix(Self.listed).map(detail)).joined(separator: "; "))
                     .position(x: plot.minX + cluster.x, y: plot.minY + 8)
                 }
-                // Below the marker, inside the plot; not while its popover is open.
-                if let active, _open.wrappedValue != active.lead.ts {
-                    ZStack(alignment: .topLeading) {
-                        Color.clear
-                        bubble(active, width: plot.width)
-                            .alignmentGuide(.leading) { d in -max(plot.minX, min(plot.minX + active.x - d.width / 2, plot.maxX - d.width)) }
-                            .alignmentGuide(.top) { _ in -(plot.minY + 20) }
-                    }
-                    .allowsHitTesting(false)
-                }
             }
         }
     }
 
-    /// Events in the accessibility label and, fewer, in the hover bubble; the popover lists all.
-    private static let listed = 8, bubbleRows = 5
+    /// Events in the accessibility label; the popover lists all.
+    private static let listed = 8
 
     /// At least one bucket, ending at the last event: what led up to the events.
     private func span(_ cluster: EventCluster) -> ClosedRange<Date> {
         let first = cluster.events[0].ts, last = cluster.events[cluster.events.count - 1].ts
         return Date(timeIntervalSince1970: max(start, min(first, last - bucket)))...Date(timeIntervalSince1970: max(start, last))
-    }
-
-    /// One line per event: the symbol in its severity's colour, time, kind and app (an alert's own, else the chart's
-    /// top app then). Messages are in the popover and the accessibility label. At most 320 pt wide, so the bubble stays
-    /// inside the 280 pt chart.
-    private func bubble(_ cluster: EventCluster, width: CGFloat) -> some View {
-        let shown = Array(cluster.events.prefix(Self.bubbleRows))
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(label(cluster)).fontWeight(.semibold).lineLimit(2)
-            ForEach(shown.indices, id: \.self) { i in
-                let event = shown[i]
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Image(systemName: Self.symbol(event.kind))
-                        .foregroundStyle(event.level == 2 ? Color.red : event.level == 1 ? .yellow : .secondary)
-                    Text(time(event.ts)).monospacedDigit().foregroundStyle(.secondary)
-                    Text(([Self.kind(event.kind)] + [app(event)].compactMap { $0 }).joined(separator: ", ")).lineLimit(1)
-                }
-            }
-            if cluster.events.count > Self.bubbleRows {
-                Text("\(cluster.events.count - Self.bubbleRows) more, click to list all").foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: min(320, width), alignment: .leading)
-        .hoverBubble()
     }
 
     /// "Memory pressure, Warning, Memory pressure warning, 1:12 AM, Top app: node".

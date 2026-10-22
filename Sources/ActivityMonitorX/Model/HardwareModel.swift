@@ -46,6 +46,21 @@ final class HardwareModel {
         if capture == task { capture = nil }
     }
 
+    /// Usage 0–100 per logical CPU and of the GPU, read every 2 s while the screen shows (`sampleLive`).
+    private(set) var cpuUsage: [Double] = []
+    private(set) var gpuUsage: Double?
+
+    /// The screen's `.task`: ends, and so stops reading, when the screen goes.
+    func sampleLive() async {
+        let load = CoreLoad()
+        cpuUsage = []
+        while !Task.isCancelled {
+            cpuUsage = load.read()
+            gpuUsage = GPUReader.deviceUtilization()
+            try? await Task.sleep(for: .seconds(2))
+        }
+    }
+
     /// The first value of `key` in the tree, depth first.
     func value(_ key: String) -> String? { values(key).first?.value }
 

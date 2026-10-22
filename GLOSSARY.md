@@ -30,7 +30,7 @@ A user-defined set of apps chosen by a rule tree (ALL, ANY, NOT over name, bundl
 _Avoid_: category, tag
 
 **Pinned app**:
-An app the user put in the sidebar to open its own Timeline.
+An app the user put in the sidebar to open its own chart and processes.
 
 ## Time and data
 

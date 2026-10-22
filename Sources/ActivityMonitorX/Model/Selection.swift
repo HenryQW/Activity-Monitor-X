@@ -4,10 +4,10 @@ import Observation
 
 @Observable @MainActor
 final class Selection {
-    private static let pinnedKey = "pinnedApps"
+    private static let pinnedKey = "pinnedApps", showChartKey = "showChart"
 
     /// The sidebar List's selection; Alerts and notifications navigate through it.
-    var sidebar: SidebarItem? = .timeline
+    var sidebar: SidebarItem? = .apps
     var app: AppKey? { didSet { if app != oldValue { process = nil } } }
     /// The inspector's selected process of `app`.
     var process: ProcessRank?
@@ -43,18 +43,31 @@ final class Selection {
         process.flatMap { !$0.exited && $0.pid > 1 && kill($0.pid, 0) == 0 ? $0 : nil }
     }
 
-    /// Opens the Timeline on an alert: the smallest range that holds its spell, the span around it, its app selected
-    /// and not hidden by a search; memory rules show Memory, the CPU rule CPU.
+    /// Opens Apps on an alert: the smallest range that holds its spell, the span around it on the chart, its app selected
+    /// and not hidden by a search; a per-app or memory rule shows its metric.
     func reveal(_ event: EventMark, history: HistoryModel, rules: AlertRules) {
         let focus = EventFocus.window(for: event.ts, lookback: rules.lookback(rule: event.rule ?? ""), now: Date().timeIntervalSince1970)
-        if event.rule == RuleName.memoryGrowth || event.rule == RuleName.memoryJump { history.metric = .memory }
-        if event.rule == RuleName.sustainedCPU { history.metric = .cpu }
+        switch event.rule {
+        case RuleName.memoryGrowth, RuleName.memoryJump: history.metric = .memory
+        case RuleName.sustainedCPU: history.metric = .cpu
+        case RuleName.diskWrites: history.metric = .disk
+        case RuleName.network: history.metric = .network
+        case RuleName.energy: history.metric = .energy
+        case RuleName.gpu: history.metric = .gpu
+        default: break
+        }
         // The range first: a range change clears the span.
         history.range = focus.range
         history.span = focus.span
         query = ""
         app = event.app
-        sidebar = .timeline
+        showChart = true
+        sidebar = .apps
+    }
+
+    /// Apps shows the chart above its table; off, the table fills the screen. Pinned apps and groups always show it.
+    var showChart = UserDefaults.standard.object(forKey: Selection.showChartKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showChart, forKey: Self.showChartKey) }
     }
 
     func isPinned(_ app: AppKey) -> Bool { pinned.contains { $0.key == app.key } }

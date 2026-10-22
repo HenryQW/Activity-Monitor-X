@@ -22,6 +22,15 @@ public struct ChipInfo: Sendable, Equatable {
             memory: number("hw.memsize"))
     }
 
+    /// The logical CPU indexes of cluster `index`. The kernel numbers `hw.perflevelN` from the fastest level, but
+    /// `host_processor_info` lists the slowest level first: on this Mac the IORegistry `cpu` nodes show logical-cpu-id
+    /// 0-9 with cluster-type "M" (the 10 Performance cores, perflevel1) and 10-14 with "P" (the 5 Super cores,
+    /// perflevel0). So the last cluster takes the first indexes.
+    public func cpuIndexes(cluster index: Int) -> Range<Int> {
+        let start = clusters[(index + 1)...].reduce(0) { $0 + $1.cores }
+        return start..<(start + clusters[index].cores)
+    }
+
     private static func number<T: FixedWidthInteger>(_ name: String) -> T {
         var v: T = 0
         var size = MemoryLayout<T>.size

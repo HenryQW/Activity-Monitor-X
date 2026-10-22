@@ -19,9 +19,18 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                LabeledContent("CPU", value: readout.percents.map { "\($0.cpu)%" } ?? "…")
-                LabeledContent("Memory Pressure", value: readout.percents.map { "\($0.pressure)%" } ?? "…")
+            HStack(alignment: .top) {
+                VStack(alignment: .leading) {
+                    Text("CPU").font(.headline)
+                    Text(readout.percents.map { "\($0.cpu)%" } ?? "…").font(.title2)
+                    CPUSparkline(values: readout.cpuHistory).stroke(.tint, lineWidth: 1).frame(width: 120, height: 24)
+                }
+                Spacer()
+                VStack(alignment: .leading) {
+                    Text("Memory Pressure").font(.headline)
+                    Text(readout.percents.map { "\($0.pressure)%" } ?? "…").font(.title2)
+                    Text(readout.percents?.levelWord ?? "").foregroundStyle(.secondary)
+                }
             }
             .monospacedDigit()
             Divider()
@@ -32,12 +41,15 @@ struct MenuBarContent: View {
             recentAlerts
             Divider()
             Button("Open Activity Monitor X") { open() }
+                .help("Open the main window")
             // `SettingsLink` does not activate the app, so the window would open behind the frontmost app (Task 0).
             Button("Settings…") {
                 NSApp.activate()
                 openSettings()
             }
+            .help("Open the settings")
             Button("Quit Activity Monitor X") { NSApp.terminate(nil) }
+                .help("Quit Activity Monitor X. The helper continues to record history.")
         }
         .buttonStyle(.borderless)
         .padding(12)
@@ -97,6 +109,7 @@ struct MenuBarContent: View {
                     }
                     .contentShape(Rectangle())
                 }
+                .help("Show this alert in Apps")
             }
         }
     }

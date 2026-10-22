@@ -5,7 +5,7 @@ import IOKit
 /// GPU figures from the `IOAccelerator` registry entries; no privilege needed.
 public enum GPUReader {
     /// Device utilisation 0–100 of the busiest accelerator.
-    static func deviceUtilization() -> Double {
+    public static func deviceUtilization() -> Double {
         var best = 0.0
         forEachAccelerator { accelerator in
             guard let stats = property(accelerator, "PerformanceStatistics") as? [String: Any],

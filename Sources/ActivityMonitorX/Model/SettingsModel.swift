@@ -51,6 +51,7 @@ final class SettingsModel {
         guard var new = settings else { return }
         do {
             try change(&new)
+            guard new != settings else { return }
             if let problem = new.validationProblem() { throw SettingsError.invalid(problem) }
         } catch {
             self.error = error.localizedDescription
@@ -61,7 +62,7 @@ final class SettingsModel {
         do {
             try await client.setSettings(new)
             error = nil
-            // "Show in Timeline" spans the rule's own window, so it needs the new values.
+            // "Show in Apps" spans the rule's own window, so it needs the new values.
             await alerts.refreshRules()
         } catch {
             let message = error.localizedDescription

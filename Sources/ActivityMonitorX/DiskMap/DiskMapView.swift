@@ -38,6 +38,7 @@ struct DiskMapView: View {
                 Text("Choose a volume or folder, then click Scan.")
             } actions: {
                 Button("Choose Folder…") { DiskMapTargetMenu.choose(model) }
+                    .help("Choose a folder to scan")
             }
         }
     }
@@ -55,6 +56,7 @@ struct DiskMapView: View {
                 Text("Scanning…")
             }
             Button("Stop") { model.stop() }
+                .help("Stop the scan")
         }
         .padding()
         .frame(maxWidth: 560)
@@ -101,6 +103,7 @@ struct DiskMapView: View {
                     }
                     HStack {
                         Button("Open Full Disk Access Settings") { NSWorkspace.shared.open(Self.fullDiskAccess) }
+                            .help("Open Privacy & Security settings to allow Full Disk Access")
                         Text("After you allow access, quit and reopen Activity Monitor X.").foregroundStyle(.secondary)
                     }
                 }
@@ -135,6 +138,7 @@ struct DiskMapView: View {
                         }
                         .buttonStyle(.borderless)
                         .fontWeight(level == focus.count ? .semibold : nil)
+                        .help("Show this folder")
                     }
                 }
             }

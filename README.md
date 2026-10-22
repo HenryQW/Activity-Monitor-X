@@ -1,6 +1,6 @@
 # Activity Monitor X
 
-Activity Monitor X records what each process on your Mac does, and keeps that history. A root helper (`amxd`) samples CPU, memory, disk, energy, network and GPU for every process. A SwiftUI app shows the history on a timeline, in an app table, and in the menu bar. The app also has alerts, process groups, a disk map and a hardware view. The `amx` command line tool gives the same history to scripts and to AI clients through an MCP server.
+Activity Monitor X records what each process on your Mac does, and keeps that history. A root helper (`amxd`) samples CPU, memory, disk, energy, network and GPU for every process. A SwiftUI app shows the history on one Apps screen (a chart above an app table) and in the menu bar. The app also has alerts, process groups, a disk map and a hardware view. The `amx` command line tool gives the same history to scripts and to AI clients through an MCP server.
 
 ## Requirements
 

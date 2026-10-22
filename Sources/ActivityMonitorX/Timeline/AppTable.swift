@@ -1,12 +1,16 @@
 import AMXCore
+import Charts
 import SwiftUI
 
-/// Apps ranked for the span (or the whole range), each expandable to its processes.
+/// Apps ranked for the span (or the whole range), each expandable to its processes, with the range's trend and a pin
+/// button; pin or unpin from the row button or the context menu.
 struct AppTable: View {
     let ranking: [AppRank]
     /// The chart's top apps; other apps get no dot.
     let colors: [AppKey: Color]
     let metric: Metric
+    /// Each app's line over the whole range.
+    let sparklines: [AppKey: [Double]]
     /// The group's total average; the table then shows each row's share of it.
     var shareTotal: Double? = nil
     /// Live re-ranks every 5 s: the row order then holds while the pointer is over the table (D19).
@@ -20,6 +24,7 @@ struct AppTable: View {
     /// Row positions (apps and processes) while the order holds; nil while the table sorts.
     private let _held = State<[Row.ID: Int]?>(initialValue: nil)
     private let _showIdle = State(initialValue: false)
+    @SceneStorage("appTableColumns") private var columns = TableColumnCustomization<Row>()
 
     var body: some View {
         let sorted = rows(sortedBy: _sortOrder.wrappedValue)
@@ -27,6 +32,8 @@ struct AppTable: View {
         let rows = held.map { Self.holding(sorted, at: $0) } ?? sorted
         let idle = ranking.count(where: isIdle)
         let details = AppKey.details(for: ranking.map(\.app))
+        // One y scale per metric: 0 to the largest value in view, so rows compare with each other.
+        let top = ranking.compactMap { sparklines[$0.app]?.max() }.max() ?? 1
         let byID = Dictionary(uniqueKeysWithValues: rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) })
         let selected = Binding<Row.ID?>(
             get: {
@@ -47,7 +54,7 @@ struct AppTable: View {
             })
 
         ScrollViewReader { proxy in
-            Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue) {
+            Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue, columnCustomization: $columns) {
                 TableColumn("App", value: \.name) { row in
                     if row.id == Row.idleID {
                         idleToggle(idle)
@@ -66,16 +73,20 @@ struct AppTable: View {
                     }
                 }
                 .width(min: 140)
+                .customizationID("app")
+                .disabledCustomizationBehavior(.visibility)
                 TableColumn("Average", value: \.average) { row in
                     if row.id != Row.idleID { linked(Text(metric.format(row.average)).monospacedDigit(), row, .trailing) }
                 }
                 .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
+                .customizationID("average")
                 TableColumn("Peak", value: \.peak) { row in
                     if row.id != Row.idleID { linked(Text(metric.format(row.peak)).monospacedDigit(), row, .trailing) }
                 }
                 .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
+                .customizationID("peak")
                 if let shareTotal {
                     TableColumn("Share", value: \.average) { row in
                         if row.id != Row.idleID {
@@ -85,7 +96,23 @@ struct AppTable: View {
                     }
                     .width(min: 64, ideal: 72, max: 90)
                     .alignment(.trailing)
+                    .customizationID("share")
                 }
+                TableColumn("Trend") { row in
+                    if row.process == nil, row.id != Row.idleID, let values = sparklines[row.app] {
+                        linked(Sparkline(values: values, color: colors[row.app] ?? .secondary, top: top), row, .leading)
+                    }
+                }
+                .width(min: 60, ideal: 80, max: 120)
+                .customizationID("trend")
+                TableColumn("Pin") { row in
+                    if row.process == nil, row.id != Row.idleID {
+                        linked(pinButton(row.app).labelStyle(.iconOnly).buttonStyle(.borderless)
+                            .accessibilityLabel(selection.isPinned(row.app) ? "Unpin \(row.name)" : "Pin \(row.name)"), row, .center)
+                    }
+                }
+                .width(36)
+                .customizationID("pin")
             } rows: {
                 ForEach(rows) { app in
                     DisclosureTableRow(app, isExpanded: expansion(app)) {
@@ -95,7 +122,8 @@ struct AppTable: View {
                 if idle > 0 { TableRow(Row.idle) }
             }
             // Double-click or Return opens the inspector on the row.
-            .contextMenu(forSelectionType: Row.ID.self) { _ in
+            .contextMenu(forSelectionType: Row.ID.self) { ids in
+                if let row = ids.first.flatMap({ byID[$0] }), row.process == nil { pinButton(row.app) }
             } primaryAction: { ids in
                 guard let id = ids.first, id != Row.idleID else { return }
                 selection.inspectorShown = true
@@ -148,6 +176,13 @@ struct AppTable: View {
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
             .accessibilityLabel("\(shown ? "Hide" : "Show") \(label)")
+            .help(shown ? "Hide idle apps" : "Show idle apps")
+    }
+
+    private func pinButton(_ app: AppKey) -> some View {
+        let pinned = selection.isPinned(app)
+        return Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
+            .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
     }
 
     /// A cell that reports its row's app under the pointer, over the cell's full width.
@@ -209,9 +244,32 @@ struct AppTable: View {
     }
 }
 
-/// Equal inputs skip the body: in Live the timeline redraws every second, but the ranking changes every 5 s.
+/// Equal inputs skip the body: in Live the chart redraws every second, but the ranking and the sparklines change every 5 s.
 extension AppTable: Equatable {
     nonisolated static func == (a: AppTable, b: AppTable) -> Bool {
-        (a.ranking, a.colors, a.metric, a.shareTotal, a.live) == (b.ranking, b.colors, b.metric, b.shareTotal, b.live)
+        (a.ranking, a.colors, a.metric, a.sparklines, a.shareTotal, a.live)
+            == (b.ranking, b.colors, b.metric, b.sparklines, b.shareTotal, b.live)
+    }
+}
+
+/// One line, no axes; the y scale is shared by every row (0 to `top`).
+private struct Sparkline: View {
+    let values: [Double]
+    let color: Color
+    let top: Double
+
+    var body: some View {
+        Chart {
+            ForEach(values.indices, id: \.self) { i in
+                LineMark(x: .value("Time", i), y: .value("Value", values[i]))
+            }
+        }
+        .foregroundStyle(color)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartYScale(domain: 0...max(top, .leastNonzeroMagnitude))
+        .chartLegend(.hidden)
+        .frame(height: 18)
+        .accessibilityHidden(true)
     }
 }

@@ -74,7 +74,7 @@ struct RuleEditor: View {
             Button(action: remove) { Label(rule.wrappedValue.kind == nil ? "Remove Condition" : "Remove Group",
                                            systemImage: "minus.circle").labelStyle(.iconOnly) }
                 .buttonStyle(.borderless)
-                .help("Remove")
+                .help(rule.wrappedValue.kind == nil ? "Remove this condition" : "Remove this group")
         }
     }
 

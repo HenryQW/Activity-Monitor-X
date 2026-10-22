@@ -8,7 +8,10 @@ public enum EventKind {
 public enum RuleName {
     public static let sustainedCPU = "sustained_cpu", memoryGrowth = "memory_growth", memoryJump = "memory_jump"
     public static let pressure = "pressure", thermal = "thermal"
-    public static let all = [sustainedCPU, memoryGrowth, memoryJump, pressure, thermal]
+    public static let diskWrites = "disk_writes", network = "network", energy = "energy", gpu = "gpu"
+    public static let swap = "swap", freeSpace = "free_space"
+    public static let all = [sustainedCPU, memoryGrowth, memoryJump, pressure, thermal, diskWrites, network, energy, gpu,
+                             swap, freeSpace]
 }
 
 /// An `events` row before it has a `process_id`; the writer maps `identity` to it.
@@ -26,9 +29,11 @@ public struct EventDraft: Sendable, Equatable {
 enum AlertLimits {
     /// A longer gap since the previous tick (sleep) restarts every ring and spell.
     static let maxGap = 30.0
-    static let pressureCooldown = 600.0
-    /// A new sustained CPU spell of an app alerts only this long after its last alert.
-    static let cpuRearm = 3600.0
+    static let pressureCooldown = 3600.0
+    /// A new spell of a per-app rule alerts only this long after the app's last alert of that rule.
+    static let appRearm = 3600.0
+    static let swapRearm = 3600.0
+    static let freeSpaceRearm = 86_400.0
     static let growthRSquared = 0.9
     /// Memory growth needs the last point above the point this many minutes earlier.
     static let stillGrowingMinutes = 5
@@ -40,9 +45,11 @@ enum AlertLimits {
 }
 
 /// Owns every event rule. Pure: it sees only the tick's samples and keeps its state in memory.
-/// Steps fire on change from the last tick; the first tick only sets the baseline. Re-arm state (CPU, growth,
-/// pressure) is in memory only, so after a daemon restart one repeat alert per busy app is possible.
+/// Steps fire on change from the last tick; the first tick only sets the baseline. Re-arm state (per-app rules,
+/// growth, pressure, swap, free space) is in memory only, so after a daemon restart one repeat alert per busy app is
+/// possible.
 public struct EventEngine: Sendable {
+    private let machine: Machine
     private var known: [ProcessIdentity: (name: String, app: AppInfo)] = [:]
     private var pressure: Int?
     private var thermal: Int?
@@ -51,8 +58,12 @@ public struct EventEngine: Sendable {
     private(set) var processRules = ProcessRules()
     /// The first tick of the current spell at or above the thermal rule's state, and whether it alerted.
     private var hot: (since: Double, alerted: Bool)?
+    /// By system rule (swap, free space): the last alert, and whether the current spell over the threshold alerted.
+    private var lastSystemAlert: [String: Double] = [:]
+    private var systemAlerted: Set<String> = []
 
-    public init() {}
+    /// `machine` gives the RAM for swap and the boot volume size for free space.
+    public init(machine: Machine = .current) { self.machine = machine }
 
     public mutating func evaluate(now: Double, processes: [ProcessSample], new: [(RawProcess, AppInfo)],
                                   system: SystemSample, rules: AlertRules) -> [EventDraft] {
@@ -77,6 +88,21 @@ public struct EventEngine: Sendable {
                                   value: Double(system.thermalState)))
         }
         if let alert = thermalAlert(now: now, state: system.thermalState, rule: rules.thermal) { out.append(alert) }
+        let swapPct = Double(system.swapUsed) / Double(machine.memoryBytes) * 100
+        if let alert = systemAlert(RuleName.swap, over: rules.swap.enabled && swapPct >= Double(rules.swap.percentOfMemory),
+                                   now: now, rearm: AlertLimits.swapRearm, value: swapPct,
+                                   message: "Swap used \(Self.bytes(system.swapUsed)), \(Int(swapPct.rounded())) % of memory") {
+            out.append(alert)
+        }
+        if let free = system.diskFree {
+            let freePct = Double(free) / Double(machine.bootVolumeBytes) * 100
+            if let alert = systemAlert(RuleName.freeSpace,
+                                       over: rules.freeSpace.enabled && freePct <= Double(rules.freeSpace.percentFree),
+                                       now: now, rearm: AlertLimits.freeSpaceRearm, value: freePct,
+                                       message: "Startup disk has \(Self.bytes(free)) free, \(Int(freePct.rounded())) %") {
+                out.append(alert)
+            }
+        }
         pressure = system.pressureLevel
         thermal = system.thermalState
         return out + alerts
@@ -121,6 +147,19 @@ public struct EventEngine: Sendable {
         return EventDraft(ts: now, kind: EventKind.alert, severity: state == 3 ? 2 : 1, identity: nil, rule: RuleName.thermal,
                           message: "Thermal state \(SystemState.thermal(state)) for \(rule.minutes) min",
                           value: Double(state))
+    }
+
+    /// One alert per spell over the threshold, and at most one per `rearm`; leaving the spell re-arms the rule.
+    private mutating func systemAlert(_ rule: String, over: Bool, now: Double, rearm: Double, value: Double,
+                                      message: @autoclosure () -> String) -> EventDraft? {
+        guard over else {
+            systemAlerted.remove(rule)
+            return nil
+        }
+        guard !systemAlerted.contains(rule), lastSystemAlert[rule].map({ now - $0 >= rearm }) ?? true else { return nil }
+        systemAlerted.insert(rule)
+        lastSystemAlert[rule] = now
+        return EventDraft(ts: now, kind: EventKind.alert, severity: 1, identity: nil, rule: rule, message: message(), value: value)
     }
 
     private func who(_ identity: ProcessIdentity) -> String? { known[identity].map(Self.who) }

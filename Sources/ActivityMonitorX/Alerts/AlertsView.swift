@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Alert rows newest first: rows that were unread when someone could last start to see
 /// the screen stay bold while it is shown. The sidebar search filters by app or message. Double-click or Show in
-/// Timeline opens the Timeline at the alert.
+/// Apps opens Apps at the alert.
 struct AlertsView: View {
     @Environment(AlertsModel.self) private var alerts
     @Environment(HistoryModel.self) private var history
@@ -68,7 +68,7 @@ struct AlertsView: View {
             }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
-            if ids.count == 1 { Button("Show in Timeline") { reveal(ids) } }
+            if ids.count == 1 { Button("Show in Apps") { reveal(ids) } }
         } primaryAction: { reveal($0) }
     }
 

@@ -12,6 +12,7 @@ struct HardwareView: View {
             .navigationTitle("Hardware")
             .navigationSubtitle(subtitle)
             .task { await hardware.loadOnce() }
+            .task { await hardware.sampleLive() }
             .onChange(of: selection.refreshes) { Task { await hardware.refresh() } }
     }
 
@@ -48,7 +49,8 @@ struct HardwareView: View {
     private var overview: some View {
         HStack(alignment: .top, spacing: 24) {
             if let chip = hardware.chip {
-                ChipDiagram(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) })
+                ChipDiagram(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) },
+                            cpuUsage: hardware.cpuUsage, gpuUsage: hardware.gpuUsage)
                     .frame(width: 300)
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {

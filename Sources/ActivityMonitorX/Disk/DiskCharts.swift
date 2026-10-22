@@ -11,7 +11,7 @@ struct DiskPoint {
     var segment = 0
 }
 
-/// Lines over time with a trailing Y axis; hover shows a rule and the values at that time (`HoverLayer`).
+/// Lines over time with a trailing Y axis; hover shows a rule and a popover with the values at that time (`HoverLayer`).
 struct DiskChart: View {
     let title: String
     /// Ordered by date.
@@ -115,7 +115,7 @@ struct DiskChart: View {
                 }
             }
         }
-        .hoverBubble()
+        .font(.caption).fixedSize().padding()
     }
 }
 

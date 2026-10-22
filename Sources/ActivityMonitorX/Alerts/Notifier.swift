@@ -7,7 +7,7 @@ import UserNotifications
 /// notifications need a bundle ID that matches the signature.
 @Observable @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
-    private static let category = "alert", showTimeline = "show-timeline"
+    private static let category = "alert", showApps = "show-apps"
     nonisolated private static let log = Logger(subsystem: AMX.bundleID, category: "notifications")
 
     /// Settings says "Notifications are off" unless authorized; it reads denied while the Allow prompt waits.
@@ -23,7 +23,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         self.history = history
         self.alerts = alerts
         super.init()
-        let action = UNNotificationAction(identifier: Self.showTimeline, title: "Show in Timeline", options: .foreground)
+        let action = UNNotificationAction(identifier: Self.showApps, title: "Show in Apps", options: .foreground)
         center.setNotificationCategories([UNNotificationCategory(identifier: Self.category, actions: [action], intentIdentifiers: [])])
     }
 
@@ -85,10 +85,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         await open(action: action, eventID: id)
     }
 
-    /// A click opens Alerts; Show in Timeline opens the Timeline at the alert.
+    /// A click opens Alerts; Show in Apps opens Apps at the alert.
     private func open(action: String, eventID: Int64?) async {
         selection.openMain?()
-        if action == Self.showTimeline, let event = alerts.alerts.first(where: { $0.id == eventID }) {
+        if action == Self.showApps, let event = alerts.alerts.first(where: { $0.id == eventID }) {
             selection.reveal(event, history: history, rules: alerts.rules)
         } else {
             selection.sidebar = .alerts

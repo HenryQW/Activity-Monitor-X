@@ -34,7 +34,9 @@ import Testing
         let body = try #require(top["settings"] as? [String: Any])
         #expect(Set(body.keys) == ["rules", "size_cap_bytes", "terminal_bundle_ids"])
         let rules = try #require(body["rules"] as? [String: Any])
-        #expect(Set(rules.keys) == ["memory_growth", "memory_jump", "pressure", "sustained_cpu", "thermal"])
+        #expect(Set(rules.keys) == ["disk_writes", "energy", "free_space", "gpu", "memory_growth", "memory_jump", "network",
+                                    "preset", "pressure", "sustained_cpu", "swap", "thermal"])
+        #expect(rules["preset"] as? String == "balanced")
         let pressure = try #require(rules["pressure"] as? [String: Any])
         #expect(pressure["level"] as? String == "warning")
     }
@@ -44,7 +46,73 @@ import Testing
         var expected = DaemonSettings()
         expected.sizeCapBytes = 5_000_000_000
         expected.rules.pressure.level = .critical
+        expected.rules.preset = .custom
         #expect(try DaemonSettings.decodeValidated(data) == expected)
+    }
+
+    @Test func oldSettingsDecodeAsCustom() throws {
+        // Every field an earlier build wrote, none of them a Balanced value.
+        let data = Data(#"""
+            {"version":1,"settings":{"size_cap_bytes":2000000000,"terminal_bundle_ids":["com.apple.Terminal"],"rules":{
+            "sustained_cpu":{"enabled":true,"percent":80,"minutes":5},
+            "memory_growth":{"enabled":false,"minutes":30,"megabytes":200},
+            "memory_jump":{"enabled":true,"megabytes":1024},
+            "pressure":{"enabled":true,"level":"critical"},
+            "thermal":{"enabled":true,"state":"fair","minutes":7}}}}
+            """#.utf8)
+        let rules = try DaemonSettings.decodeValidated(data).rules
+        var expected = DaemonSettings().rules
+        expected.preset = .custom
+        expected.sustainedCPU = AlertRules.SustainedCPU()
+        expected.memoryGrowth = AlertRules.MemoryGrowth()
+        expected.memoryGrowth.enabled = false
+        expected.memoryJump = AlertRules.MemoryJump()
+        expected.pressure.level = .critical
+        expected.thermal.state = .fair
+        expected.thermal.minutes = 7
+        #expect(rules == expected)
+    }
+
+    @Test func presetsValidOnSmallAndLargeMacs() {
+        let small = Machine(cores: 8, memoryBytes: 8 << 30, bootVolumeBytes: 256_000_000_000)
+        let large = Machine(cores: 24, memoryBytes: 192 << 30, bootVolumeBytes: 8_000_000_000_000)
+        for machine in [small, large] {
+            for preset in [AlertPreset.relaxed, .balanced, .strict] {
+                var settings = DaemonSettings()
+                settings.rules = .make(preset, for: machine)
+                #expect(settings.rules.preset == preset)
+                #expect(settings.validationProblem(for: machine) == nil, "\(preset) on \(machine.cores) cores")
+            }
+        }
+        // Stricter presets alert sooner: 50, 25 and 12 % of 8 cores; 12, 6 and 3 % of 8 GB.
+        let rules = [AlertPreset.relaxed, .balanced, .strict].map { AlertRules.make($0, for: small) }
+        #expect(rules.map(\.sustainedCPU.percent) == [400, 200, 96])
+        #expect(rules.map(\.memoryJump.megabytes) == [983, 492, 246])
+        #expect(rules.map(\.diskWrites.bytesPerHour) == [50 << 30, 20 << 30, 10 << 30])
+        #expect(rules.map(\.freeSpace.percentFree) == [5, 10, 15])
+    }
+
+    @Test func presetKeepsSwitches() {
+        var base = AlertRules()
+        base.gpu.enabled = false
+        base.energy.minutes = 60
+        let rules = AlertRules.make(.strict, for: Machine(cores: 8, memoryBytes: 8 << 30, bootVolumeBytes: 1 << 40),
+                                    keepingSwitchesOf: base)
+        #expect(!rules.gpu.enabled && rules.sustainedCPU.enabled)
+        #expect(rules.gpu.percent == 30 && rules.energy.minutes == 10)
+    }
+
+    @Test func balancedOn15Cores48GB() {
+        let rules = AlertRules.make(.balanced, for: Machine(cores: 15, memoryBytes: 48 << 30, bootVolumeBytes: 1 << 40))
+        #expect(rules.sustainedCPU.percent == 375 && rules.sustainedCPU.minutes == 5)
+        #expect(rules.memoryGrowth.megabytes == 1229 && rules.memoryGrowth.minutes == 30)  // 1.2 GB
+        #expect(rules.memoryJump.megabytes == 2949)  // 2.9 GB
+        #expect(rules.pressure.level == .warning && rules.thermal.state == .serious && rules.thermal.minutes == 5)
+        #expect(rules.diskWrites.bytesPerHour == 20 << 30)
+        #expect(rules.network.bytesPerSecond == 10 << 20 && rules.network.minutes == 5)
+        #expect(rules.energy.impact == 300 && rules.energy.minutes == 10)
+        #expect(rules.gpu.percent == 50 && rules.gpu.minutes == 5)
+        #expect(rules.swap.percentOfMemory == 50 && rules.freeSpace.percentFree == 10)
     }
 
     @Test func unknownEnumValueThrowsSettingsError() {
@@ -67,6 +135,8 @@ import Testing
 
     @Test func validation() throws {
         #expect(DaemonSettings().validationProblem() == nil)
+        // The ranges of earlier builds, which an 8-core 8 GB Mac keeps.
+        let small = Machine(cores: 8, memoryBytes: 8 << 30, bootVolumeBytes: 256_000_000_000)
         let cases: [(String, (inout DaemonSettings) -> Void)] = [
             ("Size cap must be 1 to 50 GB", { $0.sizeCapBytes = 999_999_999 }),
             ("Size cap must be 1 to 50 GB", { $0.sizeCapBytes = 50_000_000_001 }),
@@ -80,16 +150,33 @@ import Testing
             ("Memory growth time must be 10 to 120 min", { $0.rules.memoryGrowth.minutes = 121 }),
             ("Memory growth must be 50 to 16384 MB", { $0.rules.memoryGrowth.megabytes = 49 }),
             ("Memory growth must be 50 to 16384 MB", { $0.rules.memoryGrowth.megabytes = 16385 }),
-            ("Memory jump must be 256 to 16384 MB", { $0.rules.memoryJump.megabytes = 255 }),
-            ("Memory jump must be 256 to 16384 MB", { $0.rules.memoryJump.megabytes = 16385 }),
+            ("Memory jump must be 128 to 16384 MB", { $0.rules.memoryJump.megabytes = 127 }),
+            ("Memory jump must be 128 to 16384 MB", { $0.rules.memoryJump.megabytes = 16385 }),
             ("Thermal time must be 1 to 60 min", { $0.rules.thermal.minutes = 0 }),
             ("Thermal time must be 1 to 60 min", { $0.rules.thermal.minutes = 61 }),
+            ("Disk writes must be 1 to 1000 GB per hour", { $0.rules.diskWrites.bytesPerHour = (1 << 30) - 1 }),
+            ("Network must be 1 to 10000 MB/s", { $0.rules.network.bytesPerSecond = (10_000 << 20) + 1 }),
+            ("Network time must be 1 to 60 min", { $0.rules.network.minutes = 0 }),
+            ("Energy impact must be 10 to 5000", { $0.rules.energy.impact = 9 }),
+            ("Energy time must be 1 to 60 min", { $0.rules.energy.minutes = 61 }),
+            ("GPU must be 10 to 100 %", { $0.rules.gpu.percent = 101 }),
+            ("GPU time must be 1 to 60 min", { $0.rules.gpu.minutes = 0 }),
+            ("Swap must be 10 to 200 % of memory", { $0.rules.swap.percentOfMemory = 9 }),
+            ("Free space must be 1 to 50 %", { $0.rules.freeSpace.percentFree = 51 }),
         ]
         for (message, change) in cases {
             var settings = DaemonSettings()
             change(&settings)
-            #expect(settings.validationProblem() == message)
+            #expect(settings.validationProblem(for: small) == message)
         }
+        // The ranges grow with the Mac.
+        let large = Machine(cores: 24, memoryBytes: 192 << 30, bootVolumeBytes: 8_000_000_000_000)
+        var big = DaemonSettings()
+        big.rules.sustainedCPU.percent = 2400
+        big.rules.memoryJump.megabytes = 196_608
+        #expect(big.validationProblem(for: large) == nil)
+        big.rules.sustainedCPU.percent = 2401
+        #expect(big.validationProblem(for: large) == "Sustained CPU must be 10 to 2400 %")
         var low = DaemonSettings()
         low.sizeCapBytes = 100_000_000
         let data = try low.encoded()

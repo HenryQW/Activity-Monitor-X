@@ -15,21 +15,23 @@ private func sample(_ id: ProcessIdentity, mem: UInt64) -> ProcessSample {
     ProcessSample(identity: id, cpu: 0, mem: mem, diskR: 0, diskW: 0, energy: 0, gpu: 0, netIn: 0, netOut: 0)
 }
 
-private func system(pressure: Int = 1, thermal: Int = 0) -> SystemSample {
+private func system(pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil) -> SystemSample {
     var s = SystemSample()
     s.pressureLevel = pressure
     s.thermalState = thermal
+    s.swapUsed = swap
+    s.diskFree = free
     return s
 }
 
 private struct Rig {
-    var engine = EventEngine()
+    var engine = EventEngine(machine: Machine(cores: 8, memoryBytes: 8 * gib, bootVolumeBytes: 100 * gib))
     var rules = AlertRules()
 
-    mutating func tick(_ now: Double, pressure: Int = 1, thermal: Int = 0, processes: [ProcessSample] = [],
-                       new: [ProcessIdentity] = []) -> [EventDraft] {
+    mutating func tick(_ now: Double, pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil,
+                       processes: [ProcessSample] = [], new: [ProcessIdentity] = []) -> [EventDraft] {
         engine.evaluate(now: now, processes: processes, new: new.map(raw),
-                        system: system(pressure: pressure, thermal: thermal), rules: rules)
+                        system: system(pressure: pressure, thermal: thermal, swap: swap, free: free), rules: rules)
     }
 }
 
@@ -57,8 +59,8 @@ private struct Rig {
         #expect(r.tick(5, pressure: 2).map(\.rule) == ["pressure"])
         _ = r.tick(10, pressure: 4)
         // Past the cooldown, but a falling step never alerts.
-        #expect(r.tick(700, pressure: 2).map(\.rule) == [nil])
-        #expect(r.tick(705, pressure: 4).map(\.rule) == ["pressure"])
+        #expect(r.tick(3700, pressure: 2).map(\.rule) == [nil])
+        #expect(r.tick(3705, pressure: 4).map(\.rule) == ["pressure"])
 
         var critical = Rig()
         critical.rules.pressure.level = .critical
@@ -74,11 +76,38 @@ private struct Rig {
         let down = r.tick(60)
         #expect(down.map(\.severity) == [0] && down.map(\.rule) == [nil])
         #expect(r.tick(120, pressure: 2).map(\.rule) == [nil])
-        _ = r.tick(595)
-        // Exactly 600 s after the last alert: the cooldown has ended (>=).
-        #expect(r.tick(600, pressure: 2).map(\.rule) == ["pressure"])
-        _ = r.tick(650)
-        #expect(r.tick(700, pressure: 2).map(\.rule) == [nil])
+        _ = r.tick(3595)
+        // Exactly 3600 s after the last alert: the cooldown has ended (>=).
+        #expect(r.tick(3600, pressure: 2).map(\.rule) == ["pressure"])
+        _ = r.tick(3650)
+        #expect(r.tick(3700, pressure: 2).map(\.rule) == [nil])
+    }
+
+    /// 50 % of the rig's 8 GB.
+    @Test func swapAlert() {
+        var r = Rig()
+        #expect(r.tick(0, swap: 4 * gib - 1).isEmpty)
+        let at = r.tick(5, swap: 4 * gib)
+        #expect(at.map(\.rule) == ["swap"] && at.first?.kind == EventKind.alert && at.first?.identity == nil)
+        #expect(at.first?.message == "Swap used 4.0 GB, 50 % of memory" && at.first?.value == 50)
+        #expect(r.tick(10, swap: 8 * gib).isEmpty)
+        _ = r.tick(15)
+        // A new spell alerts only 60 min after the last alert.
+        #expect(r.tick(3604, swap: 4 * gib).isEmpty)
+        #expect(r.tick(3605, swap: 4 * gib).map(\.rule) == ["swap"])
+    }
+
+    /// 10 % of the rig's 100 GB.
+    @Test func freeSpaceAlert() {
+        var r = Rig()
+        #expect(r.tick(0, free: 10 * gib + 1).isEmpty)
+        let at = r.tick(5, free: 10 * gib)
+        #expect(at.map(\.rule) == ["free_space"] && at.first?.message == "Startup disk has 10.0 GB free, 10 %")
+        #expect(r.tick(10, free: gib).isEmpty)
+        _ = r.tick(15, free: 20 * gib)
+        // A new spell alerts only 24 h after the last alert.
+        #expect(r.tick(86_404, free: gib).isEmpty)
+        #expect(r.tick(86_405, free: gib).map(\.rule) == ["free_space"])
     }
 
     @Test func thermalEventOnChange() {
@@ -120,6 +149,10 @@ private struct Rig {
         r.rules.memoryJump.enabled = false
         r.rules.pressure.enabled = false
         r.rules.thermal.enabled = false
+        r.rules.swap.enabled = false
+        r.rules.freeSpace.enabled = false
+        var system = r
+        #expect(system.tick(0, swap: 16 * gib, free: 0).isEmpty)
         var drafts: [EventDraft] = []
         for (i, level) in [1, 2, 4, 1].enumerated() { drafts += r.tick(Double(i) * 5, pressure: level, thermal: 3) }
         for t in stride(from: 20.0, through: 600, by: 5) { drafts += r.tick(t, thermal: t < 300 ? 3 : 2) }

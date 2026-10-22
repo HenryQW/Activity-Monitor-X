@@ -147,8 +147,14 @@ public final class SystemSampler {
         return total > 0 ? min(busy / total * 100, 100) : 0
     }
 
+    /// Busy share of each core's ticks, 0–100, in logical CPU order; empty when the core counts differ.
+    static func corePercents(_ current: [CoreTicks], _ previous: [CoreTicks]) -> [Double] {
+        guard current.count == previous.count else { return [] }
+        return zip(current, previous).map { cpuPercent([$0], [$1]) }
+    }
+
     /// Per-core ticks from `host_processor_info`; nice is folded into user.
-    private static func coreTicks() -> [CoreTicks]? {
+    static func coreTicks() -> [CoreTicks]? {
         var cpuCount = natural_t(0)
         var info: processor_info_array_t?
         var infoCount = mach_msg_type_number_t(0)

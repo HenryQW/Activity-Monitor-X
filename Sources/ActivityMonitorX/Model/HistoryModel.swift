@@ -40,7 +40,7 @@ final class HistoryModel {
     /// The selected group: only its members are loaded, and the quiet filter is off. Set through `show(_:metric:)`.
     private(set) var scope: ProcessGroup?
     var hidesQuiet: Bool { hideQuietSystem && scope == nil }
-    /// Score is a group's metric; the Timeline shows the recorded ones.
+    /// Score is a group's metric; Apps shows the recorded ones.
     var metrics: [Metric] { scope == nil ? Metric.recorded : Metric.allCases }
     /// What a Live rebuild depends on, so one change of scope and metric rebuilds Live once.
     var liveSettings: LiveSettings { LiveSettings(metric: metric, scope: scope, hideQuiet: hideQuietSystem) }
@@ -55,8 +55,8 @@ final class HistoryModel {
     private(set) var ranking: [AppRank] = []
     private(set) var system: [SystemPoint] = []
     private(set) var events: [EventMark] = []
-    /// Every app over the whole range (no span), with its sparkline, for the Apps screen.
-    private(set) var apps: [AppRank] = []
+    /// Every app over the whole range (no span): `ranking` while no span is selected.
+    private var apps: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
     private(set) var state: LoadState = .loading
     /// The bundled process glossary, set once it has loaded; nil under `swift run`, which has no bundle resources.

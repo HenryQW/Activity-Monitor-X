@@ -9,18 +9,16 @@ struct GoCommands: Commands {
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("Timeline") { selection.sidebar = .timeline }
-                .keyboardShortcut("1")
             Button("Apps") { selection.sidebar = .apps }
-                .keyboardShortcut("2")
+                .keyboardShortcut("1")
             Button("Alerts") { selection.sidebar = .alerts }
-                .keyboardShortcut("3")
+                .keyboardShortcut("2")
             Button("Disk") { selection.sidebar = .disk }
-                .keyboardShortcut("4")
+                .keyboardShortcut("3")
             Button("Disk Map") { selection.sidebar = .diskMap }
-                .keyboardShortcut("5")
+                .keyboardShortcut("4")
             Button("Hardware") { selection.sidebar = .hardware }
-                .keyboardShortcut("6")
+                .keyboardShortcut("5")
             Divider()
         }
         CommandGroup(after: .sidebar) {
@@ -29,6 +27,8 @@ struct GoCommands: Commands {
             }
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(selection.isSystem)
+            Button(selection.showChart ? "Hide Chart" : "Show Chart") { selection.showChart.toggle() }
+                .disabled((selection.sidebar ?? .apps) != .apps)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
                 .disabled(selection.isSystem || selection.sidebar == .alerts)
             Divider()
