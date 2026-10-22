@@ -27,6 +27,13 @@ public struct SystemSample: Sendable {
     public init() {}
 }
 
+/// The menu bar's readout: machine CPU 0–100, the pressure index 0–100 and the kernel level (1, 2 or 4).
+public struct SystemReadout: Sendable, Equatable {
+    public let cpu: Double
+    public let pressurePct: Double
+    public let pressureLevel: Int
+}
+
 /// Turns system counters into one `SystemSample` per tick. The first call has no
 /// previous counters, so its CPU and disk rates are 0.
 public final class SystemSampler {
@@ -47,32 +54,13 @@ public final class SystemSampler {
         let valid = wall > 0 && wall <= 60
         var s = SystemSample()
 
-        let ticks = Self.coreTicks()
-        if let previousTicks, let ticks { s.cpu = Self.cpuPercent(ticks, previousTicks) }
-        previousTicks = ticks
+        readCPU(into: &s)
         var loads = [0.0, 0, 0]
         if getloadavg(&loads, 3) == 3 { s.load1 = loads[0] }
         s.thermalState = ProcessInfo.processInfo.thermalState.rawValue
-
-        if let vm = Self.vmStatistics() {
-            let page = Self.pageSize
-            func bytes(_ pages: UInt32) -> UInt64 { UInt64(pages) * page }
-            let anonymous = CPUMath.delta(bytes(vm.internal_page_count), bytes(vm.purgeable_count))
-            s.memCompressed = bytes(vm.compressor_page_count)
-            s.memUsed = anonymous + bytes(vm.wire_count) + s.memCompressed
-        }
-        var level: Int32 = 0
-        if Self.sysctl("kern.memorystatus_vm_pressure_level", into: &level), [1, 2, 4].contains(level) {
-            s.pressureLevel = Int(level)
-        }
+        readMemory(into: &s)
         guard !liveOnly else { previousNow = now; return s }
-        var swap = xsw_usage()
-        if Self.sysctl("vm.swapusage", into: &swap) { s.swapUsed = swap.xsu_used }
-        let load = s.memCompressed &+ s.swapUsed
-        let growth = valid ? previousLoad.map { Double(CPUMath.delta(load, $0)) / wall } ?? 0 : 0
-        previousLoad = load
-        s.pressurePct = PressureIndex.percent(level: s.pressureLevel, compressed: s.memCompressed,
-                                              swap: s.swapUsed, ram: Self.ram, growthBytesPerSec: growth)
+        readPressure(into: &s, wall: valid ? wall : nil)
 
         let disk = disks.read()
         if valid { addDiskRates(to: &s, current: disk, wall: wall) }
@@ -85,6 +73,48 @@ public final class SystemSampler {
         s.tempSSD = temps.ssd
         previousNow = now
         return s
+    }
+
+    /// CPU and memory pressure only, for the menu bar: the first call's CPU is 0, as in `sample`.
+    public func readout(now: Double) -> SystemReadout {
+        let wall = previousNow.map { now - $0 } ?? 0
+        var s = SystemSample()
+        readCPU(into: &s)
+        readMemory(into: &s)
+        readPressure(into: &s, wall: wall > 0 && wall <= 60 ? wall : nil)
+        previousNow = now
+        return SystemReadout(cpu: s.cpu, pressurePct: s.pressurePct, pressureLevel: s.pressureLevel)
+    }
+
+    private func readCPU(into s: inout SystemSample) {
+        let ticks = Self.coreTicks()
+        if let previousTicks, let ticks { s.cpu = Self.cpuPercent(ticks, previousTicks) }
+        previousTicks = ticks
+    }
+
+    private func readMemory(into s: inout SystemSample) {
+        if let vm = Self.vmStatistics() {
+            let page = Self.pageSize
+            func bytes(_ pages: UInt32) -> UInt64 { UInt64(pages) * page }
+            let anonymous = CPUMath.delta(bytes(vm.internal_page_count), bytes(vm.purgeable_count))
+            s.memCompressed = bytes(vm.compressor_page_count)
+            s.memUsed = anonymous + bytes(vm.wire_count) + s.memCompressed
+        }
+        var level: Int32 = 0
+        if Self.sysctl("kern.memorystatus_vm_pressure_level", into: &level), [1, 2, 4].contains(level) {
+            s.pressureLevel = Int(level)
+        }
+    }
+
+    /// Swap and the pressure index; `wall` is nil when the last tick is missing or over 60 s old (no growth rate).
+    private func readPressure(into s: inout SystemSample, wall: Double?) {
+        var swap = xsw_usage()
+        if Self.sysctl("vm.swapusage", into: &swap) { s.swapUsed = swap.xsu_used }
+        let load = s.memCompressed &+ s.swapUsed
+        let growth = wall.flatMap { wall in previousLoad.map { Double(CPUMath.delta(load, $0)) / wall } } ?? 0
+        previousLoad = load
+        s.pressurePct = PressureIndex.percent(level: s.pressureLevel, compressed: s.memCompressed,
+                                              swap: s.swapUsed, ram: Self.ram, growthBytesPerSec: growth)
     }
 
     /// Sums the disks seen on both ticks; a newly attached disk starts at zero.

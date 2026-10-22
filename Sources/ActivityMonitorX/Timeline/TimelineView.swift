@@ -53,8 +53,7 @@ struct TimelineView: View {
             }
         }
         .navigationTitle(title ?? "Timeline")
-        .navigationSubtitle(selection.search.isEmpty ? history.subtitle
-                            : "\(shown.count) of \(ranking.count) apps")
+        .navigationSubtitle(selection.subtitle(history.subtitle, shown: shown.count, of: ranking.count))
     }
 
     private var collecting: some View {

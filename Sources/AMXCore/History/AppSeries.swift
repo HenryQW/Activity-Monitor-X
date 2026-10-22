@@ -24,10 +24,14 @@ public struct AppRank: Sendable, Identifiable {
     public let peak: Double
     public let processes: [ProcessRank]
 
-    /// The inspector's list: every running process, then the top `limit` exited ones by average, so a long-gone
-    /// helper never hides a running process.
-    public func runningFirst(exited limit: Int) -> [ProcessRank] {
-        processes.filter { !$0.exited } + processes.filter(\.exited).prefix(limit)
+    /// The inspector's rows: processes of one name together, names in order of their first process, so 14 idle
+    /// helpers of one name read as one row.
+    public static func byName(_ processes: some Sequence<ProcessRank>) -> [[ProcessRank]] {
+        var groups: [[ProcessRank]] = [], index: [String: Int] = [:]
+        for p in processes {
+            if let i = index[p.name] { groups[i].append(p) } else { index[p.name] = groups.count; groups.append([p]) }
+        }
+        return groups
     }
 }
 
@@ -100,6 +104,15 @@ public enum AppSeries {
     public static func closed(_ points: [SeriesPoint], bucket: Double) -> [SeriesPoint] {
         guard let last = points.last?.bucket else { return points }
         return points + points.filter { $0.bucket == last }.map { SeriesPoint(bucket: last + bucket, app: $0.app, value: $0.value) }
+    }
+
+    /// The highest bucket total of a stack, the top of the chart: with `span`, of the buckets that overlap it.
+    public static func peakTotal(_ points: [SeriesPoint], bucket: Double, in span: ClosedRange<Double>? = nil) -> Double {
+        var totals: [Double: Double] = [:]
+        for p in points where span.map({ p.bucket < $0.upperBound && p.bucket + bucket > $0.lowerBound }) ?? true {
+            totals[p.bucket, default: 0] += p.value
+        }
+        return totals.values.max() ?? 0
     }
 
     /// The hover bubble's rows for one bucket: apps by value, Other last, without the rows `hides` (they would read 0).

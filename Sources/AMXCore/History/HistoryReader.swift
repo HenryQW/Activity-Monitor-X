@@ -1,9 +1,23 @@
+import Foundation
 import GRDB
 
 public struct AppKey: Hashable, Sendable, Codable {
     public init(key: String, name: String) { (self.key, self.name) = (key, name) }
     public let key: String
     public let name: String
+
+    /// What tells apart apps whose names differ at most in case ("Claude" and "claude"), by key: the folder of an app
+    /// bundle, or "Command line" for an executable outside one. An app with a name of its own gets none.
+    public static func details(for apps: [AppKey]) -> [String: String] {
+        var keys: [String: Set<String>] = [:]
+        for app in apps { keys[app.name.lowercased(), default: []].insert(app.key) }
+        var details: [String: String] = [:]
+        for app in apps where keys[app.name.lowercased()]!.count > 1 {
+            details[app.key] = app.key.hasPrefix("/")
+                ? ((app.key as NSString).deletingLastPathComponent as NSString).abbreviatingWithTildeInPath : "Command line"
+        }
+        return details
+    }
 }
 
 public struct Slice: Sendable {
@@ -159,7 +173,7 @@ public enum SystemState {
     }
 }
 
-public struct EventMark: Sendable {
+public struct EventMark: Sendable, Identifiable {
     public let id: Int64
     public let ts: Double
     public let kind: String
@@ -168,6 +182,12 @@ public struct EventMark: Sendable {
     public let app: AppKey?
     /// Set on an alert (M4-D2).
     public let rule: String?
+
+    /// The rows above `notified` that are under 10 min old, in order (M4-D8): older new rows only raise the badge,
+    /// so an app closed for a week posts nothing old.
+    public static func toNotify(_ rows: [EventMark], after notified: Int64, now: Double) -> [EventMark] {
+        rows.filter { $0.id > notified && now - $0.ts < 600 }
+    }
 }
 
 extension HistoryReader {

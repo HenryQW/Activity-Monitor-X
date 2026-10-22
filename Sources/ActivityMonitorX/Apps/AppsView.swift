@@ -26,8 +26,7 @@ struct AppsView: View {
             }
         }
         .navigationTitle("Apps")
-        .navigationSubtitle(selection.search.isEmpty ? history.subtitle
-                            : "\(shown.count) of \(all.count) apps")
+        .navigationSubtitle(selection.subtitle(history.subtitle, shown: shown.count, of: all.count))
         .onAppear { live.sparklinesShown = true }
         .onDisappear { live.sparklinesShown = false }
     }
@@ -37,9 +36,10 @@ struct AppsView: View {
             .sorted(using: _sortOrder.wrappedValue)
         let metric = history.metric
         let colors = AppPalette.colors(for: history.range == .live ? live.stacked : history.stacked)
+        let details = AppKey.details(for: apps.map(\.app))
 
         return Table(rows, selection: Bindable(selection).app, sortOrder: _sortOrder.projectedValue) {
-            TableColumn("App", value: \.name) { AppLabel(app: $0.app, color: colors[$0.app], pinned: selection.isPinned($0.app)) }
+            TableColumn("App", value: \.name) { AppLabel(app: $0.app, color: colors[$0.app], pinned: selection.isPinned($0.app), detail: details[$0.app.key]) }
                 .width(min: 140)
             TableColumn("Average", value: \.average) { Text(metric.format($0.average)).monospacedDigit() }
                 .width(min: 80, ideal: 88, max: 110)

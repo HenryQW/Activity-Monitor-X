@@ -23,6 +23,18 @@ import Testing
         #expect(LiveTracks.build([snap], metric: .score, device: device)[0].slices[0].value == 35)
     }
 
+    @Test func liveTopSumsPerApp() {
+        func p(_ pid: Int32, _ app: String, cpu: Double, mem: UInt64) -> LiveProcess {
+            LiveProcess(pid: pid, startTime: 1, name: "p\(pid)", appKey: "/\(app).app", appName: app, path: nil, cpu: cpu,
+                        mem: mem, diskR: 0, diskW: 0, netIn: 0, netOut: 0, gpu: 0, energy: 0)
+        }
+        let snap = LiveSnapshot(ts: 0, system: LiveSystem(cpu: 0, memUsed: 0, pressureLevel: 1, thermalState: 0),
+                                processes: [p(1, "A", cpu: 10, mem: 100), p(2, "A", cpu: 30, mem: 50),
+                                            p(3, "B", cpu: 25, mem: 500), p(4, "C", cpu: 0, mem: 1)])
+        #expect(LiveTop.apps(snap, limit: 2) == [LiveTop.Row(app: AppKey(key: "/A.app", name: "A"), cpu: 40, mem: 150),
+                                                  LiveTop.Row(app: AppKey(key: "/B.app", name: "B"), cpu: 25, mem: 500)])
+    }
+
     @Test func liveDemandStopsAfterThreeSeconds() {
         var demand = LiveDemand()
         #expect(!demand.shouldSample(now: 0))

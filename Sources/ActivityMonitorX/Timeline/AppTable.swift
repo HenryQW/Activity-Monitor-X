@@ -11,7 +11,6 @@ struct AppTable: View {
     var shareTotal: Double? = nil
 
     @Environment(Selection.self) private var selection
-    private let _selected = State<Row.ID?>(initialValue: nil)
     private let _expanded = State<Set<Row.ID>>(initialValue: [])
     private let _sortOrder = State(initialValue: [KeyPathComparator(\Row.average, order: .reverse)])
 
@@ -21,16 +20,18 @@ struct AppTable: View {
             Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
                 processes: Self.processRows(app).sorted(using: sortOrder))
         }.sorted(using: sortOrder)
+        let details = AppKey.details(for: ranking.map(\.app))
         let byID = Dictionary(uniqueKeysWithValues: rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) })
         let selected = Binding<Row.ID?>(
             get: {
-                // A process row stays selected only while `selection.process` holds it (Quit clears it).
-                let processRowLostSelection = _selected.wrappedValue.flatMap { byID[$0] }?.process != nil
-                    && selection.process == nil
-                return processRowLostSelection ? nil : _selected.wrappedValue
+                // Derived from `selection`, so a pick in the inspector, a search that hides the app, or a Quit shows
+                // here: the selected process's row (by pid and start time), else the selected app's row.
+                guard let app = selection.app else { return nil }
+                guard let p = selection.process else { return app.key }
+                return rows.first { $0.app == app }?.processes
+                    .first { $0.process?.pid == p.pid && $0.process?.startTime == p.startTime }?.id ?? app.key
             },
             set: { id in
-                _selected.wrappedValue = id
                 let row = id.flatMap { byID[$0] }
                 // App first: changing the app clears the process.
                 selection.app = row?.app
@@ -49,7 +50,7 @@ struct AppTable: View {
                     }
                     .foregroundStyle(process.exited ? .tertiary : .secondary)
                 } else {
-                    AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app))
+                    AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app), detail: details[row.app.key])
                 }
             }
             .width(min: 140)

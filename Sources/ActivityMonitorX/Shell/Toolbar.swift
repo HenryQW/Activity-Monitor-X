@@ -35,7 +35,7 @@ struct MainToolbar: CustomizableToolbarContent {
         }
         ToolbarItem(id: "inspector", placement: .primaryAction) {
             // ⌥⌘I lives on the View menu command.
-            Button("Inspector", systemImage: "sidebar.trailing") { selection.inspectorShown.toggle() }
+            Button("Inspector", systemImage: "sidebar.trailing") { WindowFit.toggleInspector(selection, score: history.scope != nil) }
         }
     }
 }

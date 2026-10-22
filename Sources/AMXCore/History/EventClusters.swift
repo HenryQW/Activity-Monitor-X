@@ -5,6 +5,8 @@ extension EventMark {
         case "pressure": severity >= 2 ? 2 : severity >= 1 ? 1 : 0
         // Thermal "fair" (1) is not yet a warning.
         case "thermal": severity >= 3 ? 2 : severity >= 2 ? 1 : 0
+        // A rule hit is a warning or critical (M4-D2).
+        case "alert": severity >= 2 ? 2 : 1
         default: nil
         }
     }

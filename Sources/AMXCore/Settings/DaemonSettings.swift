@@ -21,6 +21,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
         /// Of one core.
         public var percent = 80.0
         public var minutes = 5
+        public static let percentRange = 10.0...1000, minutesRange = 1...60
         public init() {}
     }
 
@@ -28,17 +29,19 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var enabled = true
         public var minutes = 30
         public var megabytes = 200
+        public static let minutesRange = 10...120, megabytesRange = 50...16384
         public init() {}
     }
 
     public struct MemoryJump: Codable, Sendable, Equatable {
         public var enabled = true
         public var megabytes = 1024
+        public static let megabytesRange = 256...16384
         public init() {}
     }
 
     public struct Pressure: Codable, Sendable, Equatable {
-        public enum Level: String, Codable, Sendable {
+        public enum Level: String, Codable, Sendable, CaseIterable {
             case warning, critical
 
             public var severity: Int { self == .warning ? 1 : 2 }
@@ -50,7 +53,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
     }
 
     public struct Thermal: Codable, Sendable, Equatable {
-        public enum State: String, Codable, Sendable {
+        public enum State: String, Codable, Sendable, CaseIterable {
             case fair, serious, critical
 
             /// `ProcessInfo.ThermalState` raw value.
@@ -66,6 +69,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var enabled = true
         public var state = State.serious
         public var minutes = 5
+        public static let minutesRange = 1...60
         public init() {}
     }
 
@@ -93,6 +97,9 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
     }
 
     public var sizeCapBytes: Int64 = 2_000_000_000
+    public static let sizeCapRange: ClosedRange<Int64> = 1_000_000_000...50_000_000_000
+    /// The Settings picker's choices: 1, 2, 5, 10, 20 and 50 GB (decimal, as `sizeCapBytes`).
+    public static let sizeCapChoices: [Int64] = [1, 2, 5, 10, 20, 50].map { $0 * 1_000_000_000 }
     public var terminalBundleIDs = AppAttribution.defaultTerminalBundleIDs.sorted()
     public var rules = AlertRules()
 
@@ -150,16 +157,24 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
     /// The first problem, or nil when every value is in range.
     public func validationProblem() -> String? {
         let checks: [(Bool, String)] = [
-            ((1_000_000_000...50_000_000_000).contains(sizeCapBytes), "Size cap must be 1 to 50 GB"),
+            (Self.sizeCapRange.contains(sizeCapBytes), "Size cap must be 1 to 50 GB"),
             (!terminalBundleIDs.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }, "A terminal bundle ID is empty"),
             (terminalBundleIDs.count <= 32, "Use at most 32 terminal apps"),
-            ((10.0...1000).contains(rules.sustainedCPU.percent), "Sustained CPU must be 10 to 1000 %"),
-            ((1...60).contains(rules.sustainedCPU.minutes), "Sustained CPU time must be 1 to 60 min"),
-            ((10...120).contains(rules.memoryGrowth.minutes), "Memory growth time must be 10 to 120 min"),
-            ((50...16384).contains(rules.memoryGrowth.megabytes), "Memory growth must be 50 to 16384 MB"),
-            ((256...16384).contains(rules.memoryJump.megabytes), "Memory jump must be 256 to 16384 MB"),
-            ((1...60).contains(rules.thermal.minutes), "Thermal time must be 1 to 60 min"),
+            (AlertRules.SustainedCPU.percentRange.contains(rules.sustainedCPU.percent), "Sustained CPU must be 10 to 1000 %"),
+            (AlertRules.SustainedCPU.minutesRange.contains(rules.sustainedCPU.minutes), "Sustained CPU time must be 1 to 60 min"),
+            (AlertRules.MemoryGrowth.minutesRange.contains(rules.memoryGrowth.minutes), "Memory growth time must be 10 to 120 min"),
+            (AlertRules.MemoryGrowth.megabytesRange.contains(rules.memoryGrowth.megabytes), "Memory growth must be 50 to 16384 MB"),
+            (AlertRules.MemoryJump.megabytesRange.contains(rules.memoryJump.megabytes), "Memory jump must be 256 to 16384 MB"),
+            (AlertRules.Thermal.minutesRange.contains(rules.thermal.minutes), "Thermal time must be 1 to 60 min"),
         ]
         return checks.first { !$0.0 }?.1
+    }
+
+    /// Adds the bundle ID of the `.app` at `url` to the terminal list; a duplicate changes nothing.
+    public mutating func addTerminal(appAt url: URL) throws {
+        guard let id = AppAttribution.bundleID(inApp: url.path) else {
+            throw SettingsError.invalid("\(url.lastPathComponent) has no bundle ID")
+        }
+        if !terminalBundleIDs.contains(id) { terminalBundleIDs.append(id) }
     }
 }

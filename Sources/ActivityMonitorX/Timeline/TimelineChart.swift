@@ -67,6 +67,9 @@ struct TimelineChart: View {
         .chartForegroundStyleScale(domain: series.map(\.label), range: series.map(\.color))
         .chartXScale(domain: Self.date(points.first!.bucket)...Self.date(points.last!.bucket + bucket))
         .chartYScale(domain: 0...top)
+        // Labels centred on their ticks: a label leading from a tick near the end was cut off ("4…"); centred, it
+        // needs only half its width past the plot, inside the trailing y-axis column.
+        .chartXAxis { AxisMarks(preset: .aligned) }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()

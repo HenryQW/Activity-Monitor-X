@@ -15,6 +15,14 @@ import Testing
         #expect(w.range == .quarter && w.span == nil)
     }
 
+    @Test func onlyFreshNewRowsNotify() {
+        let rows = [(1, now - 30), (2, now - 600), (3, now - 599), (4, now)].map {
+            EventMark(id: $0.0, ts: $0.1, kind: "alert", severity: 1, message: "", app: nil, rule: "sustained_cpu")
+        }
+        #expect(EventMark.toNotify(rows, after: 1, now: now).map(\.id) == [3, 4])
+        #expect(EventMark.toNotify(rows, after: 4, now: now).isEmpty)
+    }
+
     @Test func lookbackPerRule() {
         let rules = AlertRules()
         #expect(rules.lookback(rule: "sustained_cpu") == 300)

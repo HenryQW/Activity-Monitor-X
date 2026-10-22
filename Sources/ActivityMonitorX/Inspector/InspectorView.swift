@@ -1,8 +1,10 @@
 import AMXCore
+import AppKit
 import Charts
 import SwiftUI
 
-/// The selected app for the range (or span): its series, peak process, events and processes, with Quit / Force Quit.
+/// The selected app for the range (or span): its series, peak process, events and processes, with Quit / Force Quit;
+/// with no app selected, a summary of the range.
 struct InspectorView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
@@ -24,9 +26,62 @@ struct InspectorView: View {
             } else {
                 ContentUnavailableView(app.name, systemImage: "app.dashed", description: Text("No data in this range."))
             }
+        } else if load == .ready {
+            summary(isLive: isLive)
+        } else if load == .loading {
+            ProgressView()
         } else {
-            ContentUnavailableView("No App Selected", systemImage: "sidebar.trailing",
-                                   description: Text("Select an app to see its details."))
+            ContentUnavailableView("No Data", systemImage: "chart.xyaxis.line", description: Text("No data in this range."))
+        }
+    }
+
+    /// With no app selected, the range (or span) at a glance: the total, the top apps and the warnings, so
+    /// "what slows my Mac" needs no click. A click on an app, or on an event that names one, selects it.
+    private func summary(isLive: Bool) -> some View {
+        let metric = history.metric
+        let ranking = isLive ? live.ranking : history.ranking
+        let points = isLive ? live.stacked : history.stacked
+        let colors = AppPalette.colors(for: points)
+        // The table's order and search; the totals stay those of every app, as the chart's do.
+        let top = AppSearch.filter(ranking, query: selection.search).prefix(3)
+        let details = AppKey.details(for: top.map(\.app))
+        let span = isLive ? nil : history.span
+        let events = history.events.filter { event in (event.level ?? 0) >= 1 && span.map { $0.contains(event.ts) } ?? true }
+        return List(selection: Binding<AppKey?>(get: { nil }, set: { selection.app = $0 })) {
+            Section {
+                Text(history.scope?.name ?? "All Apps").font(.title3.bold())
+                LabeledContent("Average", value: metric.format(ranking.reduce(0) { $0 + $1.average }))
+                    .help("The sum of the listed apps' averages: hidden quiet system processes are not counted.")
+                LabeledContent("Peak", value: metric.format(AppSeries.peakTotal(points, bucket: history.range.chartBucket, in: span)))
+                    .help("The highest bucket total in the chart, every process counted.")
+            }
+            .monospacedDigit()
+            Section("Top Apps") {
+                if top.isEmpty {
+                    Text(selection.search.isEmpty ? "No apps" : "No app matches the search").foregroundStyle(.secondary)
+                }
+                ForEach(top) { rank in
+                    LabeledContent {
+                        Text(metric.format(rank.average)).monospacedDigit()
+                    } label: {
+                        AppLabel(app: rank.app, color: colors[rank.app], pinned: selection.isPinned(rank.app),
+                                 detail: details[rank.app.key])
+                    }
+                    .tag(rank.app)
+                }
+            }
+            // Live loads no events.
+            if !isLive {
+                Section(events.isEmpty ? "Warnings" : "Warnings (\(events.count.formatted()))") {
+                    if events.isEmpty {
+                        Text("No warnings").foregroundStyle(.secondary)
+                    }
+                    // The latest five; the chart's markers hold the rest.
+                    ForEach(Array(events.suffix(5).reversed().enumerated()), id: \.offset) { _, event in
+                        EventRow(event: event).tag(event.app)
+                    }
+                }
+            }
         }
     }
 
@@ -35,8 +90,12 @@ struct InspectorView: View {
         // A pinned Timeline colours its app from the app's own series; every other view uses the top-5 mapping.
         let pinned: Bool = if case .pinned(let focus) = selection.sidebar { focus.key == rank.app.key } else { false }
         let color = AppPalette.colors(for: pinned ? series : history.range == .live ? live.stacked : history.stacked)[rank.app] ?? .secondary
-        let showAll = _showAllOf.wrappedValue == rank.app.key
-        let processes = rank.runningFirst(exited: showAll ? .max : 20)
+        let detail = AppKey.details(for: (history.range == .live ? live.ranking : history.ranking).map(\.app) + [rank.app])[rank.app.key]
+        let running = rank.processes.filter { !$0.exited }
+        let exited = rank.processes.filter(\.exited)
+        // A long-gone helper never hides a running process: only the exited rows are cut, to the top 20 by average.
+        let exitedRows = AppRank.byName(exited)
+        let shownExited = exitedRows.prefix(_showAllOf.wrappedValue == rank.app.key ? .max : 20)
         let selected = Binding<ProcKey?>(
             get: { selection.process.map(ProcKey.init) },
             set: { key in selection.process = rank.processes.first { ProcKey($0) == key } })
@@ -47,8 +106,8 @@ struct InspectorView: View {
                 } icon: {
                     Circle().fill(color).frame(width: 10, height: 10)
                 }
-                Text(rank.processes.count == 1 ? "1 process" : "\(rank.processes.count.formatted()) processes")
-                    .foregroundStyle(.secondary)
+                // Another app in the range has this name ("Claude" and "claude").
+                if let detail { Text(detail).foregroundStyle(.secondary) }
                 let drawn = AppSeries.closed(series, bucket: history.range.chartBucket)
                 Chart(drawn.indices, id: \.self) { i in
                     AreaMark(x: .value("Time", Date(timeIntervalSince1970: drawn[i].bucket)),
@@ -69,6 +128,16 @@ struct InspectorView: View {
                 }
                 .frame(height: 110)
             }
+            if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
+                Section("About") {
+                    Text(entry.title).font(.headline)
+                    if let vendor = entry.vendor { Text(vendor).foregroundStyle(.secondary) }
+                    Text(entry.description)
+                    if entry.expectedHigh == true {
+                        Text("High use is normal for this process.").foregroundStyle(.secondary)
+                    }
+                }
+            }
             if let peak = rank.processes.max(by: { $0.peak < $1.peak }) {
                 Section("Peak Process") {
                     LabeledContent("\(peak.name) (\(String(peak.pid)))", value: metric.format(peak.peak))
@@ -78,43 +147,45 @@ struct InspectorView: View {
                 if events.isEmpty {
                     Text("No events").foregroundStyle(.secondary)
                 }
-                ForEach(events.indices, id: \.self) { i in
-                    VStack(alignment: .leading) {
-                        Text(events[i].message)
-                        Text(Date(timeIntervalSince1970: events[i].ts).formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                ForEach(events.indices, id: \.self) { EventRow(event: events[$0]) }
+            }
+            if !running.isEmpty {
+                Section("Running (\(running.count.formatted()))") {
+                    // By name: the first process of a name changes as averages shift (each second in Live), which would close an open row.
+                    ForEach(AppRank.byName(running), id: \.[0].name) { processRows($0, of: rank.app) }
                 }
             }
-            Section("Processes") {
-                ForEach(processes, id: \.key) { p in
-                    LabeledContent {
-                        HStack {
-                            if p.exited { Text("Exited") }
-                            Text(metric.format(p.average)).monospacedDigit()
-                        }
-                    } label: {
-                        Text(p.name)
-                        Text("PID \(String(p.pid))")
+            if !exited.isEmpty {
+                Section("Exited (\(exited.count.formatted()))") {
+                    ForEach(shownExited, id: \.[0].name) { processRows($0, of: rank.app) }
+                    if shownExited.count < exitedRows.count {
+                        Button("Show All \(exited.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
+                            .buttonStyle(.link)
                     }
-                    .foregroundStyle(p.exited ? .secondary : .primary)
-                    .tag(ProcKey(p))
-                }
-                if processes.count < rank.processes.count {
-                    Button("Show All \(rank.processes.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
-                        .buttonStyle(.link)
                 }
             }
         }
         // A solid bar, apart from the list, keeps the destructive buttons away from the app's name.
         .safeAreaInset(edge: .bottom, spacing: 0) {
+            let apps = selection.process == nil ? Self.running(rank.app) : []
             VStack(spacing: 0) {
                 Divider()
                 HStack {
-                    Button("Quit") { request(SIGTERM) }
-                    Button("Force Quit") { request(SIGKILL) }
+                    if let process = selection.signallable {
+                        Button("Quit") { selection.signalRequest = SignalRequest(process: process, signal: SIGTERM) }
+                        Button("Force Quit") { selection.signalRequest = SignalRequest(process: process, signal: SIGKILL) }
+                    } else if let process = selection.process {
+                        Text(process.exited ? "Process has exited" : "Cannot quit this process").foregroundStyle(.secondary)
+                    } else if !apps.isEmpty {
+                        Button("Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGTERM) }
+                        Button("Force Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGKILL) }
+                    } else if rank.processes.allSatisfy(\.exited) {
+                        Text("No running processes").foregroundStyle(.secondary)
+                    } else {
+                        // A bare executable name (zsh, node) can stand for other users' and unrelated processes.
+                        Text("Select a process to quit").foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(selection.signallable == nil)
                 .padding(10)
             }
             .frame(maxWidth: .infinity)
@@ -131,8 +202,52 @@ struct InspectorView: View {
         return (.day, Int((step / 86_400).rounded(.up)))
     }
 
-    private func request(_ signal: Int32) {
-        selection.signalRequest = selection.signallable.map { SignalRequest(process: $0, signal: signal) }
+    /// One row per process, or one collapsed row for several of one name ("disclaimer × 14").
+    @ViewBuilder
+    private func processRows(_ group: [ProcessRank], of app: AppKey) -> some View {
+        if group.count == 1 {
+            processRow(group[0], named: group[0].name != app.name)
+        } else {
+            DisclosureGroup {
+                ForEach(group, id: \.key) { processRow($0, named: false) }
+            } label: {
+                LabeledContent("\(group[0].name) × \(group.count.formatted())",
+                               value: history.metric.format(group.reduce(0) { $0 + $1.average }))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(group[0].exited ? .secondary : .primary)
+        }
+    }
+
+    /// "PID 91539  1.1 %": the name only when it is not the app's; an exited process shows when it was last seen.
+    private func processRow(_ p: ProcessRank, named: Bool) -> some View {
+        let pid = named ? "\(p.name) (\(String(p.pid)))" : "PID \(String(p.pid))"
+        let format: Date.FormatStyle = history.range.seconds >= 86_400
+            ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.hour().minute()
+        return LabeledContent(p.exited ? "\(pid) · \(Date(timeIntervalSince1970: p.lastSeen).formatted(format))" : pid,
+                              value: history.metric.format(p.average))
+            .monospacedDigit()
+            .foregroundStyle(p.exited ? .secondary : .primary)
+            .tag(ProcKey(p))
+    }
+
+    /// The running copies of an app bundle; none for a bare executable name.
+    private static func running(_ app: AppKey) -> [NSRunningApplication] {
+        guard app.key.hasSuffix(".app") else { return [] }
+        return NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.path == app.key }
+    }
+}
+
+/// An event's message with its date and time below.
+private struct EventRow: View {
+    let event: EventMark
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            Text(event.message)
+            Text(Date(timeIntervalSince1970: event.ts).formatted(date: .abbreviated, time: .shortened))
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 

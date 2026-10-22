@@ -1,33 +1,25 @@
 import AMXCore
 import SwiftUI
 
-struct SidebarSelectionKey: FocusedValueKey {
-    typealias Value = Binding<SidebarItem?>
-}
-
-extension FocusedValues {
-    var sidebarSelection: Binding<SidebarItem?>? {
-        get { self[SidebarSelectionKey.self] }
-        set { self[SidebarSelectionKey.self] = newValue }
-    }
-}
-
 /// View menu: screens around the system Show/Hide Sidebar item, then the inspector.
 struct GoCommands: Commands {
     let selection: Selection
     let history: HistoryModel
-    @FocusedValue(\.sidebarSelection) private var sidebar
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("Timeline") { sidebar?.wrappedValue = .timeline }
+            Button("Timeline") { selection.sidebar = .timeline }
                 .keyboardShortcut("1")
-            Button("Apps") { sidebar?.wrappedValue = .apps }
+            Button("Apps") { selection.sidebar = .apps }
                 .keyboardShortcut("2")
+            Button("Alerts") { selection.sidebar = .alerts }
+                .keyboardShortcut("3")
             Divider()
         }
         CommandGroup(after: .sidebar) {
-            Button(selection.inspectorShown ? "Hide Inspector" : "Show Inspector") { selection.inspectorShown.toggle() }
+            Button(selection.inspectorShown ? "Hide Inspector" : "Show Inspector") {
+                WindowFit.toggleInspector(selection, score: history.scope != nil)
+            }
                 .keyboardShortcut("i", modifiers: [.command, .option])
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
         }

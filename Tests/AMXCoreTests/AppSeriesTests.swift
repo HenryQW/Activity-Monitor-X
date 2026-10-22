@@ -266,13 +266,26 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
     #expect(rows.map { $0.app?.key } == ["c", "a", nil])
 }
 
-@Test func inspectorListsRunningThenTopExited() {
-    let procs = (1...6).map { i in
-        ProcessRank(processID: Int64(i), pid: Int32(i), startTime: 0, name: "p", average: Double(10 - i), peak: 0,
-                    lastSeen: 0, exited: i != 5)
+@Test func inspectorGroupsProcessesByNameInFirstSeenOrder() {
+    let procs = ["a", "b", "a", "c", "b", "a"].enumerated().map { i, name in
+        ProcessRank(processID: Int64(i), pid: Int32(i), startTime: 0, name: name, average: 0, peak: 0, lastSeen: 0, exited: false)
     }
-    let rank = AppRank(app: AppKey(key: "A", name: "A"), average: 0, peak: 0, processes: procs)
-    // pid 5 runs with a low average; it still comes first, then the top two exited by average.
-    #expect(rank.runningFirst(exited: 2).map(\.pid) == [5, 1, 2])
-    #expect(rank.runningFirst(exited: .max).count == 6)
+    #expect(AppRank.byName(procs).map { $0.map(\.pid) } == [[0, 2, 5], [1, 4], [3]])
+}
+
+@Test func peakTotalIsTheHighestBucketSumInsideTheSpan() {
+    let a = AppKey(key: "a", name: "a")
+    let points = [SeriesPoint(bucket: 0, app: a, value: 1), SeriesPoint(bucket: 0, app: nil, value: 2),
+                  SeriesPoint(bucket: 60, app: a, value: 5), SeriesPoint(bucket: 60, app: nil, value: 1),
+                  SeriesPoint(bucket: 120, app: a, value: 2)]
+    #expect(AppSeries.peakTotal(points, bucket: 60) == 6)
+    // A span that ends where bucket 60 starts leaves it out.
+    #expect(AppSeries.peakTotal(points, bucket: 60, in: 30...60) == 3)
+}
+
+@Test func appsOfOneNameGetTheirFolderOrCommandLine() {
+    let apps = [AppKey(key: "/Applications/Claude.app", name: "Claude"), AppKey(key: "claude", name: "claude"),
+                AppKey(key: "/Applications/Notes.app", name: "Notes"), AppKey(key: "/Applications/Notes.app", name: "Notes")]
+    // The same app listed twice is not a second app.
+    #expect(AppKey.details(for: apps) == ["/Applications/Claude.app": "/Applications", "claude": "Command line"])
 }

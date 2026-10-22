@@ -95,4 +95,26 @@ import Testing
         let data = try low.encoded()
         #expect(throws: SettingsError.invalid("Size cap must be 1 to 50 GB")) { try DaemonSettings.decodeValidated(data) }
     }
+
+    @Test func sizeCapChoicesAreValid() {
+        for cap in DaemonSettings.sizeCapChoices {
+            var settings = DaemonSettings()
+            settings.sizeCapBytes = cap
+            #expect(settings.validationProblem() == nil)
+        }
+    }
+
+    @Test func addTerminalReadsBundleID() throws {
+        var settings = DaemonSettings()
+        let calculator = URL(filePath: "/System/Applications/Calculator.app")
+        try settings.addTerminal(appAt: calculator)
+        #expect(settings.terminalBundleIDs.last == "com.apple.calculator")
+        let count = settings.terminalBundleIDs.count
+        try settings.addTerminal(appAt: calculator)
+        #expect(settings.terminalBundleIDs.count == count)
+        let bare = FileManager.default.temporaryDirectory.appendingPathComponent("amx-\(UUID().uuidString).app")
+        try FileManager.default.createDirectory(at: bare, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: bare) }
+        #expect(throws: SettingsError.invalid("\(bare.lastPathComponent) has no bundle ID")) { try settings.addTerminal(appAt: bare) }
+    }
 }

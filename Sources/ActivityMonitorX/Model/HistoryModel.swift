@@ -57,6 +57,8 @@ final class HistoryModel {
     private(set) var apps: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
     private(set) var state: LoadState = .loading
+    /// The bundled process glossary, set once it has loaded; nil under `swift run`, which has no bundle resources.
+    var glossary: Glossary?
     /// Start of the loaded range: its nominal start, or later when recording began inside it.
     private(set) var start = 0.0
     /// `start` when recording began more than one chart bucket into the range.
@@ -162,6 +164,20 @@ final class HistoryModel {
         return try await Task.detached {
             try HistoryReader(pool: pool).tracks(source: .raw, from: from, to: to, metric: metric)
         }.value
+    }
+
+    /// What the glossary says about the selected process, else about the app's main executable (or its first process,
+    /// for an app without a bundle). Live has no tracks
+    /// here: its process matches by name alone.
+    func glossaryEntry(app: AppKey, process: ProcessRank?) -> Glossary.Entry? {
+        guard let glossary else { return nil }
+        if let process {
+            let track = tracks.first { $0.processID == process.processID }
+            return glossary.lookup(name: process.name, bundleID: track?.bundleID, path: track?.path)
+        }
+        let main = tracks.first { $0.app.key == app.key && $0.path?.hasPrefix(app.key + "/Contents/MacOS/") == true }
+        return (main ?? tracks.first { $0.app.key == app.key })
+            .flatMap { glossary.lookup(name: $0.name, bundleID: $0.bundleID, path: $0.path) }
     }
 
     private func openPool() throws -> DatabasePool {

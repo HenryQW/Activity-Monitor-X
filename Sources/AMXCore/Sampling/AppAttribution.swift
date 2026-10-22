@@ -37,7 +37,7 @@ public enum AppAttribution {
         }
     }
 
-    private static func bundleID(inApp appPath: String) -> String? {
+    static func bundleID(inApp appPath: String) -> String? {
         guard let data = FileManager.default.contents(atPath: appPath + "/Contents/Info.plist"),
               let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         else { return nil }

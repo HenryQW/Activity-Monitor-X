@@ -34,6 +34,16 @@ import Testing
         #expect((0...3).contains(s.thermalState))
     }
 
+    @Test func readoutSmoke() async throws {
+        let sampler = SystemSampler()
+        _ = sampler.readout(now: Date().timeIntervalSince1970)
+        try await Task.sleep(for: .seconds(1))
+        let r = sampler.readout(now: Date().timeIntervalSince1970)
+        #expect((0...100).contains(r.cpu))
+        #expect([1, 2, 4].contains(r.pressureLevel))
+        #expect((0...100).contains(r.pressurePct))
+    }
+
     /// Reads the real SMC. 5 s ticks arrive with jitter, so a read 4 s after the last one is not skipped.
     @Test func smcThrottleUnderFourSeconds() throws {
         let smc = SMCReader()
