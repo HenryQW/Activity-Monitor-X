@@ -14,7 +14,8 @@ struct TimelineView: View {
     private let _hovered = State<String?>(initialValue: nil)
 
     var body: some View {
-        let isLive = history.range == .live
+        // Live shows once it has its own data; until then the range before it stays on screen, so Start Live never blanks it.
+        let isLive = history.range == .live && !(live.state == .loading && history.state == .ready)
         let points = focus.map { isLive ? live.series(of: $0) : history.series(of: $0) }
             ?? (isLive ? live.stacked : history.stacked)
         let ranking = focus.map { app in (isLive ? live.rank(of: app) : history.rank(of: app)).map { [$0] } ?? [] }
@@ -45,7 +46,7 @@ struct TimelineView: View {
             case .ready:
                 VStack(spacing: 0) {
                     if chart {
-                        TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, live: isLive, metric: history.metric,
+                        TimelineChart(points: points, colors: colors, bucket: isLive ? 1 : history.loadedBucket, live: isLive, metric: history.metric,
                                       events: isLive ? [] : history.events,
                                       highlighted: _hovered.wrappedValue.map { key in bandless == nil ? [key] : [] }
                                           ?? (selection.search.isEmpty ? nil : Set(shown.map(\.app.key))),
@@ -72,6 +73,8 @@ struct TimelineView: View {
                 }
             }
         }
+        // Start Live and Pause Live fade from one chart to the other instead of a jump.
+        .animation(.easeInOut(duration: 0.3), value: isLive)
         .navigationTitle(title ?? "Apps")
         .navigationSubtitle(selection.subtitle(history.subtitle, shown: shown.count, of: ranking.count))
         // A span hidden with the chart would rank the table for a time nobody sees.
@@ -91,11 +94,8 @@ struct TimelineView: View {
 
     private func spanBar(_ span: ClosedRange<Double>) -> some View {
         let interval = Self.date(span.lowerBound)..<Self.date(span.upperBound)
-        // From 24H up a span can cross midnight, so it names the day.
-        let format: Date.IntervalFormatStyle = history.range.seconds >= 86_400
-            ? .interval.month(.abbreviated).day().hour().minute() : .interval.hour().minute()
         return HStack {
-            Text("Ranked for \(interval.formatted(format))")
+            Text("Ranked for \(interval.formatted(history.range.intervalFormat))")
                 .foregroundStyle(.secondary)
             Spacer()
             Button("Clear Selection", systemImage: "xmark.circle.fill") { history.span = nil }

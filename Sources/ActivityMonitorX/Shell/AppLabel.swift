@@ -3,17 +3,18 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// An app row's name: its chart colour (top apps only), its icon, a pin glyph when pinned, and the `detail` that tells
+/// An app row's name: its colour dot (`AppColorDot`; filled for the top apps and chosen colours), its icon, a pin glyph when pinned, and the `detail` that tells
 /// it from an app of the same name (`AppKey.details(for:)`).
 struct AppLabel: View {
     let app: AppKey
     let color: Color?
+    let history: HistoryModel
     let pinned: Bool
     var detail: String? = nil
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(color ?? .clear).frame(width: 8, height: 8)
+            AppColorDot(app: app, history: history, color: color)
             Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 16, height: 16)
             Text(app.name).lineLimit(1).help(app.key).layoutPriority(1)
             if let detail {

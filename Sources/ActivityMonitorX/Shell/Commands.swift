@@ -31,7 +31,6 @@ struct GoCommands: Commands {
                 selection.inspectorShown.toggle()
             }
                 .keyboardShortcut("i", modifiers: [.command, .option])
-                .disabled(selection.isSystem)
             Button(selection.showChart ? "Hide Chart" : "Show Chart") { selection.showChart.toggle() }
                 .disabled((selection.sidebar ?? .apps) != .apps)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
@@ -70,8 +69,8 @@ struct DataCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Range") {
-            // One Live item: it turns Live on and back off to the range before it.
-            Toggle("Live", isOn: Binding(get: { history.range == .live }, set: { _ in history.toggleLive() }))
+            // One Live item, named like the toolbar button: it starts Live and pauses back to the range before it.
+            Button(history.range == .live ? "Pause Live" : "Start Live") { history.toggleLive() }
                 .keyboardShortcut("l")
                 .disabled(noRange)
             Divider()

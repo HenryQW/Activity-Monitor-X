@@ -2,9 +2,10 @@ import AMXCore
 import SwiftUI
 
 /// Metric is flipped often, so it is the segmented control in the centre; Range is set once per question, so it is a
-/// button with a popover in the trailing group with the filter and the inspector. Search is the system toolbar field. Apps adds Show Chart. System
-/// screens show no app data: their items are removed, not disabled; Disk keeps Range, Disk Map adds its target and Scan,
-/// Hardware has Refresh. Calendar keeps Metric only: it has its own periods in place of Range.
+/// button with a popover in the trailing group with the filter and the inspector. Search is the system toolbar field.
+/// Inspector and Search are on every screen. Apps adds Show Chart. System screens show no app data: their other items are
+/// removed, not disabled; Disk keeps Range, Disk Map adds its target and Scan, Hardware has Refresh. Calendar keeps Metric
+/// only: it has its own periods in place of Range.
 struct MainToolbar: CustomizableToolbarContent {
     @Environment(AlertsModel.self) private var alerts
     let history: HistoryModel
@@ -42,10 +43,11 @@ struct MainToolbar: CustomizableToolbarContent {
         }
         if filters || selection.sidebar == .disk {
             ToolbarItem(id: "live", placement: .primaryAction) {
-                Toggle("Live", systemImage: "dot.radiowaves.left.and.right",
-                       isOn: Binding(get: { history.range == .live }, set: { _ in history.toggleLive() }))
+                // Start and pause, like a stream: Pause returns to the range shown before Live.
+                let live = history.range == .live
+                Button(live ? "Pause Live" : "Start Live", systemImage: live ? "pause.fill" : "play.fill") { history.toggleLive() }
                     .labelStyle(.iconOnly)
-                    .help(history.range == .live ? "Stop live data" : "Show live data")
+                    .help(live ? "Pause live data and show the previous range" : "Start live data, updated each second")
             }
             range
         }
@@ -74,18 +76,16 @@ struct MainToolbar: CustomizableToolbarContent {
                     .help(history.hideQuietSystem ? "Show quiet system processes" : "Hide quiet system processes")
             }
         }
-        if !selection.isSystem {
-            ToolbarItem(id: "inspector", placement: .primaryAction) {
-                // ⌥⌘I lives on the View menu command.
-                Button("Inspector", systemImage: "sidebar.trailing") { selection.inspectorShown.toggle() }
-                    .help(selection.inspectorShown ? "Hide the inspector" : "Show the inspector")
-            }
-            // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
-            if !selection.searchPresented && selection.query.isEmpty {
-                ToolbarItem(id: "search", placement: .primaryAction) {
-                    Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
-                        .help("Search apps, processes and PIDs")
-                }
+        ToolbarItem(id: "inspector", placement: .primaryAction) {
+            // ⌥⌘I lives on the View menu command.
+            Button("Inspector", systemImage: "sidebar.trailing") { selection.inspectorShown.toggle() }
+                .help(selection.inspectorShown ? "Hide the inspector" : "Show the inspector")
+        }
+        // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
+        if !selection.searchPresented && selection.query.isEmpty {
+            ToolbarItem(id: "search", placement: .primaryAction) {
+                Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
+                    .help("Search: \((selection.sidebar ?? .apps).searchPrompt)")
             }
         }
     }

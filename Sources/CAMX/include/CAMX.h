@@ -9,13 +9,15 @@
 int camx_is_translated(pid_t pid);
 
 /// Reads per-process figures via proc_pid_rusage(RUSAGE_INFO_V6).
-/// idle_wakeups = ri_pkg_idle_wkups + ri_interrupt_wkups. Out-params are
+/// idle_wakeups = ri_pkg_idle_wkups + ri_interrupt_wkups; cpu_time =
+/// ri_user_time + ri_system_time in Mach time units. Out-params are
 /// written only on success. Returns 0, or errno on failure.
 int camx_rusage(pid_t pid,
                 uint64_t *phys_footprint,
                 uint64_t *disk_read,
                 uint64_t *disk_written,
-                uint64_t *idle_wakeups);
+                uint64_t *idle_wakeups,
+                uint64_t *cpu_time);
 
 /// The pid responsible for `pid` (private libSystem call, resolved once
 /// with dlsym). -1 when the symbol is missing, else the call's result.

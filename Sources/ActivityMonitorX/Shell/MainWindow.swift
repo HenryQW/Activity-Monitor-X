@@ -8,8 +8,6 @@ struct MainWindow: View {
     /// The group waiting for the Delete confirmation.
     private let _deleting = State<ProcessGroup?>(initialValue: nil)
     private let _deleteError = State<String?>(initialValue: nil)
-    /// Whether the inspector was open before a System screen closed it.
-    private let _inspectorBeforeSystem = State(initialValue: false)
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var appSelection
@@ -98,7 +96,9 @@ struct MainWindow: View {
                 }
                 if !appSelection.pinned.isEmpty {
                     Section("Pinned Apps", isExpanded: $pinnedExpanded) {
-                        ForEach(appSelection.pinned.filter { appSelection.search.isEmpty || AppSearch.matches($0, appSelection.search) },
+                        ForEach(appSelection.pinned.filter {
+                            appSelection.search.isEmpty || appSelection.sidebar?.searchesApps == false || AppSearch.matches($0, appSelection.search)
+                        },
                                 id: \.key) { app in
                             Label(app.name, systemImage: "pin")
                                 .help(app.key)
@@ -148,7 +148,7 @@ struct MainWindow: View {
         // The inspector never shows an app the search hides from the tables; a pinned app's screen keeps its app.
         .onChange(of: appSelection.search) { _, query in
             if case .pinned = appSelection.sidebar { return }
-            guard let app = appSelection.app, !query.isEmpty else { return }
+            guard appSelection.sidebar?.searchesApps != false, let app = appSelection.app, !query.isEmpty else { return }
             let rank = history.range == .live ? live.rank(of: app) : history.rank(of: app)
             if AppSearch.filter(rank.map { [$0] } ?? [], query: query).isEmpty { appSelection.app = nil }
         }
@@ -167,11 +167,14 @@ struct MainWindow: View {
         .onChange(of: appSelection.sidebar) { old, item in
             if case .pinned(let app) = item { appSelection.app = app }
             scope(item)
-            if appSelection.isSystem { appSelection.query = "" }
-            keepInspector(leaving: old)
+            // One query for all screens: it stays between screens that search apps, and is cleared where it would name
+            // another kind of item (a volume, a file, a hardware row).
+            if old?.searchesApps != true || item?.searchesApps != true { appSelection.query = "" }
             if let item, let screen = StartScreen(item) { preferences.lastScreen = screen }
         }
         .onChange(of: history.range) { _, range in preferences.lastRange = StartRange(range) }
+        // Live polls only in Live: Start Live starts the loop, so it polls at once.
+        .task(id: history.range == .live) { await live.run() }
         .onChange(of: groups.groups) {
             guard case .group(let id) = appSelection.sidebar else { return }
             if let group = groups.groups.first(where: { $0.id == id }) {
@@ -193,18 +196,6 @@ struct MainWindow: View {
             history.range = preferences.startRange
         }
         .onAppear { appSelection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() } }
-    }
-
-    /// System screens have no inspector: it closes on entering one and comes back as it was on leaving.
-    private func keepInspector(leaving old: SidebarItem?) {
-        switch (old?.isSystem == true, appSelection.isSystem) {
-        case (false, true):
-            _inspectorBeforeSystem.wrappedValue = appSelection.inspectorShown
-            appSelection.inspectorShown = false
-        case (true, false) where _inspectorBeforeSystem.wrappedValue && !appSelection.inspectorShown:
-            appSelection.inspectorShown = true
-        default: break
-        }
     }
 
     /// A group is shown by its Score; Apps never shows Score, so leaving a group resets it to CPU.
@@ -235,20 +226,35 @@ private struct SidebarButton: ToolbarContent {
     }
 }
 
-/// Search in the trailing toolbar, on process screens only: System screens show no app data to search. The toolbar's
-/// magnifier until it is clicked (or ⌘F); then the system field, until it is cancelled while empty. macOS has no
+/// Search in the trailing toolbar on every screen, prompted with what the screen lists. The toolbar's magnifier until it
+/// is clicked (or ⌘F); then the system field, until it is cancelled while empty. macOS has no
 /// `searchToolbarBehavior(.minimize)`. A background view hosts it, so the swap never rebuilds the screen.
 private struct ToolbarSearch: View {
     let selection: Selection
 
     var body: some View {
-        if selection.isSystem {
-            Color.clear
-        } else if selection.searchPresented || !selection.query.isEmpty {
+        if selection.searchPresented || !selection.query.isEmpty {
             Color.clear.searchable(text: Bindable(selection).query, isPresented: Bindable(selection).searchPresented,
-                                   placement: .toolbar, prompt: "App, process or PID")
+                                   placement: .toolbar, prompt: (selection.sidebar ?? .apps).searchPrompt)
         } else {
             Color.clear
+        }
+    }
+}
+
+/// The inspector of the shown screen: each shows what its screen has selected, or a summary.
+private struct ScreenInspector: View {
+    @Environment(Selection.self) private var selection
+
+    var body: some View {
+        switch selection.sidebar ?? .apps {
+        case .calendar: CalendarInspector()
+        case .disk: DiskInspector()
+        case .diskMap: DiskMapInspector()
+        case .hardware: HardwareInspector()
+        case .energy where selection.app == nil:
+            ContentUnavailableView("No Selection", systemImage: "bolt", description: Text("Click an app in the energy flow."))
+        default: InspectorView()
         }
     }
 }
@@ -297,9 +303,12 @@ private struct InspectorPane<Content: View>: View {
                                 }
                             }
                     }
-                InspectorView()
+                ScreenInspector()
                     .frame(width: paneWidth)
                     .frame(maxHeight: .infinity)
+                    // The grouped forms and lists hide their own opaque background, so the pane's material shows behind
+                    // their sections, as behind the empty states: one surface for every inspector.
+                    .scrollContentBackground(.hidden)
                     .background(.regularMaterial, ignoresSafeAreaEdges: [])
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")

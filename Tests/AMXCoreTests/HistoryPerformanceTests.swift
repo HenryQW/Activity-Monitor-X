@@ -10,7 +10,7 @@ private func medianQuery(_ pool: DatabasePool, _ range: HistoryRange, end: Doubl
     for _ in 0..<3 {
         let clock = ContinuousClock()
         let t = clock.now
-        let tracks = try reader.tracks(range: range, metric: .cpu, end: end)
+        let tracks = try reader.tracks(source: range.source, from: end - range.seconds, to: end, metric: .cpu)
         let points = AppSeries.stacked(tracks, from: end - range.seconds, to: end, bucket: range.chartBucket)
         times.append(clock.now - t)
         #expect(!points.isEmpty)

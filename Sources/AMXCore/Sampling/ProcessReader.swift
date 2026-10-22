@@ -23,25 +23,24 @@ enum ProcessReader {
     /// nil when the process is gone or unreadable. `known` holds the last pass's processes, so only a new process
     /// pays for its path and translated flag (see `facts`).
     static func read(pid: Int32, known: [ProcessIdentity: RawProcess] = [:]) -> RawProcess? {
-        var info = proc_taskallinfo()
-        let size = Int32(MemoryLayout<proc_taskallinfo>.size)
-        let ret = withUnsafeMutablePointer(to: &info) { proc_pidinfo(pid, PROC_PIDTASKALLINFO, 0, $0, size) }
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        let ret = withUnsafeMutablePointer(to: &info) { proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, $0, size) }
         guard ret == size else { return nil }
 
-        var footprint: UInt64 = 0, diskRead: UInt64 = 0, diskWritten: UInt64 = 0, wakeups: UInt64 = 0
-        guard camx_rusage(pid, &footprint, &diskRead, &diskWritten, &wakeups) == 0 else { return nil }
+        var footprint: UInt64 = 0, diskRead: UInt64 = 0, diskWritten: UInt64 = 0, wakeups: UInt64 = 0, cpu: UInt64 = 0
+        guard camx_rusage(pid, &footprint, &diskRead, &diskWritten, &wakeups, &cpu) == 0 else { return nil }
 
-        let name = cString(info.pbsd.pbi_name).nonEmpty ?? cString(info.pbsd.pbi_comm)
-        let cpu = info.ptinfo.pti_total_user &+ info.ptinfo.pti_total_system
+        let name = cString(info.pbi_name).nonEmpty ?? cString(info.pbi_comm)
         let identity = ProcessIdentity(
-            pid: pid, startTime: Double(info.pbsd.pbi_start_tvsec) + Double(info.pbsd.pbi_start_tvusec) / 1e6)
+            pid: pid, startTime: Double(info.pbi_start_tvsec) + Double(info.pbi_start_tvusec) / 1e6)
         let stable = facts(of: identity, name: name, known: known) { (path(pid: pid), camx_is_translated(pid) == 1) }
 
         return RawProcess(
             identity: identity,
             name: name,
             path: stable.path,
-            uid: info.pbsd.pbi_uid,
+            uid: info.pbi_uid,
             cpuNanos: CPUMath.machToNanos(cpu, numer: timebase.numer, denom: timebase.denom),
             footprint: footprint,
             diskRead: diskRead,

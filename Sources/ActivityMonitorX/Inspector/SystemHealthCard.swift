@@ -12,7 +12,7 @@ struct SystemHealthCard: View {
         let points = history.system.filter { point in span.map { $0.contains(point.bucket) } ?? true }
         let info = ProcessInfo.processInfo
         let thermal = info.thermalState.rawValue
-        InspectorCard(title: "System Health") {
+        Section("System Health") {
             if !isLive, let pressure = points.map(\.pressureLevel).filter({ $0 > 0 }).max() {
                 row("Memory Pressure", SystemState.pressure(pressure), severity: pressure >= 4 ? 2 : pressure >= 2 ? 1 : 0)
                     .help("The highest memory pressure in the range")

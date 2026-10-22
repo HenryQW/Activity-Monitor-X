@@ -33,6 +33,8 @@ P12_PASS=$("$OPENSSL" rand -hex 16)
 "$OPENSSL" pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
     -name "$NAME" -out "$tmp/id.p12" -passout env:P12_PASS
 
+# codesign may use the key without a prompt, so builds and installs run unattended (D52). Accepted risk: any process of
+# this user can also sign as the app and pass the daemon's XPC pin and the root helper's check.
 security import "$tmp/id.p12" -k "$KEYCHAIN" -P "$P12_PASS" -T /usr/bin/codesign
 
 echo "About to trust the certificate for code signing in $KEYCHAIN."

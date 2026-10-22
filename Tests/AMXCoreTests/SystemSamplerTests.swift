@@ -61,17 +61,6 @@ import Testing
         #expect((0...100).contains(r.pressurePct))
     }
 
-    /// Reads the real SMC. 5 s ticks arrive with jitter, so a read 4 s after the last one is not skipped.
-    @Test func smcThrottleUnderFourSeconds() throws {
-        let smc = SMCReader()
-        _ = smc.read(now: 1000)
-        try #require(smc.lastRead == 1000)
-        _ = smc.read(now: 1004)
-        #expect(smc.lastRead == 1004)
-        _ = smc.read(now: 1007.9)
-        #expect(smc.lastRead == 1004)
-    }
-
     @Test func perCoreDeltas() {
         typealias T = SystemSampler.CoreTicks
         let prev = [T(busy: 10, idle: 90), T(busy: UInt32.max, idle: 0)]

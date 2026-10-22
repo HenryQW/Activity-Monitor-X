@@ -3,14 +3,6 @@ import Foundation
 import Observation
 import os
 
-/// One row of the inventory table: a node with its properties, then its child nodes, as children.
-struct HardwareRow: Identifiable {
-    let id: String
-    let name: String
-    let value: String
-    let children: [HardwareRow]?
-}
-
 /// The Hardware screen's one `system_profiler` capture: read on the first open of the screen and on Refresh only.
 @Observable @MainActor
 final class HardwareModel {
@@ -25,12 +17,28 @@ final class HardwareModel {
     private(set) var capturedAt: Date?
     /// Expanded inventory rows; the sections on the first capture.
     var expanded: Set<String> = []
+    /// The inventory row the inspector shows.
+    var selected: HardwareRow.ID?
+    /// `expanded` before the search began; nil while there is no search.
+    private var expandedBeforeSearch: Set<String>?
 
     /// Not a child of the screen's task: leaving the screen does not cancel a capture, so a reopen finds its result.
     private var capture: Task<Void, Never>?
     private let volumeSource: VolumeSource
 
     init(volumeSource: VolumeSource) { self.volumeSource = volumeSource }
+
+    /// Opens the rows that hold a match of `query`, over the rows open before the search; they come back when it ends.
+    func expand(for query: String) {
+        if query.isEmpty {
+            if let saved = expandedBeforeSearch { expanded = saved }
+            expandedBeforeSearch = nil
+        } else {
+            let saved = expandedBeforeSearch ?? expanded
+            expandedBeforeSearch = saved
+            expanded = saved.union(HardwareRow.filter(rows, query: query).opened)
+        }
+    }
 
     /// First open only; later opens show what the last capture read.
     func loadOnce() async {
@@ -50,13 +58,15 @@ final class HardwareModel {
     private(set) var cpuUsage: [Double] = []
     private(set) var gpuUsage: Double?
 
-    /// The screen's `.task`: ends, and so stops reading, when the screen goes.
+    /// The screen's `.task`: ends, and so stops reading, when the screen goes; pauses while the window is not on screen.
     func sampleLive() async {
         let load = CoreLoad()
         cpuUsage = []
         while !Task.isCancelled {
-            cpuUsage = load.read()
-            gpuUsage = GPUReader.deviceUtilization()
+            if MainWindowRef.windowShown {
+                cpuUsage = load.read()
+                gpuUsage = GPUReader.deviceUtilization()
+            }
             try? await Task.sleep(for: .seconds(2))
         }
     }

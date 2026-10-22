@@ -30,8 +30,7 @@ final class MenuBarReadout {
             let r = sampler.readout(now: ProcessInfo.processInfo.systemUptime)
             let new = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
             cpuHistory.append(r.cpu, keepingLast: Self.historyLength)
-            // Observation redraws on every set, equal or not.
-            if new != percents { percents = new }
+            percents = new
         }
     }
 }

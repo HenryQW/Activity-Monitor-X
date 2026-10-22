@@ -274,7 +274,13 @@ final class Daemon: @unchecked Sendable {
 
     private func checkpoint() {
         do {
-            let row = try db.writeWithoutTransaction { try Row.fetchOne($0, sql: "PRAGMA wal_checkpoint(TRUNCATE)") }
+            // TRUNCATE waits the whole busy timeout for a reader, and this queue also serves Live, so wait 100 ms only.
+            let row = try db.writeWithoutTransaction { db in
+                let normal = try Int.fetchOne(db, sql: "PRAGMA busy_timeout")!
+                try db.execute(sql: "PRAGMA busy_timeout=100")
+                defer { try? db.execute(sql: "PRAGMA busy_timeout=\(normal)") }
+                return try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(TRUNCATE)")
+            }
             // Busy: a reader blocked the checkpoint and the WAL keeps growing until one succeeds.
             if let row, row[0] as Int != 0 {
                 log.error("""

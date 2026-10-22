@@ -11,9 +11,8 @@ struct LaunchHistoryCard: View {
     var body: some View {
         let launches = history.launches(of: app)
         let shown = launches.prefix(_showAllOf.wrappedValue == app.key ? .max : 10)
-        let format: Date.FormatStyle = history.range.seconds >= 86_400
-            ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.hour().minute()
-        InspectorCard(title: "Launch History") {
+        let format = history.range.timeFormat
+        Section("Launch History") {
             if launches.isEmpty {
                 Text("No process started or quit in this range").foregroundStyle(.secondary)
             }
@@ -24,7 +23,6 @@ struct LaunchHistoryCard: View {
             }
             if shown.count < launches.count {
                 Button("Show All \(launches.count.formatted())") { _showAllOf.wrappedValue = app.key }
-                    .buttonStyle(.link)
                     .help("Show all process starts and quits")
             }
         }

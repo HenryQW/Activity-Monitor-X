@@ -156,7 +156,7 @@ struct ProcessRules: Sendable {
         if rule.total, state.minute == minute {
             state.sums[state.sums.count - 1] += sum
         } else {
-            state.sums.push(sum, limit: rule.length)
+            state.sums.append(sum, keepingLast: rule.length)
         }
         state.minute = minute
         guard rule.enabled, rule.total || state.sums.count == rule.length else { return nil }
@@ -176,11 +176,11 @@ struct ProcessRules: Sendable {
         let minute = Int((now / 60).rounded(.down))
         if state.minute != minute {
             state.minute = minute
-            state.minutes.push((now, s.mem), limit: rules.memoryGrowth.minutes + 1)
+            state.minutes.append((now, s.mem), keepingLast: rules.memoryGrowth.minutes + 1)
             if let draft = growth(s.identity, entry, &state, rule: rules.memoryGrowth, now: now) { out.append(draft) }
         }
         if now >= state.quietUntil {
-            state.ticks.push(s.mem, limit: L.jumpTicks)
+            state.ticks.append(s.mem, keepingLast: L.jumpTicks)
             if let draft = jump(s.identity, entry, &state, rule: rules.memoryJump, now: now) { out.append(draft) }
         }
         return out
@@ -228,13 +228,5 @@ struct ProcessRules: Sendable {
             syy += dy * dy
         }
         return (sxy / sxx, syy > 0 ? sxy * sxy / (sxx * syy) : 1)
-    }
-}
-
-private extension Array {
-    /// Appends and drops the oldest elements beyond `limit`.
-    mutating func push(_ element: Element, limit: Int) {
-        append(element)
-        if count > limit { removeFirst(count - limit) }
     }
 }

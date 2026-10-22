@@ -81,22 +81,22 @@ public enum AppSeries {
                                always: Set<String> = [], otherOnly: Set<Int> = []) -> [SeriesPoint] {
         let (starts, perApp) = bucketed(without(tracks, otherOnly), from: from, to: to, bucket: bucket) { $1.app }
         let forced = otherOnly.isEmpty ? [:] : bucketed(otherOnly.sorted().map { tracks[$0] }, from: from, to: to, bucket: bucket) { $1.app }.perKey
-        // Range average is the width-weighted mean of the bucket values.
         let widths = starts.map { min($0 + bucket, to) - $0 }
-        let averages = perApp.mapValues { zip($0, widths).reduce(0) { $0 + $1.0 * $1.1 } / (to - from) }
         let totals = starts.indices.map { b in
             perApp.values.reduce(0) { $0 + $1[b] } + forced.values.reduce(0) { $0 + $1[b] }
         }
         let median = percentile(totals, 0.5)
         let excess = totals.map { max(0, $0 - median) }
-        let scores = perApp.mapValues { values in zip(values, excess).reduce(0) { $0 + $1.0 * $1.1 } }
-        let ordered = perApp.keys.sorted { (scores[$0]!, averages[$0]!, $1.key) > (scores[$1]!, averages[$1]!, $0.key) }
+        // Sort keys once per app: (score, range average), where the average is the width-weighted mean of the buckets.
+        let ordered = perApp.map { app, values in
+            (app, zip(values, excess).reduce(0) { $0 + $1.0 * $1.1 }, zip(values, widths).reduce(0) { $0 + $1.0 * $1.1 } / (to - from))
+        }.sorted { ($0.1, $0.2, $1.0.key) > ($1.1, $1.2, $0.0.key) }.map(\.0)
         let named = Array(ordered.prefix(top)) + ordered.dropFirst(top).filter { always.contains($0.key) }
-        let rest = ordered.dropFirst(top).filter { !always.contains($0.key) }
+        let rest = ordered.dropFirst(top).filter { !always.contains($0.key) }.map { perApp[$0]! }
 
         var points: [SeriesPoint] = []
         let other = starts.indices.map { b in
-            rest.reduce(0) { $0 + perApp[$1]![b] } + forced.values.reduce(0) { $0 + $1[b] }
+            rest.reduce(0) { $0 + $1[b] } + forced.values.reduce(0) { $0 + $1[b] }
         }
         let otherTotal = zip(other, widths).reduce(0) { $0 + $1.0 * $1.1 }
         for (b, start) in starts.enumerated() {

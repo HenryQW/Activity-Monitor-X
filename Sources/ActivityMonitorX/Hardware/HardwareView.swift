@@ -1,8 +1,8 @@
 import AMXCore
 import SwiftUI
 
-/// The Mac at a glance, over the full inventory.
-/// Read once on the first open and on Refresh only. Content layer: no glass.
+/// The Mac at a glance, over the full inventory. The search filters the inventory and opens the rows that hold a match;
+/// its selection is the inspector's. Read once on the first open and on Refresh only. Content layer: no glass.
 struct HardwareView: View {
     @Environment(HardwareModel.self) private var hardware
     @Environment(Selection.self) private var selection
@@ -49,8 +49,7 @@ struct HardwareView: View {
     private var overview: some View {
         HStack(alignment: .top, spacing: 24) {
             if let chip = hardware.chip {
-                ChipDiagram(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) },
-                            cpuUsage: hardware.cpuUsage, gpuUsage: hardware.gpuUsage)
+                LiveChip(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) }, hardware: hardware)
                     .frame(width: 300)
             }
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
@@ -108,13 +107,29 @@ struct HardwareView: View {
     // MARK: Inventory
 
     private var inventory: some View {
-        Table(of: HardwareRow.self) {
+        let rows = HardwareRow.filter(hardware.rows, query: selection.search).rows
+        return Table(of: HardwareRow.self, selection: Bindable(hardware).selected) {
             TableColumn("Name", value: \.name)
                 .width(min: 160, ideal: 280)
             TableColumn("Value", value: \.value)
         } rows: {
-            InventoryRows(rows: hardware.rows, hardware: hardware)
+            InventoryRows(rows: rows, hardware: hardware)
         }
+        .overlay { if rows.isEmpty { ContentUnavailableView.search(text: selection.search) } }
+        .onChange(of: selection.search) { _, query in hardware.expand(for: query) }
+        // Leaving the screen clears the search.
+        .onDisappear { hardware.expand(for: "") }
+    }
+}
+
+/// The chip with its usage: only this view reads the 2 s readings, so they do not rebuild the screen.
+private struct LiveChip: View {
+    let chip: ChipInfo
+    let gpuCores: Int?
+    let hardware: HardwareModel
+
+    var body: some View {
+        ChipDiagram(chip: chip, gpuCores: gpuCores, cpuUsage: hardware.cpuUsage, gpuUsage: hardware.gpuUsage)
     }
 }
 

@@ -15,34 +15,29 @@ final class SMCReader {
 
     private var connection: io_connect_t = 0
     private var didOpen = false
-    private var keys: [(key: UInt32, group: Group)] = []
+    private var keys: [(key: UInt32, group: Group, info: SMCKeyInfoData)] = []
     private var lastDiscovery: Double?
-    private(set) var lastRead: Double?
-    private var cached = Temperatures()
 
     deinit {
         if connection != 0 { IOServiceClose(connection) }
     }
 
-    /// Hottest sensor per group, read at most every 4 s (5 s ticks jitter); keys rediscovered every 300 s.
+    /// Hottest sensor per group; keys rediscovered every 300 s.
     func read(now: Double) -> Temperatures {
-        if let lastRead, (0..<4).contains(now - lastRead) { return cached }
         guard open() else { return Temperatures() }
         if lastDiscovery.map({ !(0..<300).contains(now - $0) }) ?? true {
             discover()
             lastDiscovery = now
         }
         var t = Temperatures()
-        for (key, group) in keys {
-            guard let v = readValue(key), Self.isValid(v) else { continue }
+        for (key, group, info) in keys {
+            guard let v = readValue(key, info: info), Self.isValid(v) else { continue }
             switch group {
             case .cpu: t.cpu = max(t.cpu ?? v, v)
             case .gpu: t.gpu = max(t.gpu ?? v, v)
             case .ssd: t.ssd = max(t.ssd ?? v, v)
             }
         }
-        cached = t
-        lastRead = now
         return t
     }
 
@@ -98,7 +93,7 @@ final class SMCReader {
             if group == .ssd {
                 guard let v = readValue(key, info: info), v > 10, v < 110 else { continue }
             }
-            keys.append((key, group))
+            keys.append((key, group, info))
             known.insert(key)
         }
     }
@@ -114,8 +109,8 @@ final class SMCReader {
         return IOServiceOpen(service, mach_task_self_, 0, &connection) == kIOReturnSuccess
     }
 
-    private func readValue(_ key: UInt32, info: SMCKeyInfoData? = nil) -> Double? {
-        guard let info = info ?? readKeyInfo(key), let raw = readKey(key, info: info) else { return nil }
+    private func readValue(_ key: UInt32, info: SMCKeyInfoData) -> Double? {
+        guard let raw = readKey(key, info: info) else { return nil }
         return Self.decode(type: raw.type, bytes: raw.bytes)
     }
 

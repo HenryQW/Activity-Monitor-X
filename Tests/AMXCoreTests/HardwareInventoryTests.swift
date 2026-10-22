@@ -61,4 +61,23 @@ struct HardwareInventoryTests {
         #expect(ContinuousClock.now - start < .seconds(10))
         #expect(tree.contains { $0.name == "Hardware" })
     }
+
+    @Test func rowFilterKeepsParentsOfMatches() {
+        let leaf = { (id: String, value: String) in HardwareRow(id: id, name: id, value: value, children: nil) }
+        let usb = HardwareRow(id: "USB", name: "USB", value: "1 items", children: [
+            HardwareRow(id: "Hub", name: "Hub", value: "2 items", children: [leaf("Speed", "480 Mb/s"), leaf("Vendor", "Apple")]),
+        ])
+        let rows = [usb, leaf("Model", "Mac")]
+        #expect(HardwareRow.filter(rows, query: "").rows == rows)
+        #expect(HardwareRow.filter(rows, query: "zzz").rows.isEmpty)
+        // A parent's value is its count, not data.
+        #expect(HardwareRow.filter(rows, query: "items").rows.isEmpty)
+        let nested = HardwareRow.filter(rows, query: "apple")
+        #expect(nested.rows.map(\.id) == ["USB"])
+        #expect(nested.rows[0].children?[0].children?.map(\.id) == ["Vendor"])
+        #expect(nested.opened == ["USB", "Hub"])
+        // A matching row keeps all its rows.
+        #expect(HardwareRow.filter(rows, query: "hub").rows[0].children?[0].children?.count == 2)
+        #expect(HardwareRow.path(to: "Vendor", in: rows).map(\.id) == ["USB", "Hub", "Vendor"])
+    }
 }

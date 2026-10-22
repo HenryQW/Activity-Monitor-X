@@ -9,6 +9,12 @@ import os
 final class DiskModel {
     private static let log = Logger(subsystem: AMX.bundleID, category: "disk")
 
+    /// What the inspector shows: a volume by mount point or a physical disk by BSD name.
+    enum Item: Hashable {
+        case volume(String)
+        case disk(String)
+    }
+
     private(set) var volumes: [VolumeInfo] = []
     private(set) var containers: [APFSContainer] = []
     private(set) var disks: [PhysicalDisk] = []
@@ -19,6 +25,7 @@ final class DiskModel {
     /// All physical disks together, one point a second, the last 300.
     private(set) var live: [(ts: Double, total: DiskRate)] = []
     private(set) var error: String?
+    var selected: Item?
 
     private let sampler = DiskSampler()
     private let volumeSource: VolumeSource

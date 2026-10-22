@@ -262,7 +262,7 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Call:** the sidebar's Monitor section has **Apps** and **Alerts**. Apps shows the chart (event lane, top 5 and Other) above one table; **Show Chart** (toolbar toggle and View menu item, on by default, saved) hides the chart. The one table keeps process expansion, sorting, the hover link to the chart band and the inspector path, and gains the Trend sparkline column (one shared scale per metric) and the Pin column; columns can be hidden with the native column menu. Pinned apps still open their own chart view. Window title "Apps". Command-number shortcuts follow the new order. Links that opened the Timeline at a time (alerts, notifications) open Apps at that time.
 - **Cost if wrong:** one screen to split again; the old Apps code is deleted, git keeps it.
 
-## D32: The inspector is a bento of native cards (user call)
+## D32: The inspector is a bento of native cards (user call) (cards replaced by D53)
 
 - **Goal:** a richer, calmer inspector than a plain list of sections.
 - **Call:** a scroll view with `GroupBox` cards in a `Grid` (bento): a header card (icon, name, path), two small tiles (Average, Peak), a full-width chart card, an About card beside a Peak Process card, an Alerts card, a Processes card (Running and Exited; a selectable `List` inside, so arrow keys still move the selection), and the actions (Show Processes, Pin, Quit, Force Quit) at the bottom. The group summary uses the same cards. Default `GroupBox` look; no glass on content cards (glass is for the control layer). Section titles say "Alerts", never "Events" or "Warnings".
@@ -355,5 +355,52 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 
 ## D48: Live toggle and start settings (user asks)
 
-- **Live:** a toggle before Range and Range > Live (⌘L) turn Live on and back off to the range before it; the quick ranges keep ⌥⌘1 to ⌥⌘5. The compact toolbar now starts below 900 pt of detail so nothing overflows.
+- **Live:** a Start Live (play) button before Range and Range > Start Live (⌘L) start Live; Pause Live (pause) returns to the range before it (user pick); the quick ranges keep ⌥⌘1 to ⌥⌘5. The compact toolbar now starts below 900 pt of detail so nothing overflows.
 - **Start:** Settings > General has "Open at" (Last Screen by default) and "Time range at open" (Last Used by default). The app now remembers the last screen and range.
+
+## D49: Signing asks before each use (user pick)
+
+- **Problem:** the key was imported with `-T /usr/bin/codesign`, so any process of the same user could sign its own binary as the app and pass the daemon's XPC pin (found in the D46 audit).
+- **Call:** `make cert` imports the key with no standing access; macOS asks before each signing. The existing key is re-imported from an export of the same identity, so the certificate (and the pin's leaf hash and the root helper's check) stays the same.
+- **Cost:** one prompt per `codesign` call; agents cannot sign without the user, so unattended install loops stop at signing.
+
+## D50: Search and inspector on every screen (user pick)
+
+- Search and the Inspector button show on every screen and work on what the screen lists: apps (Apps, Alerts, Calendar, Energy), volumes and disks (Disk), files (Disk Map), rows (Hardware). The inspector shows the selection: a Calendar cell's top apps, an Energy app (the app inspector), a volume or disk, a file, a hardware row; with no selection, a short screen summary.
+- The query stays between screens that search apps and is cleared when moving to or from Disk, Disk Map or Hardware. A Calendar click selects a cell; Show in Apps opens it.
+
+## D51: Smooth Live start and inspector margins (user asks)
+
+- **Live:** Start Live keeps the current chart until Live has its own data, then fades over; Pause Live shows the earlier range at once and refreshes it quietly. Live polls at once after Start Live. Live polls only while the window is visible, as before.
+- **Margins:** every inspector box adds the inner margin of the system's grouped forms to the default `GroupBox` (its own inset left text too close to the edge).
+
+## D52: Unattended signing again (user call, replaces D49)
+
+- **Goal:** builds and installs run without the user (the agent loop signs and installs on its own).
+- **Conflict:** any setup that lets the agent sign without a prompt lets every process of the same user sign too; the daemon's XPC pin and the root helper then trust such a binary. A prompt is the only thing that tells them apart.
+- **Call:** `codesign` gets standing access to the key again (`make cert` imports with `-T /usr/bin/codesign`; for the current key, "Always Allow" once at the next prompt). Accepted risk on a single-user development Mac; the pin still keeps out other users and unsigned code, and the root helper still installs only binaries, never configuration.
+
+## D53: Inspector as a grouped form (user pick, replaces the cards of D32)
+
+- **Why:** the `GroupBox` cards had grey titles and tight rows, unlike the system's own grouped panes.
+- **Call:** the Overview pill, the no-app summary and the screen inspectors are a native `Form` with `.formStyle(.grouped)`: one `Section` per former card, `LabeledContent` rows, stock headers, row height, separators and margins. Average and Peak are rows, not side-by-side tiles. The Processes and Files pills stay lists with keyboard selection. The pane keeps its material behind the sections.
+
+## D54: Colour dot, Files form, menu icons, user request list (user asks)
+
+- **Colour dot:** the dot before an app's icon, in the app list, Top Apps, Biggest Changes and the inspector header, is the one colour control (`AppColorDot`). A click opens the colours and None. While the pointer is on it, a chosen colour shows a cross at its corner, and only a click on the cross removes the colour. An app with no colour shows a ring under the pointer. The split button of D43 and its "last colour" are removed. The inspector's dot is 16 pt, the list's 12 pt.
+- **Files pill:** a grouped form like Overview: the state and Refresh are one `LabeledContent` row, so Refresh lines up with the rows' trailing edge.
+- **Scroll bars:** stock `NSScroller`s. With a mouse connected and "Show scroll bars: Automatically", macOS shows the wide legacy bars in every app. The app does not override this (no API in SwiftUI; an AppKit override would ignore the system setting). Content insets stay stock and already adapt to the bar.
+- **Menu bar item:** Open, Settings and Quit have icons, as macOS 26 menus do.
+- **User request list:** `docs/user-requests.md` lists every standing user request in one line with its D-number, so later changes do not undo them. Renamed `docs/requirements.md` (D55).
+
+## D55: Requirements file (user ask)
+
+- **Why:** the request list holds what must be true now, not decisions; its old name hid that, and the spec still claimed authority over changed UI.
+- **Call:** `docs/user-requests.md` becomes `docs/requirements.md`: stable IDs by area (WIN, INS, COL, SCR, SET, BLD), edited in place, each line with its D-number, "(user)" on what the user asked for. It wins over the spec where they differ. The decision log stays the append-only why; ADRs stay for hard-to-reverse choices.
+
+## D56: Optimisation pass (user approved criteria and batches)
+
+- **Scope:** no new features and no visible change. Criteria, baseline and the four review reports are in the git-ignored `.context/review/`; batches A (idle CPU), B (table memory), C (queries), D (hot loops), E (daemon) and F (simplify) were approved.
+- **User calls:** keep "Compared to Usual" and "Biggest Changes" for up to 1 h while the range and its settings stay the same (also across a Live visit; a change of range, window, metric, group or quiet filter recomputes them at once); keep the inner decoders of partly hand-edited alert rules; the WAL checkpoint waits only briefly for readers, so it cannot block the daemon queue and Live for seconds; keep the row Colour submenu for keyboard and VoiceOver (COL-3 edited); a colour change rebuilds only the chart bands from the tracks in memory, with a full reload while a load is in flight.
+- **Not done:** the MCP `summarize` single read (agent-only, adds code). Risks for later: `processes` rows are kept 90 days and the size cap does not prune them (about 1.1 GB at the measured churn, so a 1 GB cap cannot be met); the app keeps reading a database that the daemon moved aside as corrupt.
+- **Result (same scenarios as the baseline):** app on 24H with the window open 0.97 % to 0.38 % CPU; app memory on 24H settles at 110 to 160 MB, peaks on a reload 475 to 550 MB before and 275 to 365 MB after; the app table's row arrays fell from 62 MB to 28 KB (heap); the Other band build 8.1 ms to 0.43 ms (benchmark); daemon 0.85 % to 0.78 % CPU, about 1.1 s less CPU at each start. Live CPU was not compared: the measured Live window may not have been on screen. Final review: no high or medium defects; three low ones fixed (Live reset race, event times while Live starts, Calendar catch-up after the window shows again).

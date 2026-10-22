@@ -38,6 +38,8 @@ final class DiskMapModel {
     private(set) var progress: DiskScanProgress?
     /// Index path of the shown folder in `tree`.
     var focus: [Int] = []
+    /// Index path of the table's selected item in `tree`, which the inspector shows.
+    var selected: [Int]?
     private(set) var error: String?
     private(set) var isScanning = false
     /// Stop was clicked; the scan's partial result shows when it arrives, unless a newer scan started.
@@ -64,6 +66,8 @@ final class DiskMapModel {
         title = target.name
         tree = nil
         focus = []
+        // An index path of the old tree names another item in the new one.
+        selected = nil
         progress = nil
         error = nil
         stopped = false

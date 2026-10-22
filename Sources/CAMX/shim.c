@@ -33,7 +33,8 @@ int camx_rusage(pid_t pid,
                 uint64_t *phys_footprint,
                 uint64_t *disk_read,
                 uint64_t *disk_written,
-                uint64_t *idle_wakeups) {
+                uint64_t *idle_wakeups,
+                uint64_t *cpu_time) {
     struct rusage_info_v6 ru;
     memset(&ru, 0, sizeof(ru));
     if (proc_pid_rusage((int)pid, RUSAGE_INFO_V6, (rusage_info_t *)&ru) != 0) {
@@ -43,6 +44,7 @@ int camx_rusage(pid_t pid,
     *disk_read = ru.ri_diskio_bytesread;
     *disk_written = ru.ri_diskio_byteswritten;
     *idle_wakeups = ru.ri_pkg_idle_wkups + ru.ri_interrupt_wkups;
+    *cpu_time = ru.ri_user_time + ru.ri_system_time;
     return 0;
 }
 

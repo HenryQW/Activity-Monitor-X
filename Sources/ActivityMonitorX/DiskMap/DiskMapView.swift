@@ -3,12 +3,12 @@ import AppKit
 import SwiftUI
 
 /// The largest items under a volume or folder: a treemap beside a table of the same items, which is the accessible
-/// path. Content layer: no glass. The system asks for protected folders on first access (M5-D9); the app does not
-/// pre-check them. No Move to Trash: a monitor does not delete files.
+/// path. The search filters the table by name; its selection is the inspector's. Content layer: no glass. The system asks
+/// for protected folders on first access (M5-D9); the app does not pre-check them. No Move to Trash: a monitor does not
+/// delete files.
 struct DiskMapView: View {
     @Environment(DiskMapModel.self) private var model
     @Environment(Selection.self) private var selection
-    private let _selected = State<[Int]?>(initialValue: nil)
 
     private static let fullDiskAccess = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles")!
 
@@ -18,8 +18,6 @@ struct DiskMapView: View {
             .navigationSubtitle(model.tree == nil ? "" : model.title)
             .task { await model.loadVolumes() }
             .onChange(of: selection.refreshes) { if !model.isScanning { model.scan() } }
-            // An index path of the old tree names another item in the new one.
-            .onChange(of: model.isScanning) { _selected.wrappedValue = nil }
     }
 
     @ViewBuilder private var content: some View {
@@ -73,11 +71,12 @@ struct DiskMapView: View {
             pathBar(tree, folder: folder)
             Divider()
             HSplitView {
-                TreemapCanvas(node: folder, base: focus, selected: _selected.wrappedValue,
+                TreemapCanvas(node: folder, base: focus, selected: model.selected,
                               label: "Disk map of \(focus.isEmpty ? model.title : folder.name), \(Metric.bytes(Double(folder.size)))",
                               open: { model.focus = $0 }, path: model.path)
                     .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
-                table(folder.children.enumerated().map { Row(id: focus + [$0.offset], node: $0.element) }, total: folder.size)
+                let rows = folder.children.enumerated().map { Row(id: focus + [$0.offset], node: $0.element) }
+                table(NameSearch.filter(rows, query: selection.search) { [$0.node.name] }, total: folder.size)
                     .frame(minWidth: 340, idealWidth: 420, maxHeight: .infinity)
             }
         }
@@ -160,7 +159,7 @@ struct DiskMapView: View {
     }
 
     private func table(_ rows: [Row], total: UInt64) -> some View {
-        Table(rows, selection: _selected.projectedValue) {
+        Table(rows, selection: Bindable(model).selected) {
             TableColumn("Name") { row in
                 Label(row.node.name, systemImage: Self.symbol(row.node.kind))
                     .help(row.node.kind == .refused ? "Could not be read" : row.node.name)
@@ -204,10 +203,12 @@ struct DiskItemMenu: View {
     var body: some View {
         if let path {
             Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+                .help("Show the item in Finder")
             Button("Copy Path") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(path, forType: .string)
             }
+            .help("Copy the path of the item")
         }
     }
 }

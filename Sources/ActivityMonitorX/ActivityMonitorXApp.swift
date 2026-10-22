@@ -76,7 +76,6 @@ struct ActivityMonitorXApp: App {
                 .task { await history.run() }
                 .task { if history.glossary == nil { history.glossary = await Self.loadGlossary() } }
                 .task { await groups.run() }
-                .task { await live.run() }
         }
         .defaultSize(width: 1200, height: 760)
         .defaultLaunchBehavior(.presented)
@@ -86,7 +85,6 @@ struct ActivityMonitorXApp: App {
                 Divider()
                 Button("Find…") { selection.searchPresented = true }
                     .keyboardShortcut("f")
-                    .disabled(selection.isSystem)
             }
             GroupCommands(selection: selection, groups: groups)
             GoCommands(selection: selection, history: history, diskMap: diskMap, alerts: alerts)

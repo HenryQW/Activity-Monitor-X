@@ -76,10 +76,6 @@ public struct HistoryReader {
         let isRaw: Bool
     }
 
-    public func tracks(range: HistoryRange, metric: Metric, end: Double) throws -> [ProcessTrack] {
-        try tracks(source: range.source, from: end - range.seconds, to: end, metric: metric)
-    }
-
     public func tracks(source: HistorySource, from start: Double, to end: Double, metric: Metric) throws -> [ProcessTrack] {
         let tier: Tier
         switch source {
@@ -92,13 +88,13 @@ public struct HistoryReader {
         let value = metric == .score
             ? "0.5 * IFNULL(t.cpu\(suffix), 0) / \(device.cores) + 50.0 * IFNULL(t.mem\(suffix), 0) / \(device.memory)"
             : metric.columns.map { "IFNULL(t.\($0)\(suffix), 0)" }.joined(separator: " + ")
-        // A slice reaching `start` needs `last_seen + 60 > start`, so other processes are skipped.
-        // An open process was last seen in the writer's last minute.
+        // A slice reaching `start` needs `last_seen + 60 > start`, and a slice before `end` needs `first_seen < end`,
+        // so other processes are skipped. An open process was last seen in the writer's last minute.
         let metaSQL = """
             SELECT id, pid, start_time, name, app_path, app_name, first_seen,
                    \(Schema.lastSeenSQL), path,
                    bundle_id, team_id
-            FROM processes WHERE last_seen > ? ORDER BY id
+            FROM processes WHERE last_seen > ? AND first_seen < ?
             """
         // In time order the key serves the order and each process folds its rows as they come:
         // no join and no sort over the (up to ~900k) rows.
@@ -127,7 +123,7 @@ public struct HistoryReader {
         var builders: [Builder] = []
         try pool.read { db in
             var slot: [Int64: Int] = [:]
-            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [start - 60])
+            let metas = try Row.fetchCursor(db, sql: metaSQL, arguments: [start - 60, end])
             while let r = try metas.next() {
                 let id: Int64 = r[0], name: String = r[3], appPath: String? = r[4], appName: String? = r[5]
                 slot[id] = builders.count
@@ -153,11 +149,13 @@ public struct HistoryReader {
     }
 
     /// For each `bounds[i]..<bounds[i + 1]` (ascending), the metric summed over all processes and averaged over that time,
-    /// from the hour tier (a gap counts as 0); nil where no process has data, as in a time of no width.
-    public func totals(metric: Metric, bounds: [Double]) throws -> [Double?] {
+    /// from the hour tier (a gap counts as 0); nil where no process has data, as in a time of no width. A query keeps only
+    /// the processes of apps it matches (`AppSearch`).
+    public func totals(metric: Metric, bounds: [Double], query: String = "") throws -> [Double?] {
         guard let first = bounds.first, let last = bounds.last, bounds.count > 1 else { return [] }
         var sums = [Double](repeating: 0, count: bounds.count - 1), seen = [Bool](repeating: false, count: bounds.count - 1)
-        for track in try tracks(source: .hour, from: first, to: last, metric: metric) {
+        for track in try tracks(source: .hour, from: first, to: last, metric: metric)
+        where query.isEmpty || AppSearch.matches(track.app, query) {
             // Slices are in time order inside the bounds: each starts in the interval of the last or a later one.
             var i = 0
             for slice in track.slices {
@@ -222,10 +220,6 @@ public struct EventMark: Sendable, Identifiable {
 
 extension HistoryReader {
     /// System tiers are dense, so each chart bucket averages the rows inside it; empty buckets are omitted.
-    public func system(range: HistoryRange, end: Double) throws -> [SystemPoint] {
-        try system(source: range.source, from: end - range.seconds, to: end, bucket: range.chartBucket)
-    }
-
     public func system(source: HistorySource, from start: Double, to end: Double, bucket: Double) throws -> [SystemPoint] {
         let table: String, time: String, cpu: String, mem: String, swap: String, pressure: String, thermal: String
         switch source {

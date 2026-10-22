@@ -23,7 +23,8 @@ final class Selection {
     var isSystem: Bool { sidebar?.isSystem == true }
     /// Opens or fronts the main window; set by views that have `openWindow`, for notification clicks.
     var openMain: (() -> Void)?
-    /// Sidebar search text as typed; filters the tables and Pinned Apps and dims the chart's other apps.
+    /// The toolbar search text as typed; each screen filters what it lists (`SidebarItem.searchPrompt`). On app screens it
+    /// also filters Pinned Apps and dims the chart's other apps.
     var query = ""
     /// Edit > Find sets it to focus the search field.
     var searchPresented = false

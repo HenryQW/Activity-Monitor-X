@@ -3,10 +3,13 @@ import SwiftUI
 
 /// The live energy flow: the adapter and the battery into the Mac, the Mac into its top apps and Other, each band as wide
 /// as its watts (`SankeyLayout`). Sources, the Mac and the battery are in the accent colour, apps in their chart colour.
+/// A click on an app's band or label selects the app.
 struct EnergyDiagram: View {
     let power: PowerReading
     let flows: EnergyFlows
     let colors: [AppKey: Color]
+    let selected: AppKey?
+    let select: (AppKey) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let nodeWidth = 10.0, gap = 14.0, leading = 150.0, trailing = 210.0, top = 22.0, bottom = 22.0
@@ -26,10 +29,15 @@ struct EnergyDiagram: View {
                                              size: size, nodeWidth: Self.nodeWidth, gap: Self.gap)
             ZStack(alignment: .topLeading) {
                 ForEach(Array(zip(flows.links, placed.bands)), id: \.0.id) { link, band in
+                    let app: AppKey? = if case .app(let app) = link.to { app } else { nil }
                     BandShape(x0: band.x0, y0: band.y0, x1: band.x1, y1: band.y1, thickness: band.thickness)
-                        .fill(link.to == .other ? AppPalette.other : color(link.from == .mac ? link.to : link.from).opacity(0.5))
+                        .fill(link.to == .other ? AppPalette.other
+                              : color(link.from == .mac ? link.to : link.from).opacity(app != nil && app == selected ? 0.8 : 0.5))
+                        .onTapGesture { app.map(select) }
                         .accessibilityElement()
                         .accessibilityLabel("\(name(link.from)) to \(name(link.to)), \(value(link))")
+                        .accessibilityAddTraits(app == nil ? [] : app == selected ? [.isButton, .isSelected] : .isButton)
+                        .accessibilityAction { app.map(select) }
                 }
                 ForEach(nodes.indices, id: \.self) { i in
                     let rect = placed.nodes[i]
@@ -76,12 +84,15 @@ struct EnergyDiagram: View {
             .position(x: rects[i].midX, y: nodes[i] == .mac ? rects[i].minY - 11 : rects[i].maxY + 11)
         }
         ForEach(Array(apps.enumerated()), id: \.element) { k, i in
+            let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
             HStack(spacing: 6) {
-                Text(name(nodes[i])).truncationMode(.middle)
+                Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selected ? .semibold : nil)
                 Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
             }
             .lineLimit(1)
             .frame(width: Self.trailing - 8, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { app.map(select) }
             .position(x: rects[i].maxX + Self.trailing / 2 + 4, y: appY[k])
         }
     }

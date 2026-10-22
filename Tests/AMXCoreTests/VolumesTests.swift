@@ -31,6 +31,25 @@ import Testing
         #expect(Volumes.container(ofVolume: "disk3") == nil)
     }
 
+    @Test func wholeDiskThroughContainerOrOwnName() {
+        func volume(_ bsd: String, container: String?) -> VolumeInfo {
+            VolumeInfo(name: bsd, mountPoint: "/\(bsd)", bsdName: bsd, fileSystem: "apfs", totalBytes: 0, freeBytes: 0,
+                       availableBytes: nil, usedBytes: nil, isInternal: true, isEjectable: false, isEncrypted: false,
+                       role: nil, container: container)
+        }
+        let containers = [APFSContainer(bsdName: "disk3", sizeBytes: 0, freeBytes: nil, physicalStores: ["disk0s2"], volumes: [])]
+        #expect(Volumes.wholeDisk(of: volume("disk3s1", container: "disk3"), containers: containers) == "disk0")
+        #expect(Volumes.wholeDisk(of: volume("disk6s1", container: nil), containers: containers) == "disk6")
+        #expect(Volumes.wholeDisk(of: volume("", container: nil), containers: containers) == nil)
+    }
+
+    @Test func nameSearch() {
+        let names = ["Macintosh HD", "Backup"]
+        #expect(NameSearch.filter(names, query: "", names: { [$0] }) == names)
+        #expect(NameSearch.filter(names, query: "macintosh", names: { [$0] }) == ["Macintosh HD"])
+        #expect(NameSearch.filter(names, query: "zip", names: { [$0] }).isEmpty)
+    }
+
     @Test func readSmoke() throws {
         let (volumes, containers) = Volumes.read()
         let root = try #require(volumes.first { $0.mountPoint == "/" })

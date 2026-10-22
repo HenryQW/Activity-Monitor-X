@@ -4,9 +4,10 @@ import Charts
 import SwiftUI
 
 /// The selected app for the range (or span): its series, peak process, alerts and processes, with Pin, Quit and
-/// Force Quit; with no app selected, a summary of the range. Both are a bento of default `GroupBox` cards (D32).
-/// An app's inspector has three pills above its content: Overview shows the cards, Processes the process list, Files the
-/// open files and sockets. The pill is kept per window, and selecting a process in the table switches it to Processes.
+/// Force Quit; with no app selected, a summary of the range. Both are a grouped `Form`, one section per topic, as in the
+/// system's own panes. An app's inspector has three pills above its content: Overview shows the form, Processes the
+/// process list, Files the open files and sockets. The pill is kept per window, and selecting a process in the table
+/// switches it to Processes.
 struct InspectorView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
@@ -17,10 +18,6 @@ struct InspectorView: View {
     private let _showAllOf = State<String?>(initialValue: nil)
     private let _rulesShown = State(initialValue: false)
     private let _files = State(initialValue: OpenFilesModel())
-    /// The pane's width, for `pair`.
-    private let _width = State(initialValue: 0.0)
-    /// The least pane width that puts About beside Peak Process: under it the text column gets too narrow.
-    private static let pairFrom = 340.0
 
     var body: some View {
         let isLive = history.range == .live
@@ -57,12 +54,10 @@ struct InspectorView: View {
         let details = AppKey.details(for: top.map(\.app))
         let span = isLive ? nil : history.span
         let events = history.events.filter { event in (event.level ?? 0) >= 1 && span.map { $0.contains(event.ts) } ?? true }
-        return cards {
-            GroupBox {
-                Text(history.scope?.name ?? "All Apps").font(.title3.bold()).frame(maxWidth: .infinity, alignment: .leading)
-            }
+        return Form {
+            Section { Text(history.scope?.name ?? "All Apps").font(.title3.bold()) }
             SystemHealthCard(isLive: isLive)
-            card("Top Apps") {
+            Section("Top Apps") {
                 if top.isEmpty {
                     Text(selection.search.isEmpty ? "No apps" : "No app matches the search").foregroundStyle(.secondary)
                 }
@@ -71,7 +66,7 @@ struct InspectorView: View {
                         LabeledContent {
                             Text(metric.format(rank.average)).monospacedDigit()
                         } label: {
-                            AppLabel(app: rank.app, color: colors[rank.app], pinned: selection.isPinned(rank.app),
+                            AppLabel(app: rank.app, color: colors[rank.app], history: history, pinned: selection.isPinned(rank.app),
                                      detail: details[rank.app.key])
                         }
                         .contentShape(Rectangle())
@@ -85,6 +80,7 @@ struct InspectorView: View {
                 AlertCountsCard(events: events)
             }
         }
+        .formStyle(.grouped)
     }
 
     private func details(_ rank: AppRank, series: [SeriesPoint], events: [EventMark]) -> some View {
@@ -103,14 +99,14 @@ struct InspectorView: View {
         let selected = Binding<ProcKey?>(
             get: { selection.process.map(ProcKey.init) },
             set: { key in selection.process = rank.processes.first { ProcKey($0) == key } })
-        // One List for both pills: Overview holds the cards (not selectable), Processes the process rows, so a click
-        // selects a process and the arrow keys move through the processes only.
-        return List(selection: selected) {
+        // Overview and Files are grouped Forms; Processes is a List, so a click selects a process and the arrow keys
+        // move through the processes. The ZStack keeps the pills and the bottom bar when the pill changes.
+        return ZStack {
             if tab == .overview {
-                Group {
-                    GroupBox {
+                Form {
+                    Section {
                         HStack(spacing: 8) {
-                            Circle().fill(color).frame(width: 10, height: 10)
+                            AppColorDot(app: rank.app, history: history, color: color, size: 16)
                             Image(nsImage: AppIcon.image(for: rank.app)).resizable().frame(width: 32, height: 32)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(rank.app.name).font(.title3.bold()).lineLimit(1).help(rank.app.key)
@@ -119,21 +115,20 @@ struct InspectorView: View {
                                     Text(path).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(rank.app.key)
                                 }
                             }
-                            Spacer()
-                            AppColorMenu(app: rank.app, history: history)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    tiles {
-                        tile("Average", metric.format(rank.average), help: "The app's average in the range, every process counted.")
-                        tile("Peak", metric.format(rank.peak), help: "The app's highest value in the range.")
+                        LabeledContent("Average", value: metric.format(rank.average))
+                            .monospacedDigit()
+                            .help("The app's average in the range, every process counted.")
+                        LabeledContent("Peak", value: metric.format(rank.peak))
+                            .monospacedDigit()
+                            .help("The app's highest value in the range.")
                     }
                     if history.range != .live { UsualCard(rank: rank) }
-                    card(metric.label) {
-                        let drawn = AppSeries.closed(series, bucket: history.range.chartBucket)
-                        Chart(drawn.indices, id: \.self) { i in
-                            AreaMark(x: .value("Time", Date(timeIntervalSince1970: drawn[i].bucket)),
-                                     y: .value(metric.label, drawn[i].value))
+                    Section(metric.label) {
+                        Chart {
+                            // One vectorized plot, not a mark per point.
+                            AreaPlot(AppSeries.closed(series, bucket: history.range.chartBucket), x: .value("Time", \.date),
+                                     y: .value(metric.label, \.value))
                                 .foregroundStyle(color.opacity(0.6))
                         }
                         .chartXAxis {
@@ -150,30 +145,23 @@ struct InspectorView: View {
                         }
                         .frame(height: 110)
                     }
-                    // Side by side only where the pane is wide enough: the About text wraps badly in half of a narrow pane.
-                    let pair = _width.wrappedValue >= Self.pairFrom
-                        ? AnyLayout(HStackLayout(alignment: .top, spacing: 10)) : AnyLayout(VStackLayout(spacing: 10))
-                    pair {
-                        if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
-                            card("About") {
-                                Text(entry.title).font(.headline)
-                                if let vendor = entry.vendor { Text(vendor).foregroundStyle(.secondary) }
-                                Text(entry.description)
-                                if entry.expectedHigh == true {
-                                    Text("High use is normal for this process.").foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        if let peak = rank.processes.max(by: { $0.peak < $1.peak }) {
-                            card("Peak Process") {
-                                Text("\(peak.name) (\(String(peak.pid)))")
-                                Text(metric.format(peak.peak)).font(.title2).monospacedDigit()
+                    if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
+                        Section("About") {
+                            LabeledContent("Name", value: entry.title)
+                            if let vendor = entry.vendor { LabeledContent("Vendor", value: vendor) }
+                            Text(entry.description)
+                            if entry.expectedHigh == true {
+                                Text("High use is normal for this process.").foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
+                    if let peak = rank.processes.max(by: { $0.peak < $1.peak }) {
+                        Section("Peak Process") {
+                            LabeledContent("\(peak.name) (\(String(peak.pid)))", value: metric.format(peak.peak)).monospacedDigit()
+                        }
+                    }
                     if history.range != .live { LaunchHistoryCard(app: rank.app) }
-                    card(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
+                    Section(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
                         if events.isEmpty {
                             Text("No alerts").foregroundStyle(.secondary)
                         }
@@ -182,32 +170,34 @@ struct InspectorView: View {
                             .help("Mute alerts for \(rank.app.name) or give it its own alert values")
                     }
                 }
-                .selectionDisabled()
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-            }
-            if tab == .processes, !running.isEmpty {
-                Section("Running (\(running.count.formatted()))") {
-                    // By name: the first process of a name changes as averages shift (each second in Live), which would close an open row.
-                    ForEach(runningRows, id: \.[0].name) { processRows($0, of: rank.app) }
-                }
-            }
-            if tab == .processes, !exited.isEmpty {
-                Section("Exited (\(exited.count.formatted()))") {
-                    ForEach(shownExited, id: \.[0].name) { processRows($0, of: rank.app) }
-                    if shownExited.count < exitedRows.count {
-                        Button("Show All \(exited.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
-                            .buttonStyle(.link)
-                            .help("Show all exited processes")
+                .formStyle(.grouped)
+            } else if tab == .files {
+                Form { OpenFilesRows(model: _files.wrappedValue, processes: running, client: live.client) }
+                    .formStyle(.grouped)
+            } else {
+                List(selection: selected) {
+                    if !running.isEmpty {
+                        Section("Running (\(running.count.formatted()))") {
+                            // By name: the first process of a name changes as averages shift (each second in Live), which would close an open row.
+                            ForEach(runningRows, id: \.[0].name) { processRows($0, of: rank.app) }
+                        }
+                    }
+                    if !exited.isEmpty {
+                        Section("Exited (\(exited.count.formatted()))") {
+                            ForEach(shownExited, id: \.[0].name) { processRows($0, of: rank.app) }
+                            if shownExited.count < exitedRows.count {
+                                Button("Show All \(exited.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
+                                    .buttonStyle(.link)
+                                    .help("Show all exited processes")
+                            }
+                        }
                     }
                 }
             }
-            if tab == .files { OpenFilesRows(model: _files.wrappedValue, processes: running, client: live.client) }
         }
         .task(id: tab == .files ? rank.app.key : nil) {
             if tab == .files { await _files.wrappedValue.load(running, client: live.client) }
         }
-        .onGeometryChange(for: Double.self) { $0.size.width } action: { _width.wrappedValue = $0 }
         .onChange(of: selection.process) { _, process in if process != nil { tab = .processes } }
         .sheet(isPresented: _rulesShown.projectedValue) { AppRulesSheet(app: rank.app) }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -220,7 +210,7 @@ struct InspectorView: View {
             .help("Show the overview, the processes or the open files")
             .padding(10)
         }
-        // A solid bar, apart from the cards, keeps the destructive buttons away from the app's name.
+        // A solid bar, apart from the sections, keeps the destructive buttons away from the app's name.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 Divider()
@@ -254,30 +244,9 @@ struct InspectorView: View {
         }
     }
 
-    /// The summary's bento: cards in one scrolling column.
-    private func cards(@ViewBuilder _ content: () -> some View) -> some View {
-        ScrollView {
-            VStack(spacing: 10) { content() }.padding(12)
-        }
-    }
-
     /// A Quit button that cannot act now; the help says why.
     private func disabledQuit(_ reason: String) -> some View {
         Button("Quit") {}.disabled(true).help(reason)
-    }
-
-    private func card(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
-        InspectorCard(title: title, content: content)
-    }
-
-    /// A small tile: a title and one value.
-    private func tile(_ title: String, _ value: String, help: String) -> some View {
-        card(title) { Text(value).font(.title2).monospacedDigit() }.help(help)
-    }
-
-    /// Two small tiles side by side at every pane width, one height.
-    private func tiles(@ViewBuilder _ content: () -> some View) -> some View {
-        HStack(alignment: .top, spacing: 10) { content() }.fixedSize(horizontal: false, vertical: true)
     }
 
     /// A whole-minute, hour or day stride for about three x labels: more truncate at the inspector's 240 pt, and
@@ -309,9 +278,7 @@ struct InspectorView: View {
     /// "PID 91539  1.1 %": the name only when it is not the app's; an exited process shows when it was last seen.
     private func processRow(_ p: ProcessRank, named: Bool) -> some View {
         let pid = named ? "\(p.name) (\(String(p.pid)))" : "PID \(String(p.pid))"
-        let format: Date.FormatStyle = history.range.seconds >= 86_400
-            ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.hour().minute()
-        return LabeledContent(p.exited ? "\(pid) · \(Date(timeIntervalSince1970: p.lastSeen).formatted(format))" : pid,
+        return LabeledContent(p.exited ? "\(pid) · \(Date(timeIntervalSince1970: p.lastSeen).formatted(history.range.timeFormat))" : pid,
                               value: history.metric.format(p.average))
             .monospacedDigit()
             .foregroundStyle(p.exited ? .secondary : .primary)
@@ -322,31 +289,6 @@ struct InspectorView: View {
     private static func running(_ app: AppKey) -> [NSRunningApplication] {
         guard app.key.hasSuffix(".app") else { return [] }
         return NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.path == app.key }
-    }
-}
-
-/// A full-width card: its title, then its rows.
-struct InspectorCard<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        GroupBox(title) {
-            VStack(alignment: .leading, spacing: 6) { content }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .labeledContentStyle(CardRow())
-        }
-    }
-}
-
-/// A card's label and value row as in a form: the label leading, the value trailing in secondary text.
-private struct CardRow: LabeledContentStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack {
-            configuration.label
-            Spacer()
-            configuration.content.foregroundStyle(.secondary)
-        }
     }
 }
 
@@ -372,4 +314,9 @@ private struct ProcKey: Hashable {
 
 private extension ProcessRank {
     var key: ProcKey { ProcKey(self) }
+}
+
+private extension SeriesPoint {
+    /// The bucket's start, for a chart's time axis.
+    var date: Date { Date(timeIntervalSince1970: bucket) }
 }

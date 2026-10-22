@@ -6,12 +6,14 @@ public struct EnergyShare: Equatable, Sendable {
     public init(app: AppKey?, share: Double) { (self.app, self.share) = (app, share) }
 
     /// The top `count` apps by summed energy impact, largest first, then Other for the rest; empty when the total is 0.
-    public static func top(_ processes: [LiveProcess], count: Int = 5) -> [EnergyShare] {
+    /// A query keeps only the apps it matches (`AppSearch`); the others go into Other.
+    public static func top(_ processes: [LiveProcess], count: Int = 5, query: String = "") -> [EnergyShare] {
         var sums: [AppKey: Double] = [:]
         for p in processes where p.energy > 0 { sums[AppKey(key: p.appKey, name: p.appName), default: 0] += p.energy }
         let total = sums.values.reduce(0, +)
         guard total > 0 else { return [] }
-        let top = sums.sorted { ($0.value, $1.key.key) > ($1.value, $0.key.key) }.prefix(count)
+        let top = sums.sorted { ($0.value, $1.key.key) > ($1.value, $0.key.key) }
+            .filter { query.isEmpty || AppSearch.matches($0.key, query) }.prefix(count)
         let rest = total - top.reduce(0) { $0 + $1.value }
         return top.map { EnergyShare(app: $0.key, share: $0.value / total) }
             + (rest > 0 ? [EnergyShare(app: nil, share: rest / total)] : [])

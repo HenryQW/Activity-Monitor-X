@@ -9,9 +9,9 @@ struct UsualCard: View {
 
     var body: some View {
         let metric = history.metric
-        InspectorCard(title: "Compared to Usual") {
+        Section("Compared to Usual") {
             if let usual = history.usual(of: rank.app) {
-                Text(UsualProfile.describe(rank.average, usual: usual)).font(.title2)
+                LabeledContent("Average", value: UsualProfile.describe(rank.average, usual: usual))
                 LabeledContent("Usual Average", value: metric.format(usual)).monospacedDigit()
                 LabeledContent("Peak", value: UsualProfile.describe(rank.peak, usual: usual))
             } else {

@@ -139,7 +139,7 @@ public final class SampleWriter {
                 appPath: app.appPath, appName: app.appName, bundleId: app.bundleID, teamId: teamID,
                 uid: Int64(raw.uid), translated: raw.translated, firstSeen: now, lastSeen: Schema.open)
             try record.insert(db, onConflict: .ignore)
-            // An ignored insert can leave a stale rowid in `record`, so always look it up.
+            // An ignored insert adds no row, so always look the id up.
             guard let id = try Self.fetchId(db, raw.identity) else { continue }
             // Seen by an earlier writer, which closed it.
             try ProcessRecord.filter(key: id).filter(Column("last_seen") != Schema.open)

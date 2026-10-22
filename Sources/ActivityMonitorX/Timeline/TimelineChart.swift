@@ -25,8 +25,6 @@ struct TimelineChart: View {
     private let line: [Mark]?
     private let series: [Series]
     private let labels: [AppKey?: String]
-    private let byBucket: [Double: [SeriesPoint]]
-    private let totals: [Double: Double]
     private let top: Double
 
     private let _hover = State<Date?>(initialValue: nil)
@@ -59,9 +57,8 @@ struct TimelineChart: View {
         }
         self.line = line.map { AppSeries.closed($0, bucket: bucket).map {
             Mark(date: Self.date($0.bucket), low: 0, high: $0.value, label: "", value: $0.value, metric: metric) } }
-        byBucket = Dictionary(grouping: points, by: \.bucket)
-        totals = byBucket.mapValues { $0.reduce(0) { $0 + $1.value } }
-        let peak = totals.values.max() ?? 0
+        // A bucket's last band ends at its total.
+        let peak = marks.lazy.map(\.high).max() ?? 0
         // 20 % headroom keeps the stack clear of the event lane at the top of the plot.
         top = (peak > 0 ? peak : 1) * 1.2
     }
@@ -148,7 +145,7 @@ struct TimelineChart: View {
             // Only this layer reads the hover, so a mouse move does not rebuild the areas.
             if _event.wrappedValue == nil {
                 HoverLayer(hover: _hover.projectedValue, proxy: proxy) { date in
-                    byBucket.keys.filter { $0 <= date.timeIntervalSince1970 }.max().map(bubble)
+                    bucketPoints(at: date.timeIntervalSince1970).map(bubble)
                 }
             }
         }
@@ -171,11 +168,12 @@ struct TimelineChart: View {
             })
     }
 
-    private func bubble(bucket b: Double) -> some View {
+    private func bubble(_ points: ArraySlice<SeriesPoint>) -> some View {
         let zero = metric.format(0)
-        let rows = AppSeries.bubbleRows(byBucket[b]!) { metric.format($0) == zero }
+        let b = points.first!.bucket
+        let rows = AppSeries.bubbleRows(Array(points)) { metric.format($0) == zero }
         return VStack(alignment: .leading, spacing: 3) {
-            Text("\(Self.date(b).formatted(.hover(bucket: bucket))) · \(metric.format(totals[b]!))")
+            Text("\(Self.date(b).formatted(.hover(bucket: bucket))) · \(metric.format(points.reduce(0) { $0 + $1.value }))")
                 .fontWeight(.semibold)
             ForEach(rows.indices, id: \.self) { i in
                 HStack(spacing: 5) {
@@ -200,7 +198,7 @@ struct TimelineChart: View {
                 }
             }
         }
-        .font(.caption).fixedSize().padding()
+        .hoverBubble()
     }
 
     /// The hover line's key in the colour scale; never a legend label (the legend lists `series` only).
@@ -208,10 +206,16 @@ struct TimelineChart: View {
 
     private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 
+    /// The points of the bucket that holds `ts`: the last bucket that starts at or before it. Every bucket holds every
+    /// series, so bucket k is `series.count` points from k × `series.count`.
+    private func bucketPoints(at ts: Double) -> ArraySlice<SeriesPoint>? {
+        let n = series.count
+        return (0..<points.count / n).last { points[$0 * n].bucket <= ts }.map { points[$0 * n..<($0 + 1) * n] }
+    }
+
     /// The largest named app in the bucket that holds `ts`.
     private func topApp(at ts: Double) -> String? {
-        guard let b = byBucket.keys.filter({ $0 <= ts }).max() else { return nil }
-        return byBucket[b]!.filter { $0.app != nil && $0.value > 0 }.max { $0.value < $1.value }.map { labels[$0.app]! }
+        bucketPoints(at: ts)?.filter { $0.app != nil && $0.value > 0 }.max { $0.value < $1.value }.map { labels[$0.app]! }
     }
 
     private struct Mark {
@@ -251,7 +255,27 @@ extension FormatStyle where Self == Date.FormatStyle {
     }
 }
 
-/// The hover rule over the plot and the value bubble, a native popover that follows the rule. Only this
+extension HistoryRange {
+    /// A time in the range: from 24H up with the day, as the range can cross midnight.
+    var timeFormat: Date.FormatStyle {
+        seconds >= Self.day.seconds ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.hour().minute()
+    }
+
+    /// Two times in the range, with the day as in `timeFormat`.
+    var intervalFormat: Date.IntervalFormatStyle {
+        seconds >= Self.day.seconds ? .interval.month(.abbreviated).day().hour().minute() : .interval.hour().minute()
+    }
+}
+
+extension View {
+    /// The look of a chart's hover bubble.
+    func hoverBubble() -> some View {
+        font(.caption).fixedSize().padding(8).glassEffect(.regular, in: .rect(cornerRadius: 10))
+    }
+}
+
+/// The hover rule and value bubble over the plot; the bubble sits right of the rule and stays inside the plot. It takes
+/// no pointer events: a popover that follows the pointer flickered when the pointer ran into it (D24, D58). Only this
 /// layer reads the hover, so a mouse move does not rebuild the chart's marks.
 struct HoverLayer<Bubble: View>: View {
     let hover: Binding<Date?>
@@ -268,11 +292,10 @@ struct HoverLayer<Bubble: View>: View {
                         path.addLine(to: CGPoint(x: plot.minX + x, y: plot.maxY))
                     }
                     .stroke(.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    bubble(date)
+                        .alignmentGuide(.leading) { d in -min(plot.minX + x + 6, plot.maxX - d.width) }
+                        .alignmentGuide(.top) { _ in -plot.minY }
                 }
-                // A 1 pt anchor at the rule: the popover moves with it and stays open.
-                .popover(isPresented: Binding(get: { true }, set: { if !$0 { hover.wrappedValue = nil } }),
-                         attachmentAnchor: .rect(.rect(CGRect(x: plot.minX + x, y: plot.midY, width: 1, height: 1))),
-                         arrowEdge: .trailing) { bubble(date) }
             }
         }
         .allowsHitTesting(false)

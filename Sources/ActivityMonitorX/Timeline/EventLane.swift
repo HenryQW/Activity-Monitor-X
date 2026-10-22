@@ -12,6 +12,8 @@ struct EventLane: View {
     let proxy: ChartProxy
     /// The chart bucket: the span a marker selects is at least one bucket, up to its last event.
     let bucket: Double
+    /// The range the data on screen was loaded for, by its bucket: while Live starts, the earlier range still shows.
+    private var shownRange: HistoryRange { bucket >= HistoryRange.day.chartBucket ? .day : .hour }
     /// The chart's first bucket: a selected span starts no earlier.
     let start: Double
     /// Selects a span of the chart; nil without spans (Live).
@@ -127,12 +129,8 @@ struct EventLane: View {
         event.app.map { "App: \($0.name)" } ?? topApp(event.ts).map { "Top app: \($0)" }
     }
 
-    /// From 24H up the times carry the day.
-    private var withDay: Bool { bucket >= HistoryRange.day.chartBucket }
-
     private func time(_ ts: Double) -> String {
-        Date(timeIntervalSince1970: ts).formatted(withDay
-            ? .dateTime.month(.abbreviated).day().hour().minute() : .dateTime.hour().minute())
+        Date(timeIntervalSince1970: ts).formatted(shownRange.timeFormat)
     }
 
     private static func kind(_ kind: String) -> String {
@@ -158,7 +156,7 @@ struct EventLane: View {
         let last = Date(timeIntervalSince1970: cluster.events[n - 1].ts)
         let when = first == last
             ? time(cluster.events[0].ts)
-            : (first..<last).formatted(withDay ? .interval.month(.abbreviated).day().hour().minute() : .interval.hour().minute())
+            : (first..<last).formatted(shownRange.intervalFormat)
         return "\(n) \(noun)event\(n == 1 ? "" : "s"), \(Self.severity(cluster.lead.level).lowercased()), \(when)"
     }
 

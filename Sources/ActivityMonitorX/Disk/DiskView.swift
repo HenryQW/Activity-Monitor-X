@@ -2,7 +2,8 @@ import AMXCore
 import SwiftUI
 
 /// All physical disks: history charts (Live from `DiskModel`, 1H to 90D from amxd's records), each disk with its SMART
-/// health, the mounted volumes and the APFS containers. Content layer: no glass.
+/// health, the mounted volumes and the APFS containers. The search filters disks and volumes by name; a click selects one
+/// for the inspector. Content layer: no glass.
 struct DiskView: View {
     @Environment(DiskModel.self) private var disk
     @Environment(HistoryModel.self) private var history
@@ -118,12 +119,13 @@ struct DiskView: View {
     // MARK: Physical disks
 
     @ViewBuilder private var disks: some View {
-        if disk.disks.isEmpty {
-            Text("No physical disks found.").foregroundStyle(.secondary)
+        let disks = NameSearch.filter(disk.disks, query: selection.search) { [$0.model, $0.bsdName].compactMap { $0 } }
+        if disks.isEmpty {
+            Text(disk.disks.isEmpty ? "No physical disks found." : "No disk matches the search.").foregroundStyle(.secondary)
         } else {
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(disk.disks) { d in
+                    ForEach(disks) { d in
                         if let health = disk.health[d.bsdName] {
                             DisclosureGroup { healthDetails(health) } label: { diskRow(d) }
                         } else {
@@ -136,8 +138,10 @@ struct DiskView: View {
         }
     }
 
+    /// A click selects the disk; the selected row has the selection background.
     private func diskRow(_ d: PhysicalDisk) -> some View {
-        HStack(spacing: 16) {
+        let selected = disk.selected == .disk(d.bsdName)
+        return HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(d.model ?? d.bsdName).fontWeight(.medium)
                 Text([d.protocolName, d.isInternal ? "Internal" : "External", Metric.bytes(Double(d.sizeBytes))]
@@ -154,6 +158,13 @@ struct DiskView: View {
             SmartStatus(health: disk.health[d.bsdName])
                 .frame(minWidth: 110, alignment: .leading)
         }
+        .padding(4)
+        .background(selected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 6))
+        .contentShape(Rectangle())
+        .onTapGesture { disk.selected = .disk(d.bsdName) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { disk.selected = .disk(d.bsdName) }
     }
 
     private func healthDetails(_ h: NVMeHealth) -> some View {
@@ -181,8 +192,22 @@ struct DiskView: View {
 
     // MARK: Volumes
 
-    private var volumes: some View {
-        Table(disk.volumes, columnCustomization: $columns) {
+    @ViewBuilder private var volumes: some View {
+        let volumes = NameSearch.filter(disk.volumes, query: selection.search) { [$0.name, $0.mountPoint] }
+        let selected = Binding<VolumeInfo.ID?>(
+            get: { if case .volume(let id) = disk.selected { id } else { nil } },
+            set: { id in
+                if let id { disk.selected = .volume(id) } else if case .volume = disk.selected { disk.selected = nil }
+            })
+        if volumes.isEmpty && !disk.volumes.isEmpty {
+            Text("No volume matches the search.").foregroundStyle(.secondary)
+        } else {
+            table(volumes, selection: selected)
+        }
+    }
+
+    private func table(_ volumes: [VolumeInfo], selection: Binding<VolumeInfo.ID?>) -> some View {
+        Table(volumes, selection: selection, columnCustomization: $columns) {
             TableColumn("Name", value: \.name)
             TableColumn("Kind") { Text($0.role ?? $0.fileSystem.uppercased()) }
             TableColumn("Capacity") { Text(Metric.bytes(Double($0.totalBytes))).monospacedDigit() }
@@ -194,7 +219,7 @@ struct DiskView: View {
                 .customizationID("mountPoint")
         }
         // Inside the page's scroll view: as tall as its rows, scrolled with the page.
-        .frame(height: CGFloat(disk.volumes.count) * 24 + 32)
+        .frame(height: CGFloat(volumes.count) * 24 + 32)
         .scrollDisabled(true)
     }
 
@@ -240,7 +265,7 @@ struct DiskView: View {
 }
 
 /// "Verified", "Failing" in red, or "Not available" for a disk without a SMART log.
-private struct SmartStatus: View {
+struct SmartStatus: View {
     let health: NVMeHealth?
 
     var body: some View {

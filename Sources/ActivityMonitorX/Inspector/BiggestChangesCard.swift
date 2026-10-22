@@ -9,7 +9,7 @@ struct BiggestChangesCard: View {
     let colors: [AppKey: Color]
 
     var body: some View {
-        InspectorCard(title: "Biggest Changes") {
+        Section("Biggest Changes") {
             if let changes = history.changes {
                 if changes.up.isEmpty && changes.down.isEmpty {
                     Text("No changes").foregroundStyle(.secondary)
@@ -33,7 +33,7 @@ struct BiggestChangesCard: View {
                     LabeledContent {
                         Text((change.delta > 0 ? "+" : "-") + history.metric.format(abs(change.delta))).monospacedDigit()
                     } label: {
-                        AppLabel(app: change.app, color: colors[change.app], pinned: selection.isPinned(change.app))
+                        AppLabel(app: change.app, color: colors[change.app], history: history, pinned: selection.isPinned(change.app))
                     }
                     .contentShape(Rectangle())
                 }

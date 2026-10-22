@@ -36,14 +36,27 @@ final class LiveModel {
         self.client = client
     }
 
-    /// Runs while a window is open; polls once a second while the range is Live, a window shows on screen and the screen
-    /// shows app data (a System screen reads its own data and must not wake amxd every second). Each
+    /// Runs while the range is Live and a window is open; polls once a second while a window shows on screen and the screen
+    /// shows app data or Energy's app inspector (a System screen reads its own data and must not wake amxd every second). Each
     /// visit to Live, and each return to the screen, starts afresh, so the backfill covers the time away.
     func run() async {
-        while !Task.isCancelled {
-            if history.range == .live, !selection.isSystem, MainWindowRef.windowShown { await poll() } else { live = LiveTracks(metric: history.metric) }
-            try? await Task.sleep(for: .seconds(1))
+        while history.range == .live && !Task.isCancelled {
+            let appData = !selection.isSystem || selection.sidebar == .energy && selection.inspectorShown && selection.app != nil
+            let polling = appData && MainWindowRef.windowShown
+            if polling {
+                await poll()
+            } else {
+                live = LiveTracks(metric: history.metric)
+                state = .loading
+            }
+            // Off the screen, a short wait lets the return to it poll at once.
+            try? await Task.sleep(for: polling ? .seconds(1) : .milliseconds(250))
         }
+        // A later visit starts from its own data, not this visit's. A visit that started while this one finished its last
+        // poll owns the data now.
+        guard history.range != .live else { return }
+        live = LiveTracks(metric: history.metric)
+        state = .loading
     }
 
     /// Hides data of the old metric or filter and rebuilds at once; a new metric first loads its backfill.

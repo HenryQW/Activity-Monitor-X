@@ -9,9 +9,11 @@ struct DiskPoint {
     let value: Double
     /// Lines break between segments: a bucket without a value, or a time without a record (sleep), is a gap, never 0.
     var segment = 0
+    /// The line the point is on: its series and segment.
+    var line: String { "\(series) \(segment)" }
 }
 
-/// Lines over time with a trailing Y axis; hover shows a rule and a popover with the values at that time (`HoverLayer`).
+/// Lines over time with a trailing Y axis; hover shows a rule and the values at that time (`HoverLayer`).
 struct DiskChart: View {
     let title: String
     /// Ordered by date.
@@ -56,12 +58,10 @@ struct DiskChart: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Chart {
-                    ForEach(points.indices, id: \.self) { i in
-                        let p = points[i]
-                        LineMark(x: .value("Time", p.date), y: .value(p.series, p.value),
-                                 series: .value("Segment", "\(p.series) \(p.segment)"))
-                            .foregroundStyle(by: .value("Series", p.series))
-                    }
+                    // One vectorized plot, not a mark per point.
+                    LinePlot(points, x: .value("Time", \.date), y: .value(title, \.value), series: .value("Segment", \.line))
+                        .accessibilityLabel(\.series)
+                        .foregroundStyle(by: .value("Series", \.series))
                     if let rule {
                         RuleMark(y: .value(rule.label, rule.value))
                             .foregroundStyle(.secondary)
@@ -119,7 +119,7 @@ struct DiskChart: View {
                 }
             }
         }
-        .font(.caption).fixedSize().padding()
+        .hoverBubble()
     }
 }
 

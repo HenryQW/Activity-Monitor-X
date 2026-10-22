@@ -112,6 +112,13 @@ public enum Volumes {
         return "disk\(parts[0])s\(parts[1])"
     }
 
+    /// The physical disk that holds `volume`: an APFS volume's through its container's store (container disk3 on store
+    /// disk0s2 gives "disk0"), any other through its own BSD name ("disk6s1" gives "disk6"); nil without a device.
+    public static func wholeDisk(of volume: VolumeInfo, containers: [APFSContainer]) -> String? {
+        let store = volume.container.flatMap { c in containers.first { $0.bsdName == c }?.physicalStores.first } ?? volume.bsdName
+        return diskParts(store).map { "disk\($0[0])" }
+    }
+
     /// "disk3s1s1" -> ["3", "1", "1"]; nil unless "disk" then numbers joined by "s".
     private static func diskParts(_ bsd: String) -> [Substring]? {
         guard bsd.hasPrefix("disk") else { return nil }

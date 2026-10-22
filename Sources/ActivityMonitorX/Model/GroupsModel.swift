@@ -42,11 +42,11 @@ final class GroupsModel {
         return try await history.rawTracks(metric: .cpu, from: now - 60, to: now)
     }
 
-    /// Runs while a window is open: scores now, then every 15 s, as often as the raw tier gains rows.
+    /// Runs while a window is open: scores now, then every 15 s while it shows on screen, as often as the raw tier gains rows.
     func run() async {
-        while !Task.isCancelled {
-            await score()
-            try? await Task.sleep(for: .seconds(15))
+        await score()
+        while (try? await Task.sleep(for: .seconds(15))) != nil {
+            if MainWindowRef.windowShown { await score() }
         }
     }
 

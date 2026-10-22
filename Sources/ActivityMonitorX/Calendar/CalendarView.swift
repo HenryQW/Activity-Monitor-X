@@ -1,8 +1,9 @@
 import AMXCore
 import SwiftUI
 
-/// The Calendar screen: the metric summed over all apps for each hour of a day or a week (a month day is the mean of its hours), shaded
-/// from low to high in the tint. A cell with data opens Apps on its time. Range does not apply here.
+/// The Calendar screen: the metric summed over all apps (or the apps the search matches) for each hour of a day or a week
+/// (a month day is the mean of its hours), shaded from low to high in the tint. A click selects a cell with data for the
+/// inspector; a double-click opens Apps on its time. Range does not apply here.
 struct CalendarView: View {
     @Environment(CalendarModel.self) private var model
     @Environment(HistoryModel.self) private var history
@@ -12,6 +13,7 @@ struct CalendarView: View {
     private struct Load: Equatable {
         let interval: DateInterval
         let metric: Metric
+        let query: String
     }
 
     var body: some View {
@@ -21,8 +23,10 @@ struct CalendarView: View {
         }
         .navigationTitle("Calendar")
         .navigationSubtitle(title(model.period, model.interval))
-        .task(id: Load(interval: model.interval, metric: history.metric)) { await model.run(metric: history.metric) }
-        .onChange(of: selection.refreshes) { Task { await model.load(metric: history.metric) } }
+        .task(id: Load(interval: model.interval, metric: history.metric, query: selection.search)) {
+            await model.run(metric: history.metric, query: selection.search)
+        }
+        .onChange(of: selection.refreshes) { Task { await model.load(metric: history.metric, query: selection.search) } }
     }
 
     private var header: some View {
@@ -59,6 +63,8 @@ struct CalendarView: View {
             ProgressView()
         case .failed:
             HelperUnavailable()
+        case .empty where !selection.search.isEmpty:
+            ContentUnavailableView.search(text: selection.search)
         case .empty:
             ContentUnavailableView("No Data", systemImage: "calendar",
                                    description: Text("No history was recorded in this \(model.period.label.lowercased())."))
@@ -127,8 +133,10 @@ struct CalendarView: View {
     @ViewBuilder private func cell(_ cell: CalendarCell?, page: CalendarPage, top: Double) -> some View {
         if let cell {
             let label = describe(cell, page)
-            Button { selection.reveal(from: cell.start, to: cell.end, history: history) } label: {
+            let selected = model.selected == cell.start
+            Button { model.selected = cell.start } label: {
                 shape(cell.value, top: top, radius: 3)
+                    .overlay { if selected { RoundedRectangle(cornerRadius: 3).strokeBorder(.primary, lineWidth: 2) } }
                     .overlay(alignment: .topLeading) {
                         if page.period == .month {
                             let day = Date(timeIntervalSince1970: cell.start)
@@ -141,9 +149,12 @@ struct CalendarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture(count: 2).onEnded { selection.reveal(from: cell.start, to: cell.end, history: history) })
             .disabled(cell.value == nil)
             .help(label)
             .accessibilityLabel(label)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityAction(named: "Show in Apps") { selection.reveal(from: cell.start, to: cell.end, history: history) }
         } else {
             Color.clear
         }
@@ -179,10 +190,7 @@ struct CalendarView: View {
 
     /// The cell's time and value with units, for VoiceOver and the hover tooltip.
     private func describe(_ cell: CalendarCell, _ page: CalendarPage) -> String {
-        let start = Date(timeIntervalSince1970: cell.start)
-        let time = page.period == .month ? start.formatted(.dateTime.weekday(.wide).day().month(.wide))
-            : start.formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute())
-        return "\(time): " + (cell.value.map { "\(page.metric.label) \(page.metric.format($0))" } ?? "no data")
+        "\(cell.time(page.period)): " + (cell.value.map { "\(page.metric.label) \(page.metric.format($0))" } ?? "no data")
     }
 
     private func title(_ period: CalendarPeriod, _ interval: DateInterval) -> String {
@@ -193,6 +201,15 @@ struct CalendarView: View {
             return "\(interval.start.formatted(.dateTime.day().month(.abbreviated))) to \(last.formatted(.dateTime.day().month(.abbreviated).year()))"
         case .month: return interval.start.formatted(.dateTime.month(.wide).year())
         }
+    }
+}
+
+extension CalendarCell {
+    /// The day of a Month cell, or the hour of a Day or Week cell.
+    func time(_ period: CalendarPeriod) -> String {
+        let start = Date(timeIntervalSince1970: start)
+        return period == .month ? start.formatted(.dateTime.weekday(.wide).day().month(.wide))
+            : start.formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute())
     }
 }
 

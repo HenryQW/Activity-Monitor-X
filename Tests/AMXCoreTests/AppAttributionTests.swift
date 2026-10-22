@@ -72,6 +72,14 @@ import Testing
         #expect(CodeSigning.teamID(forPath: "/bin/ls") == nil)
     }
 
+    @Test func sealedVolumeSkipsOnlySystemPaths() {
+        #expect(CodeSigning.onSealedVolume("/usr/libexec/x"))
+        #expect(CodeSigning.onSealedVolume("/System/Library/x"))
+        #expect(!CodeSigning.onSealedVolume("/usr/local/bin/x"))
+        #expect(!CodeSigning.onSealedVolume("/System/Volumes/Data/Applications/X.app/Contents/MacOS/X"))
+        #expect(!CodeSigning.onSealedVolume("/Applications/X.app/Contents/MacOS/X"))
+    }
+
     @Test func teamIDForUnsignedPathIsNil() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try Data("x".utf8).write(to: url)

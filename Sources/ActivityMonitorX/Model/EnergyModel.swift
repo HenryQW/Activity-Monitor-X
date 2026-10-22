@@ -12,8 +12,8 @@ final class EnergyModel {
     }
 
     private(set) var power: PowerReading?
-    /// Nil while amxd gives no live snapshot.
-    private(set) var shares: [EnergyShare]?
+    /// The live snapshot's processes, for `EnergyShare.top`; nil while amxd gives no live snapshot.
+    private(set) var processes: [LiveProcess]?
     /// System power over the last 5 min of this visit.
     private(set) var points: [Point] = []
 
@@ -27,7 +27,7 @@ final class EnergyModel {
                 let snapshot = try? await client.live()
                 let now = Date()
                 self.power = power
-                shares = snapshot.map { EnergyShare.top($0.processes) }
+                processes = snapshot?.processes
                 points.append(Point(date: now, watts: power.systemWatts))
                 points.removeAll { $0.date < now.addingTimeInterval(-300) }
             }

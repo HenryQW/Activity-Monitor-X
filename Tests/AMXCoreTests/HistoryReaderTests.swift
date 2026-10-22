@@ -41,7 +41,7 @@ private struct Rig {
         }
     }
     func tracks(_ range: HistoryRange, _ metric: Metric, end: Double, device: Device = .current) throws -> [ProcessTrack] {
-        try HistoryReader(pool: pool, device: device).tracks(range: range, metric: metric, end: end)
+        try HistoryReader(pool: pool, device: device).tracks(source: range.source, from: end - range.seconds, to: end, metric: metric)
     }
 }
 
@@ -81,6 +81,9 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(try reader.totals(metric: .cpu, bounds: [0, 3600, 7200, 10_800, 14_400]) == [10, 10, 30, nil])
         // Half of the interval has data, and a gap counts as 0; an interval of no width has none.
         #expect(try reader.totals(metric: .cpu, bounds: [9000, 12_600, 12_600]) == [15, nil])
+        // A query keeps the apps it matches: the one process is app "p".
+        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600], query: "p") == [10])
+        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600], query: "zzz") == [nil])
     }
 
     @Test func rawRowsHoldUntilNextRow() throws {
@@ -140,6 +143,13 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(spans(t) == [[b + 1800, b + 1860, 50]])
     }
 
+    @Test func processStartingAtRangeEndGivesNoTrack() throws {
+        let r = try Rig(lastSeen: 1e9, firstSeen: 3599)
+        try r.tier("process_minute", 3540, cpu: 5)
+        #expect(try r.tracks(.day, .cpu, end: 3599).isEmpty)
+        #expect(try r.tracks(.day, .cpu, end: 3600).map(spans) == [[[3599, 3600, 5]]])
+    }
+
     @Test func memoryUsesFootprintAvg() throws {
         let r = try Rig(lastSeen: 1e9)
         try r.tier("process_hour", 0, mem: 1e9, memMax: 2e9)
@@ -183,11 +193,11 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
             try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, cpu_avg, cpu_max, mem_used_avg, mem_used_max, swap_used_max, pressure_level_max, thermal_state_max) VALUES (0, 12, 40, 90, 400, 450, 8, 4, 2), (60, 12, 60, 90, 600, 650, 3, 1, 0), (900, 12, 20, 90, 200, 250, 0, 1, 0)")
         }
         let reader = HistoryReader(pool: r.pool)
-        let raw = try reader.system(range: .hour, end: 3600)
+        let raw = try reader.system(source: .raw, from: 0, to: 3600, bucket: 15)
         #expect(raw.map(\.bucket) == [0, 15].map { $0 + 0.0 })
         #expect(raw[0].cpu == 20 && raw[0].memUsed == 200 && raw[0].swapUsed == 9 && raw[0].pressureLevel == 2 && raw[0].thermalState == 1)
         #expect(raw[1].cpu == 50)
-        let day = try reader.system(range: .day, end: 86_400)
+        let day = try reader.system(source: .minute, from: 0, to: 86_400, bucket: 300)
         #expect(day.map(\.bucket) == [0, 900])
         #expect(day[0].cpu == 50 && day[0].swapUsed == 8 && day[0].pressureLevel == 4 && day[0].thermalState == 2)
     }
@@ -199,9 +209,9 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
             try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, disk_util_avg, disk_free_avg) VALUES (0, 12, 40, NULL)")
         }
         let reader = HistoryReader(pool: r.pool)
-        let raw = try reader.system(range: .hour, end: 3600)
+        let raw = try reader.system(source: .raw, from: 0, to: 3600, bucket: 15)
         #expect(raw[0].diskR == 20 && raw[0].diskLatMs == 2 && raw[0].diskFree == 100)
-        let day = try reader.system(range: .day, end: 86_400)
+        let day = try reader.system(source: .minute, from: 0, to: 86_400, bucket: 300)
         #expect(day[0].diskUtil == 40 && day[0].diskFree == nil)
     }
 

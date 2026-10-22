@@ -23,8 +23,6 @@ public struct ProcessRecord: Codable, FetchableRecord, PersistableRecord, Sendab
         case startTime = "start_time", appPath = "app_path", appName = "app_name"
         case bundleId = "bundle_id", teamId = "team_id", firstSeen = "first_seen", lastSeen = "last_seen"
     }
-
-    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
 public struct ProcessSampleRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
@@ -95,8 +93,6 @@ public struct EventRecord: Codable, FetchableRecord, PersistableRecord, Sendable
         case id, ts, kind, severity, rule, message, value
         case processId = "process_id"
     }
-
-    public mutating func didInsert(_ inserted: InsertionSuccess) { id = inserted.rowID }
 }
 
 public struct MetaRecord: Codable, FetchableRecord, PersistableRecord, Sendable {

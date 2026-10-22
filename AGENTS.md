@@ -6,7 +6,8 @@ Activity Monitor X: a root daemon (`amxd`) records per-process history in SQLite
 
 | Need | File |
 |---|---|
-| What to build (authority) | `docs/specs/2026-10-21-activity-monitor-x-design.md` (§4 architecture, §5 sampling, §6 storage, §7 XPC, §8 UI, §9 alerts) |
+| What must be true now (wins over the spec) | `docs/requirements.md` |
+| What to build (original design) | `docs/specs/2026-10-21-activity-monitor-x-design.md` (§4 architecture, §5 sampling, §6 storage, §7 XPC, §8 UI, §9 alerts) |
 | Why it is built this way | `docs/adr/` (one decision per file) |
 | Words and their meaning | `GLOSSARY.md` |
 | Full decision log (D1 and later, with options and evidence) | `docs/decisions/2026-10-22-overnight.md` |
@@ -19,6 +20,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 
 - `make test`: the only way to run tests (it passes the Swift Testing plugin path).
 - `make app`: builds and signs `.build/Activity Monitor X.app` (needs `make cert` once).
+- Signing runs without a prompt (D52): `codesign` has standing access to the key, so builds and installs run unattended. If macOS ever asks, click "Always Allow" once.
 - `make install-app`: copies the app to `/Applications`, no root.
 - `make install`: daemon + CLI + app; needs the user's sudo password. Agents never run it; ask the user.
 - Linker "search path ... not found" warnings are harmless toolchain noise.
@@ -42,6 +44,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - Every interactive control has an accessibility name; destructive actions have text buttons.
 - The window never resizes itself (no growth for the inspector or toolbar).
 - Docs, plans, reports and UI copy: ASD-STE100 Simplified Technical English, no em or en dashes.
+- A requirement that changes or is new: add or edit its line in `docs/requirements.md` in the same commit (rules at the top of that file).
 - New decision: add a `D<n>` entry to the decision log; add an ADR only if it is hard to reverse, surprising and a real trade-off.
 
 ## Running and checking the app

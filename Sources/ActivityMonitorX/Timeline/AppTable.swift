@@ -27,10 +27,11 @@ struct AppTable: View {
     @SceneStorage("appTableColumns") private var columns = TableColumnCustomization<Row>()
 
     var body: some View {
-        let sorted = rows(sortedBy: _sortOrder.wrappedValue)
+        // Once per body: each test formats three values.
+        let idle = Set(ranking.filter(isIdle).map(\.app))
+        let sorted = rows(sortedBy: _sortOrder.wrappedValue, idle: idle)
         let held = live ? _held.wrappedValue : nil
         let rows = held.map { Self.holding(sorted, at: $0) } ?? sorted
-        let idle = ranking.count(where: isIdle)
         let details = AppKey.details(for: ranking.map(\.app))
         // One y scale per metric: 0 to the largest value in view, so rows compare with each other.
         let top = ranking.compactMap { sparklines[$0.app]?.max() }.max() ?? 1
@@ -41,8 +42,10 @@ struct AppTable: View {
                 // here: the selected process's row (by pid and start time), else the selected app's row.
                 guard let app = selection.app else { return nil }
                 guard let p = selection.process else { return app.key }
-                return rows.first { $0.app == app }?.processes
-                    .first { $0.process?.pid == p.pid && $0.process?.startTime == p.startTime }?.id ?? app.key
+                // A collapsed app has no process rows; its process's id still selects no row in view.
+                let processes = isExpanded(app) ? rows.first { $0.app == app }?.processes
+                    : ranking.first { $0.app == app }.map(Self.processRows)
+                return processes?.first { $0.process?.pid == p.pid && $0.process?.startTime == p.startTime }?.id ?? app.key
             },
             set: { id in
                 // The idle row is a button, not a selection.
@@ -57,7 +60,7 @@ struct AppTable: View {
             Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue, columnCustomization: $columns) {
                 TableColumn("App", value: \.name) { row in
                     if row.id == Row.idleID {
-                        idleToggle(idle)
+                        idleToggle(idle.count)
                     } else if let process = row.process {
                         linked(HStack {
                             Text("\(row.name) (\(String(process.pid)))")
@@ -68,7 +71,7 @@ struct AppTable: View {
                         }
                         .foregroundStyle(process.exited ? .tertiary : .secondary), row, .leading)
                     } else {
-                        linked(AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app), detail: details[row.app.key]),
+                        linked(AppLabel(app: row.app, color: colors[row.app], history: history, pinned: selection.isPinned(row.app), detail: details[row.app.key]),
                                row, .leading)
                     }
                 }
@@ -119,7 +122,7 @@ struct AppTable: View {
                         ForEach(app.processes) { TableRow($0) }
                     }
                 }
-                if idle > 0 { TableRow(Row.idle) }
+                if !idle.isEmpty { TableRow(Row.idle) }
             }
             // Double-click or Return opens the inspector on the row.
             .contextMenu(forSelectionType: Row.ID.self) { ids in
@@ -147,7 +150,7 @@ struct AppTable: View {
             .onChange(of: live) { _held.wrappedValue = nil }
             // A sort picked while the order holds applies at once, and holds in turn.
             .onChange(of: _sortOrder.wrappedValue) { _, order in
-                if _held.wrappedValue != nil { _held.wrappedValue = Self.positions(self.rows(sortedBy: order)) }
+                if _held.wrappedValue != nil { _held.wrappedValue = Self.positions(self.rows(sortedBy: order, idle: idle)) }
             }
             // Sorting again can move the selected row out of view.
             .onChange(of: held == nil) { _, sorting in
@@ -167,11 +170,12 @@ struct AppTable: View {
         }
     }
 
-    /// Apps of the ranking in `order`, each with its processes; idle apps only when shown or selected.
-    private func rows(sortedBy order: [KeyPathComparator<Row>]) -> [Row] {
-        ranking.filter { _showIdle.wrappedValue || !isIdle($0) || $0.app == selection.app }.map { app in
+    /// Apps of the ranking in `order`, each expanded app with its processes; `idle` apps only when shown or selected.
+    /// A collapsed app has no process rows: the table keeps state for each child row, and with it each reload's rows.
+    private func rows(sortedBy order: [KeyPathComparator<Row>], idle: Set<AppKey>) -> [Row] {
+        ranking.filter { _showIdle.wrappedValue || !idle.contains($0.app) || $0.app == selection.app }.map { app in
             Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
-                processes: Self.processRows(app).sorted(using: order))
+                processes: isExpanded(app.app) ? Self.processRows(app).sorted(using: order) : [])
         }.sorted(using: order)
     }
 
@@ -218,10 +222,13 @@ struct AppTable: View {
     }
 
     /// An app found by search only through its processes opens to show them.
+    private func isExpanded(_ app: AppKey) -> Bool {
+        (!selection.search.isEmpty && !AppSearch.matches(app, selection.search)) || _expanded.wrappedValue.contains(app.key)
+    }
+
     private func expansion(_ app: Row) -> Binding<Bool> {
-        let found = !selection.search.isEmpty && !AppSearch.matches(app.app, selection.search)
-        return Binding(
-            get: { found || _expanded.wrappedValue.contains(app.id) },
+        Binding(
+            get: { isExpanded(app.app) },
             set: { open in
                 if open { _expanded.wrappedValue.insert(app.id) } else { _expanded.wrappedValue.remove(app.id) }
             })

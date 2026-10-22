@@ -40,15 +40,15 @@ struct MenuBarContent: View {
             Text("Recent Alerts").font(.headline)
             recentAlerts
             Divider()
-            Button("Open Activity Monitor X") { open() }
+            Button("Open Activity Monitor X", systemImage: "macwindow") { open() }
                 .help("Open the main window")
             // `SettingsLink` does not activate the app, so the window would open behind the frontmost app (Task 0).
-            Button("Settings…") {
+            Button("Settings…", systemImage: "gearshape") {
                 NSApp.activate()
                 openSettings()
             }
             .help("Open the settings")
-            Button("Quit Activity Monitor X") { NSApp.terminate(nil) }
+            Button("Quit Activity Monitor X", systemImage: "power") { NSApp.terminate(nil) }
                 .help("Quit Activity Monitor X. The helper continues to record history.")
         }
         .buttonStyle(.borderless)

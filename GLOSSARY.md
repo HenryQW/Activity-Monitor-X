@@ -89,7 +89,10 @@ Info, warning or critical; only warning and critical use yellow and red.
 ## Window
 
 **Inspector**:
-The trailing pane that shows the selected app or process.
+The trailing pane that shows what the screen has selected: an app or process, a Calendar cell, a disk or volume, a Disk Map item or a Hardware row. With nothing selected it shows a summary or a hint.
+
+**Search**:
+The toolbar field. Each screen filters what it lists: apps on Apps, Alerts, Calendar and Energy; disks and volumes on Disk; items on Disk Map; rows on Hardware.
 
 **Event lane**:
 The strip above the chart with markers for pressure (▲), thermal (◆) and alert (●) events.

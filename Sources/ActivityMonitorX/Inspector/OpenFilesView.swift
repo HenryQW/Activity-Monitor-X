@@ -32,7 +32,7 @@ final class OpenFilesModel {
     }
 }
 
-/// The Files pill's rows in the inspector's List: a Refresh row, then a section per process.
+/// The Files pill's sections in a grouped Form: the state with Refresh, then a section per process.
 struct OpenFilesRows: View {
     let model: OpenFilesModel
     let processes: [ProcessRank]
@@ -40,17 +40,15 @@ struct OpenFilesRows: View {
 
     var body: some View {
         Section {
-            HStack {
-                if let error = model.error {
-                    Text(error).foregroundStyle(.secondary)
-                } else if processes.isEmpty {
-                    Text("No running processes").foregroundStyle(.secondary)
+            LabeledContent {
+                HStack {
+                    if model.loading { ProgressView().controlSize(.small) }
+                    Button("Refresh") { Task { await model.load(processes, client: client) } }
+                        .disabled(model.loading)
+                        .help("Read the open files and network connections again")
                 }
-                Spacer()
-                if model.loading { ProgressView().controlSize(.small) }
-                Button("Refresh") { Task { await model.load(processes, client: client) } }
-                    .disabled(model.loading)
-                    .help("Read the open files and network connections again")
+            } label: {
+                Text(model.error ?? (processes.isEmpty ? "No running processes" : "Open files and network connections"))
             }
         }
         ForEach(model.processes, id: \.pid) { p in

@@ -13,7 +13,7 @@ struct AppRulesSheet: View {
 
     var body: some View {
         let muted = model.settings?.rules.apps[app.key]?.muted ?? false
-        let machine = Machine.current, cores = Double(machine.cores), cpuRange = R.SustainedCPU.percentRange(machine)
+        let machine = Machine.current
         VStack(spacing: 0) {
             Form {
                 DaemonProblem()
@@ -24,41 +24,19 @@ struct AppRulesSheet: View {
                         Text("\(app.name) gets no app or process alerts. Memory pressure alerts can still name it.")
                     }
                     Group {
-                        rule(RuleName.title(RuleName.sustainedCPU), \.sustainedCPU, \.sustainedCPU, enabled: \.enabled) { r in
-                            // Stored of one core; shown as a share of all cores, as in Settings.
-                            let shown = (r.wrappedValue.percent / cores * 10).rounded() / 10
-                            NumberRow(title: "Above",
-                                      value: Binding(get: { shown }, set: { if $0 != shown { r.wrappedValue.percent = $0 * cores } }),
-                                      range: ((cpuRange.lowerBound / cores * 10).rounded(.up) / 10)...min(100, cpuRange.upperBound / cores),
-                                      step: 1, unit: "% of all cores", format: .number.precision(.fractionLength(0...1)))
-                            NumberRow(title: "For", value: r.minutes, range: R.SustainedCPU.minutesRange, unit: "min")
+                        rule(RuleName.title(RuleName.sustainedCPU), \.sustainedCPU, \.sustainedCPU, enabled: \.enabled) {
+                            AlertRuleRows.sustainedCPU($0, machine)
                         }
-                        rule(RuleName.title(RuleName.memoryGrowth), \.memoryGrowth, \.memoryGrowth, enabled: \.enabled) { r in
-                            NumberRow(title: "Grows by", value: r.megabytes, range: R.MemoryGrowth.megabytesRange(machine),
-                                      step: 50, unit: "MB")
-                            NumberRow(title: "Over", value: r.minutes, range: R.MemoryGrowth.minutesRange, step: 5, unit: "min")
+                        rule(RuleName.title(RuleName.memoryGrowth), \.memoryGrowth, \.memoryGrowth, enabled: \.enabled) {
+                            AlertRuleRows.memoryGrowth($0, machine)
                         }
-                        rule(RuleName.title(RuleName.memoryJump), \.memoryJump, \.memoryJump, enabled: \.enabled) { r in
-                            NumberRow(title: "Grows by", value: r.megabytes, range: R.MemoryJump.megabytesRange(machine),
-                                      step: 128, unit: "MB")
+                        rule(RuleName.title(RuleName.memoryJump), \.memoryJump, \.memoryJump, enabled: \.enabled) {
+                            AlertRuleRows.memoryJump($0, machine)
                         }
-                        rule(RuleName.title(RuleName.diskWrites), \.diskWrites, \.diskWrites, enabled: \.enabled) { r in
-                            NumberRow(title: "Above", value: units(r.bytesPerHour, 1 << 30),
-                                      range: units(R.DiskWrites.bytesPerHourRange, 1 << 30), unit: "GB per hour")
-                        }
-                        rule(RuleName.title(RuleName.network), \.network, \.network, enabled: \.enabled) { r in
-                            NumberRow(title: "Above", value: units(r.bytesPerSecond, 1 << 20),
-                                      range: units(R.Network.bytesPerSecondRange, 1 << 20), unit: "MB/s")
-                            NumberRow(title: "For", value: r.minutes, range: R.Network.minutesRange, unit: "min")
-                        }
-                        rule(RuleName.title(RuleName.energy), \.energy, \.energy, enabled: \.enabled) { r in
-                            NumberRow(title: "Above", value: r.impact, range: R.Energy.impactRange, step: 50, unit: "impact")
-                            NumberRow(title: "For", value: r.minutes, range: R.Energy.minutesRange, unit: "min")
-                        }
-                        rule(RuleName.title(RuleName.gpu), \.gpu, \.gpu, enabled: \.enabled) { r in
-                            NumberRow(title: "Above", value: r.percent, range: R.GPU.percentRange, step: 5, unit: "%")
-                            NumberRow(title: "For", value: r.minutes, range: R.GPU.minutesRange, unit: "min")
-                        }
+                        rule(RuleName.title(RuleName.diskWrites), \.diskWrites, \.diskWrites, enabled: \.enabled, rows: AlertRuleRows.diskWrites)
+                        rule(RuleName.title(RuleName.network), \.network, \.network, enabled: \.enabled, rows: AlertRuleRows.network)
+                        rule(RuleName.title(RuleName.energy), \.energy, \.energy, enabled: \.enabled, rows: AlertRuleRows.energy)
+                        rule(RuleName.title(RuleName.gpu), \.gpu, \.gpu, enabled: \.enabled, rows: AlertRuleRows.gpu)
                     }
                     .disabled(muted)
                 }
@@ -114,16 +92,6 @@ struct AppRulesSheet: View {
             .help("Use the \(title) values in Settings, values for this app only, or no \(title) alerts for this app")
             rows(value).disabled(mode != .own)
         }
-    }
-
-    /// A byte value in whole `unit`s (GB or MB); a typed value too large for bytes is clamped, so validation rejects it.
-    private func units(_ bytes: Binding<Int64>, _ unit: Int64) -> Binding<Int> {
-        let limit = Int64.max / unit
-        return Binding(get: { Int(bytes.wrappedValue / unit) }, set: { bytes.wrappedValue = min(max(Int64($0), -limit), limit) * unit })
-    }
-
-    private func units(_ range: ClosedRange<Int64>, _ unit: Int64) -> ClosedRange<Int> {
-        Int(range.lowerBound / unit)...Int(range.upperBound / unit)
     }
 }
 

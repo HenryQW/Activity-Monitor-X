@@ -50,6 +50,9 @@ import Testing
         #expect(shares.map { $0.app?.key } == ["app7", "app6", "app5", "app4", "app3", nil])
         #expect(abs(shares.reduce(0) { $0 + $1.share } - 1) < 1e-9)
         #expect(EnergyShare.top([Self.process("a", energy: 0)]).isEmpty)
+        // A query keeps the apps it matches; the rest go into Other.
+        #expect(EnergyShare.top(processes, query: "app2").map { $0.app?.key } == ["app2", nil])
+        #expect(EnergyShare.top(processes, query: "zzz").map { $0.app?.key } == [nil])
     }
 
     @Test func layoutHeightsAndBandsSum() {

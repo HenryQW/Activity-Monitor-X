@@ -5,12 +5,13 @@ import Testing
 
 @Suite struct ShimTests {
     @Test func shimReadsOwnFootprint() {
-        var footprint: UInt64 = 0, read: UInt64 = 0, written: UInt64 = 0, wakeups: UInt64 = 0
-        #expect(camx_rusage(getpid(), &footprint, &read, &written, &wakeups) == 0)
+        var footprint: UInt64 = 0, read: UInt64 = 0, written: UInt64 = 0, wakeups: UInt64 = 0, cpu: UInt64 = 0
+        #expect(camx_rusage(getpid(), &footprint, &read, &written, &wakeups, &cpu) == 0)
         #expect(footprint > 0)
+        #expect(cpu > 0)
         // pid 1 is root-owned; non-root callers are refused.
         if getuid() != 0 {
-            #expect(camx_rusage(1, &footprint, &read, &written, &wakeups) == EPERM)
+            #expect(camx_rusage(1, &footprint, &read, &written, &wakeups, &cpu) == EPERM)
         }
     }
 
