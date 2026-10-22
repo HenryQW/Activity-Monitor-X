@@ -19,8 +19,8 @@ struct AppsView: View {
                 ProgressView()
             case .empty:
                 ContentUnavailableView("Collecting data…", systemImage: "clock")
-            case .failed(let message):
-                ContentUnavailableView("Cannot Load Data", systemImage: "exclamationmark.triangle", description: Text(message))
+            case .failed:
+                HelperUnavailable()
             case .ready:
                 table(apps: shown, sparklines: isLive ? live.sparklines : history.sparklines)
             }

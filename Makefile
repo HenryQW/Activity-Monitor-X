@@ -41,7 +41,7 @@ run-app: install-app
 	open "/Applications/Activity Monitor X.app"
 
 # sudo only where root is needed: build and signing use the user's keychain.
-install: sign
+install: sign install-app
 	sudo install -d -m 755 -o root -g wheel /usr/local/libexec /usr/local/bin /Library/Logs/ActivityMonitorX
 	sudo install -m 755 -o root -g wheel $(BIN)/amxd /usr/local/libexec/amxd
 	sudo install -m 755 -o root -g wheel $(BIN)/amx /usr/local/bin/amx
@@ -52,6 +52,20 @@ install: sign
 uninstall:
 	-sudo launchctl bootout system/$(LABEL)
 	sudo rm -f $(PLIST) /usr/local/libexec/amxd /usr/local/bin/amx
+	-osascript -e 'quit app "Activity Monitor X"'
+	sudo rm -rf "/Applications/Activity Monitor X.app" /Library/Logs/ActivityMonitorX
 ifeq ($(PURGE),1)
 	sudo rm -rf "/Library/Application Support/ActivityMonitorX"
+else
+	@echo "Kept (history database and daemon settings): /Library/Application Support/ActivityMonitorX"
+	@echo "  remove it with: make uninstall PURGE=1"
 endif
+	@echo "Kept (your groups): ~/Library/Application Support/ActivityMonitorX/groups.json"
+	@echo "  remove it with: rm ~/Library/'Application Support'/ActivityMonitorX/groups.json"
+	@echo "Kept (app settings): the $(APP_ID) defaults"
+	@echo "  remove them with: defaults delete $(APP_ID)"
+	@echo "Kept (login item, if you turned on Launch at Login):"
+	@echo "  remove it in System Settings > General > Login Items"
+	@echo "Kept (signing certificate that 'make cert' created): $(IDENTITY)"
+	@echo "  remove it with: security delete-identity -t -c \"$(IDENTITY)\""
+	@echo "  or delete it in Keychain Access (login keychain, My Certificates)"

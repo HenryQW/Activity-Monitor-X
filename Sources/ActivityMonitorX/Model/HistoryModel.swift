@@ -2,6 +2,7 @@ import AMXCore
 import Foundation
 import GRDB
 import Observation
+import os
 
 enum LoadState: Equatable {
     case loading, empty, ready
@@ -10,6 +11,7 @@ enum LoadState: Equatable {
 
 @Observable @MainActor
 final class HistoryModel {
+    private static let log = Logger(subsystem: AMX.bundleID, category: "history")
     var range: HistoryRange = .day {
         didSet {
             guard range != oldValue else { return }
@@ -113,7 +115,8 @@ final class HistoryModel {
         do {
             pool = try openPool()
         } catch {
-            state = .failed("Cannot open history database: \(error.localizedDescription)")
+            Self.log.error("cannot open history database: \(error.localizedDescription, privacy: .public)")
+            state = .failed(error.localizedDescription)
             return
         }
         loading = Task {
@@ -148,6 +151,7 @@ final class HistoryModel {
                 // A group without members in the range is ready with no points: "No Activity", not "Collecting".
                 state = loaded.recorded ? .ready : .empty
             case .failure(let error):
+                Self.log.error("history load: \(error.localizedDescription, privacy: .public)")
                 state = .failed(error.localizedDescription)
             }
         }

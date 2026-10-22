@@ -21,8 +21,13 @@ import Testing
 
     @Test func identityMismatchIsESRCH() throws {
         let me = try #require(ProcessReader.read(pid: getpid())).identity
-        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime) == 0)
-        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime - 1) == ESRCH)
+        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime, callerUID: geteuid()) == 0)
+        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime - 1, callerUID: geteuid()) == ESRCH)
+    }
+
+    @Test func otherUserIsEPERM() throws {
+        let me = try #require(ProcessReader.read(pid: getpid())).identity
+        #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime, callerUID: geteuid() + 1) == EPERM)
     }
 
     @Test func pingJSONShape() throws {

@@ -25,8 +25,8 @@ struct TimelineView: View {
                 ProgressView()
             case .empty:
                 collecting
-            case .failed(let message):
-                ContentUnavailableView("Cannot Load Data", systemImage: "exclamationmark.triangle", description: Text(message))
+            case .failed:
+                HelperUnavailable()
             case .ready where points.isEmpty:
                 if let title {
                     ContentUnavailableView("No Activity", systemImage: "chart.xyaxis.line",

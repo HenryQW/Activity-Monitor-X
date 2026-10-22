@@ -1,6 +1,8 @@
 import Foundation
 
 public enum AMX {
+    /// The release version. The MCP server reports it; `Packaging/Info.plist` has the same `CFBundleShortVersionString`.
+    public static let version = "0.5.0"
     public static let bundleID = "com.henryqw.activitymonitorx"
     public static let cliID = "com.henryqw.activitymonitorx.amx"
     public static let daemonLabel = "com.henryqw.activitymonitorx.daemon"

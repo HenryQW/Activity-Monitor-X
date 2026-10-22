@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License.
+// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
 import Foundation
 
 /// Continuous 0–100 memory pressure index. The kernel level picks a 33-wide band;

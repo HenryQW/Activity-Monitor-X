@@ -2,10 +2,10 @@ import Foundation
 
 /// Mach service `AMX.daemonLabel`, served by `amxd`.
 @objc public protocol DaemonXPC {
-    /// JSON `DaemonPing`: `{"db":"<path>","pid":<n>,"uptime":<s>,"version":2}`.
+    /// JSON `DaemonPing`: `{"db":"<path>","pid":<n>,"uptime":<s>,"version":3}`.
     func ping(reply: @escaping (String) -> Void)
     /// Replies 0 on success, else an errno: `ESRCH` when no process runs at `pid` with `startTime`,
-    /// `EPERM` when `SignalPolicy` refuses.
+    /// `EPERM` when `SignalPolicy` refuses, including a process of another user than the caller.
     func signal(pid: Int32, startTime: Double, signal: Int32, reply: @escaping (Int32) -> Void)
     /// JSON `LiveSnapshot` of the latest 1 s live sample, or nil before the first one. Each call keeps
     /// live sampling on for 3 s.

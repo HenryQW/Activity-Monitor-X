@@ -7,8 +7,15 @@ public enum SignalPolicy {
         return 0
     }
 
-    /// 0 if the process at `pid` started at `startTime`, else `ESRCH`, so a reused pid is never signalled.
-    public static func checkIdentity(pid: Int32, startTime: Double) -> Int32 {
-        ProcessReader.read(pid: pid)?.identity.startTime == startTime ? 0 : ESRCH
+    /// 0 if the process at `pid` started at `startTime` and runs as `callerUID`. `ESRCH` when it did not start then,
+    /// so a reused pid is never signalled; `EPERM` when it belongs to another user. The effective, real and saved
+    /// uids must all match: a root process that only set its effective uid to the user's stays out of reach, as kill(2)
+    /// would keep it.
+    public static func checkIdentity(pid: Int32, startTime: Double, callerUID: uid_t) -> Int32 {
+        var info = proc_bsdinfo()
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        guard withUnsafeMutablePointer(to: &info, { proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, $0, size) }) == size,
+              Double(info.pbi_start_tvsec) + Double(info.pbi_start_tvusec) / 1e6 == startTime else { return ESRCH }
+        return info.pbi_uid == callerUID && info.pbi_ruid == callerUID && info.pbi_svuid == callerUID ? 0 : EPERM
     }
 }

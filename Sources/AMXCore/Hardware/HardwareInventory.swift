@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License.
+// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
 import Foundation
 
 public enum HardwareError: Error, Equatable {

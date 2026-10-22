@@ -49,7 +49,8 @@ final class XPCService: NSObject, NSXPCListenerDelegate, DaemonXPC, @unchecked S
 
     func signal(pid: Int32, startTime: Double, signal: Int32, reply: @escaping (Int32) -> Void) {
         let caller = NSXPCConnection.current()?.processIdentifier ?? -1
-        var refused = SignalPolicy.checkIdentity(pid: pid, startTime: startTime)
+        let callerUID = NSXPCConnection.current()?.effectiveUserIdentifier ?? uid_t.max
+        var refused = SignalPolicy.checkIdentity(pid: pid, startTime: startTime, callerUID: callerUID)
         if refused == 0 { refused = SignalPolicy.check(pid: pid, signal: signal, selfPID: getpid()) }
         guard refused == 0 else {
             log.error("signal \(signal, privacy: .public) to pid \(pid, privacy: .public) refused \(refused, privacy: .public) (caller \(caller, privacy: .public))")

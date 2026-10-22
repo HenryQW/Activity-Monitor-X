@@ -84,6 +84,16 @@ private let tables = ["processes", "process_samples", "process_minute", "process
         #expect(first == second)
     }
 
+    @Test func corruptFileIsSetAside() throws {
+        let path = tempDB()
+        try Data(repeating: 0x41, count: 8192).write(to: URL(fileURLWithPath: path))
+        let writer = try Store.openWriter(path: path)
+        #expect(try writer.read { try Schema.migrator.appliedIdentifiers($0) } == ["v1", "v2", "v3"])
+        let name = (path as NSString).lastPathComponent
+        let aside = try FileManager.default.contentsOfDirectory(atPath: NSTemporaryDirectory()).filter { $0.hasPrefix(name + ".corrupt-") }
+        #expect(aside.count == 1)
+    }
+
     @Test func readerCannotWrite() throws {
         let path = tempDB()
         _ = try Store.openWriter(path: path)

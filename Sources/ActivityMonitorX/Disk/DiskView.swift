@@ -55,8 +55,8 @@ struct DiskView: View {
             switch history.state {
             case .loading:
                 ProgressView().frame(maxWidth: .infinity, minHeight: 200)
-            case .failed(let message):
-                ContentUnavailableView("Cannot Load Data", systemImage: "exclamationmark.triangle", description: Text(message))
+            case .failed:
+                HelperUnavailable()
             case .empty, .ready:
                 grid(history.system.map { Sample(ts: $0.bucket, read: $0.diskR, write: $0.diskW, iops: $0.diskIOPS,
                                                  latency: $0.diskLatMs, util: $0.diskUtil, free: $0.diskFree) }, live: false)

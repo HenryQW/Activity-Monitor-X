@@ -85,6 +85,7 @@ final class LiveModel {
         } catch {
             // One missed poll keeps the last data; only a lasting outage shows the error.
             failures += 1
+            if failures == 3 { Self.log.error("live poll: \(error.localizedDescription, privacy: .public)") }
             if failures >= 3 { state = .failed(error.localizedDescription) }
         }
     }

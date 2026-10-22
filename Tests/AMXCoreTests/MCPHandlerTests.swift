@@ -30,7 +30,7 @@ private func toolResult(_ name: String, _ arguments: String) throws -> (text: St
         let result = try #require(out["result"] as? [String: Any])
         #expect(result["protocolVersion"] as? String == answered)
         #expect((result["capabilities"] as? [String: [String: Bool]]) == ["tools": ["listChanged": false]])
-        #expect((result["serverInfo"] as? [String: String]) == ["name": "amx", "version": "0.3.0"])
+        #expect((result["serverInfo"] as? [String: String]) == ["name": "amx", "version": "0.5.0"])
     }
 
     @Test func toolsList() throws {

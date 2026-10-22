@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License.
+// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
 import Foundation
 
 /// Per-app sustained CPU and per-process memory growth and jump. Pure; rings and spells live only for the

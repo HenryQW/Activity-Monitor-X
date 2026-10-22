@@ -35,7 +35,7 @@ public enum MCPHandler {
             let asked = params["protocolVersion"] as? String ?? ""
             return ["protocolVersion": versions.contains(asked) ? asked : versions[0],
                     "capabilities": ["tools": ["listChanged": false]],
-                    "serverInfo": ["name": "amx", "version": "0.3.0"]]
+                    "serverInfo": ["name": "amx", "version": AMX.version]]
         case "ping":
             return [String: Any]()
         case "tools/list":

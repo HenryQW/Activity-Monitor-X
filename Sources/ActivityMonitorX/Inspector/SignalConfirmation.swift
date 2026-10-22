@@ -88,7 +88,11 @@ struct SignalConfirmation: ViewModifier {
     }
 
     private static func message(_ error: Error) -> String {
-        error as? DaemonClientError == .refused(ESRCH) ? "Process has already exited." : error.localizedDescription
+        switch error as? DaemonClientError {
+        case .refused(ESRCH): "Process has already exited."
+        case .refused(EPERM): "This process belongs to another user."
+        default: error.localizedDescription
+        }
     }
 
     private struct Failure {
