@@ -1,7 +1,7 @@
 import AMXCore
 import SwiftUI
 
-/// Alert rows newest first: rows that were unread when someone could last start to see
+/// Alert rows newest first under Today, Yesterday and Earlier; dismissed rows are hidden unless shown, then dimmed: rows that were unread when someone could last start to see
 /// the screen stay bold while it is shown. The sidebar search filters by app or message. Double-click or Show in
 /// Apps opens Apps at the alert.
 struct AlertsView: View {
@@ -15,14 +15,15 @@ struct AlertsView: View {
 
     var body: some View {
         let search = selection.search
-        let rows = search.isEmpty ? alerts.alerts : alerts.alerts.filter {
+        let found = search.isEmpty ? alerts.alerts : alerts.alerts.filter {
             $0.subject.localizedStandardContains(search) || $0.message.localizedStandardContains(search)
                 || $0.app.map { AppSearch.matches($0, search) } == true
         }
+        let rows = alerts.showDismissed ? found : found.filter { !alerts.dismissed.contains($0.id) }
         Group {
             if !rows.isEmpty {
-                table(rows)
-            } else if !alerts.alerts.isEmpty {
+                list(rows)
+            } else if !search.isEmpty && !alerts.alerts.isEmpty {
                 ContentUnavailableView.search(text: search)
             } else if let error = alerts.error {
                 ContentUnavailableView("Cannot Load Alerts", systemImage: "exclamationmark.triangle", description: Text(error))
@@ -45,32 +46,58 @@ struct AlertsView: View {
         alerts.markAllRead()
     }
 
-    private func table(_ rows: [EventMark]) -> some View {
+    private func list(_ rows: [EventMark]) -> some View {
         let unread = _unreadAtShow.wrappedValue
-        return Table(rows, selection: _selected.projectedValue) {
-            TableColumn("Severity") { event in
-                SeverityIcon(severity: event.severity)
-            }
-            .width(min: 64, ideal: 64, max: 72)
-            .alignment(.center)
-            TableColumn("Time") { event in
-                Text(AlertTime.format(event.ts))
-                    .monospacedDigit()
-                    .bold(unread.contains(event.id))
-            }
-            .width(min: 130, ideal: 140, max: 180)
-            TableColumn("Source") { event in
-                Text(event.subject).bold(unread.contains(event.id))
-            }
-            .width(min: 100, ideal: 160, max: 260)
-            TableColumn("Message") { event in
-                Text(event.message).bold(unread.contains(event.id)).help(event.message)
+        let calendar = Calendar.current
+        let days = Dictionary(grouping: rows) { event -> Day in
+            let date = Date(timeIntervalSince1970: event.ts)
+            return calendar.isDateInToday(date) ? .today : calendar.isDateInYesterday(date) ? .yesterday : .earlier
+        }
+        return List(selection: _selected.projectedValue) {
+            ForEach(Day.allCases, id: \.self) { day in
+                if let events = days[day] {
+                    Section(day.rawValue) {
+                        ForEach(events) { event in
+                            row(event, day: day, bold: unread.contains(event.id))
+                        }
+                    }
+                }
             }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
-            if ids.count == 1 { Button("Show in Apps") { reveal(ids) } }
+            if ids.count == 1 { Button("Show in Apps", systemImage: "app.badge") { reveal(ids) } }
+            if !ids.isEmpty {
+                if ids.allSatisfy(alerts.dismissed.contains) {
+                    Button("Restore", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
+                } else {
+                    Button("Dismiss", systemImage: "xmark.circle") { alerts.dismiss(ids) }
+                }
+            }
         } primaryAction: { reveal($0) }
     }
+
+    private func row(_ event: EventMark, day: Day, bold: Bool) -> some View {
+        let dismissed = alerts.dismissed.contains(event.id)
+        return HStack {
+            SeverityIcon(severity: event.severity).frame(width: 40)
+            // The section names the day, so Today and Yesterday rows show the time only.
+            Text(Date(timeIntervalSince1970: event.ts).formatted(date: day == .earlier ? .abbreviated : .omitted, time: .shortened))
+                .monospacedDigit().frame(width: 140, alignment: .leading)
+            Text(event.subject).frame(width: 160, alignment: .leading)
+            Text(event.message).help(event.message).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .bold(bold)
+        .opacity(dismissed ? 0.5 : 1)
+        .swipeActions(edge: .trailing) {
+            if dismissed {
+                Button("Restore", systemImage: "arrow.uturn.backward") { alerts.restore([event.id]) }
+            } else {
+                Button("Dismiss", systemImage: "xmark.circle") { alerts.dismiss([event.id]) }.tint(.gray)
+            }
+        }
+    }
+
+    private enum Day: String, CaseIterable { case today = "Today", yesterday = "Yesterday", earlier = "Earlier" }
 
     private func reveal(_ ids: Set<Int64>) {
         guard ids.count == 1, let event = alerts.alerts.first(where: { ids.contains($0.id) }) else { return }

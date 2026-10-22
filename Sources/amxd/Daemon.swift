@@ -11,7 +11,8 @@ final class Daemon: @unchecked Sendable {
         let system = SystemSampler(liveOnly: true)
         var apps: [ProcessIdentity: (name: String, path: String?, app: AppInfo)] = [:]
         var primed = false
-        var latest: (ts: Double, json: Data)?
+        /// `uptime` is `systemUptime`, so a wall clock step does not make the snapshot stale or fresh.
+        var latest: (uptime: Double, json: Data)?
     }
 
     private static let teamIDBudget = 30
@@ -36,6 +37,9 @@ final class Daemon: @unchecked Sendable {
     /// Read and replaced on `queue` only.
     private var settings = DaemonSettings()
     private var ticks = 0
+    private var primed = false
+    /// New processes of the first tick, which is not written.
+    private var firstNew: [RawProcess] = []
     private var timer: DispatchSourceTimer?
     private var sigterm: DispatchSourceSignal?
     private var live = Live()
@@ -51,7 +55,7 @@ final class Daemon: @unchecked Sendable {
             attributes: [.posixPermissions: 0o755])
         db = try Store.openWriter(path: dbPath)
         try db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_autocheckpoint=0") }
-        writer = try SampleWriter(db: db, path: dbPath, ticksPerCommit: AMX.ticksPerCommit)
+        writer = SampleWriter(db: db, path: dbPath, ticksPerCommit: AMX.ticksPerCommit)
         self.xpc = xpc
         self.dbPath = dbPath
         do {
@@ -104,9 +108,19 @@ final class Daemon: @unchecked Sendable {
 
     private func tick() {
         let now = Date().timeIntervalSince1970
-        let sampled = processes.sample(now: now, gpuNanos: GPUReader.processNanos())
+        let sampled = processes.sample(gpuNanos: GPUReader.processNanos())
         var samples = sampled.samples
-        var sys = system.sample(now: now)
+        var sys = system.sample()
+        // The first sample has no previous counters, so its rates are all 0: write from the second tick on.
+        guard primed else {
+            primed = true
+            firstNew = sampled.new
+            return
+        }
+        // The sampler reports a process as new only once, so the first tick's new processes still running come now.
+        let alive = Set(samples.map(\.identity))
+        let new = firstNew.filter { alive.contains($0.identity) } + sampled.new
+        firstNew = []
 
         let rates = nettop.rates(alive: Dictionary(samples.map { ($0.identity.pid, $0.identity) }, uniquingKeysWith: { $1 }))
         var net: [ProcessIdentity: (inPerSec: Double, outPerSec: Double)] = [:]
@@ -121,7 +135,7 @@ final class Daemon: @unchecked Sendable {
         sys.netOut = rates.values.reduce(0) { $0 + $1.outPerSec }
 
         var budget = Self.teamIDBudget
-        let attributed = sampled.new.map { raw -> (RawProcess, AppInfo, teamID: String?) in
+        let attributed = new.map { raw -> (RawProcess, AppInfo, teamID: String?) in
             let app = attribute(raw)
             var team: String?
             // Over budget: written without a team ID, which the backfill fills in later.
@@ -203,8 +217,8 @@ final class Daemon: @unchecked Sendable {
 
     /// Called on `queue`. Keeps live sampling on and returns the latest snapshot unless it is stale.
     private func liveSnapshot() -> Data? {
-        let now = Date().timeIntervalSince1970
-        liveDemand.requested(at: now)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        liveDemand.requested(at: uptime)
         if liveTimer == nil {
             let t = DispatchSource.makeTimerSource(queue: queue)
             t.schedule(deadline: .now(), repeating: 1)
@@ -212,21 +226,21 @@ final class Daemon: @unchecked Sendable {
             t.resume()
             liveTimer = t
         }
-        guard let latest = live.latest, now - latest.ts < 3 else { return nil }
+        guard let latest = live.latest, uptime - latest.uptime < 3 else { return nil }
         return latest.json
     }
 
     /// Never writes the DB.
     private func liveTick() {
-        let now = Date().timeIntervalSince1970
-        guard liveDemand.shouldSample(now: now) else {
+        let now = Date().timeIntervalSince1970, uptime = ProcessInfo.processInfo.systemUptime
+        guard liveDemand.shouldSample(now: uptime) else {
             liveTimer?.cancel()
             liveTimer = nil
             live = Live()  // the next session primes fresh
             return
         }
-        let sampled = live.processes.sample(now: now, gpuNanos: GPUReader.processNanos())
-        let sys = live.system.sample(now: now)
+        let sampled = live.processes.sample(gpuNanos: GPUReader.processNanos())
+        let sys = live.system.sample()
         for raw in sampled.new {
             live.apps[raw.identity] = (raw.name, raw.path, attribute(raw))
         }
@@ -252,7 +266,7 @@ final class Daemon: @unchecked Sendable {
                                                                 thermalState: sys.thermalState),
                                     processes: rows)
         do {
-            live.latest = (now, try JSONEncoder().encode(snapshot))
+            live.latest = (uptime, try JSONEncoder().encode(snapshot))
         } catch {
             log.error("live encode failed: \(String(describing: error), privacy: .public)")
         }

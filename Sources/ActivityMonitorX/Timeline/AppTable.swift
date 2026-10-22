@@ -1,5 +1,4 @@
 import AMXCore
-import Charts
 import SwiftUI
 
 /// Apps ranked for the span (or the whole range), each expandable to its processes, with the range's trend and a pin
@@ -19,6 +18,7 @@ struct AppTable: View {
     var hover: (String, Bool) -> Void = { _, _ in }
 
     @Environment(Selection.self) private var selection
+    @Environment(HistoryModel.self) private var history
     private let _expanded = State<Set<Row.ID>>(initialValue: [])
     private let _sortOrder = State(initialValue: [KeyPathComparator(\Row.average, order: .reverse)])
     /// Row positions (apps and processes) while the order holds; nil while the table sorts.
@@ -34,7 +34,7 @@ struct AppTable: View {
         let details = AppKey.details(for: ranking.map(\.app))
         // One y scale per metric: 0 to the largest value in view, so rows compare with each other.
         let top = ranking.compactMap { sparklines[$0.app]?.max() }.max() ?? 1
-        let byID = Dictionary(uniqueKeysWithValues: rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) })
+        let byID = Dictionary(rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let selected = Binding<Row.ID?>(
             get: {
                 // Derived from `selection`, so a pick in the inspector, a search that hides the app, or a Quit shows
@@ -123,7 +123,19 @@ struct AppTable: View {
             }
             // Double-click or Return opens the inspector on the row.
             .contextMenu(forSelectionType: Row.ID.self) { ids in
-                if let row = ids.first.flatMap({ byID[$0] }), row.process == nil { pinButton(row.app) }
+                if let row = ids.first.flatMap({ byID[$0] }), row.id != Row.idleID {
+                    Button("Show in Inspector", systemImage: "sidebar.trailing") {
+                        selection.app = row.app
+                        selection.process = row.process
+                        selection.inspectorShown = true
+                    }
+                    .help("Show \(row.name) in the inspector")
+                    if row.process == nil {
+                        pinButton(row.app)
+                        Menu("Colour") { AppColorPicker(app: row.app, history: history) }
+                            .help("Choose the app's colour")
+                    }
+                }
             } primaryAction: { ids in
                 guard let id = ids.first, id != Row.idleID else { return }
                 selection.inspectorShown = true
@@ -259,17 +271,9 @@ private struct Sparkline: View {
     let top: Double
 
     var body: some View {
-        Chart {
-            ForEach(values.indices, id: \.self) { i in
-                LineMark(x: .value("Time", i), y: .value("Value", values[i]))
-            }
-        }
-        .foregroundStyle(color)
-        .chartXAxis(.hidden)
-        .chartYAxis(.hidden)
-        .chartYScale(domain: 0...max(top, .leastNonzeroMagnitude))
-        .chartLegend(.hidden)
-        .frame(height: 18)
-        .accessibilityHidden(true)
+        SparklineShape(values: values, top: top, slots: values.count)
+            .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+            .frame(height: 18)
+            .accessibilityHidden(true)
     }
 }

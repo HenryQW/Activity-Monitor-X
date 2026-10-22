@@ -41,6 +41,12 @@ struct HardwareInventoryTests {
         #expect(HardwareInventory.text(42) == "42")
     }
 
+    @Test func processorsText() {
+        let clusters: [ChipInfo.Cluster] = [.init(name: "Super", cores: 5), .init(name: "Performance", cores: 10)]
+        #expect(HardwareInventory.processors("proc 15:5:10:0", clusters: clusters) == "15 cores (5 Super, 10 Performance)")
+        #expect(HardwareInventory.processors("proc ?", clusters: clusters) == "proc ?")
+    }
+
     @Test func chipInfoMatchesSysctl() {
         let chip = ChipInfo.current()
         #expect(!chip.clusters.isEmpty && chip.clusters.allSatisfy { !$0.name.isEmpty && $0.cores > 0 })

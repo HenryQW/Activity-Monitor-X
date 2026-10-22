@@ -74,22 +74,27 @@ struct ProcessRules: Sendable {
         var out: [EventDraft] = []
         var liveProcesses: [ProcessIdentity: Process] = [:]
         var tick: [String: (name: String, samples: [ProcessSample])] = [:]
+        // An app with its own rules (or muted) uses them in place of the global ones.
+        let perApp = Dictionary(uniqueKeysWithValues: rules.apps.keys.map { ($0, rules.forApp($0)) })
         for s in samples {
             guard let entry = known[s.identity], entry.name != "kernel_task" else { continue }
             let (name, app) = entry
+            let key = app.appPath ?? name
             var state = processes.removeValue(forKey: s.identity) ?? Process()
-            out += Self.memory(s, entry, &state, now: now, rules: rules)
+            out += Self.memory(s, entry, &state, now: now, rules: perApp[key] ?? rules)
             liveProcesses[s.identity] = state
-            tick[app.appPath ?? name, default: (app.appName, [])].samples.append(s)
+            tick[key, default: (app.appName, [])].samples.append(s)
         }
         processes = liveProcesses
 
         lastAlert = lastAlert.filter { now - $0.value < L.appRearm }
         var liveSpells: [Key: Spell] = [:]
-        for rule in Self.appRules(rules) {
+        let perAppRules = perApp.mapValues(Self.appRules)
+        for (i, global) in Self.appRules(rules).enumerated() {
             // A total rule keeps an app with no process this tick: it adds 0 until its hour is empty.
-            let kept = rule.total ? spells.keys.filter { $0.rule == rule.name }.map(\.app) : []
+            let kept = global.total ? spells.keys.filter { $0.rule == global.name }.map(\.app) : []
             for app in Set(tick.keys).union(kept) {
+                let rule = perAppRules[app]?[i] ?? global
                 let key = Key(rule: rule.name, app: app)
                 var state = spells.removeValue(forKey: key) ?? Spell()
                 let samples = tick[app]?.samples ?? []

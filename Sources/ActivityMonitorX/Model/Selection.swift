@@ -16,6 +16,8 @@ final class Selection {
     /// The group open in the editor sheet; a new one is not in `GroupsModel.groups` yet.
     var editingGroup: ProcessGroup?
     var inspectorShown = false
+    /// The Range popover: the toolbar button and Range > Custom Range open it.
+    var rangeShown = false
     /// View > Refresh (⌘R) on a System screen: the shown screen re-reads what it otherwise reads once.
     var refreshes = 0
     var isSystem: Bool { sidebar?.isSystem == true }
@@ -56,11 +58,20 @@ final class Selection {
         case RuleName.gpu: history.metric = .gpu
         default: break
         }
-        // The range first: a range change clears the span.
+        app = event.app
+        open(focus, history: history)
+    }
+
+    /// Opens Apps on a Calendar cell's time: the smallest range that holds it, the span on the chart.
+    func reveal(from start: Double, to end: Double, history: HistoryModel) {
+        open(EventFocus.window(from: start, to: end, now: Date().timeIntervalSince1970), history: history)
+    }
+
+    private func open(_ focus: (range: HistoryRange, span: ClosedRange<Double>?), history: HistoryModel) {
+        // A range ends now (focus is relative to now) and clears a custom window and the span.
         history.range = focus.range
         history.span = focus.span
         query = ""
-        app = event.app
         showChart = true
         sidebar = .apps
     }

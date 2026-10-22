@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import os
 
 /// Writes `ticksPerCommit` ticks per transaction: each commit rewrites the last page of every table it
 /// touches, so commits, not rows, set the bytes written. `flush` commits the ticks so far. Process rows
@@ -49,8 +50,9 @@ public final class SampleWriter {
     var ids: [ProcessIdentity: Int64] { state.ids }
 
     /// Closes the processes a previous writer left open at that writer's last minute; the ones still
-    /// alive reopen on their first write.
-    public init(db: DatabaseQueue, path: String, ticksPerCommit: Int = 1) throws {
+    /// alive reopen on their first write. A failed close (a full disk) is logged, not fatal: those processes
+    /// stay open until the next start closes them.
+    public init(db: DatabaseQueue, path: String, ticksPerCommit: Int = 1) {
         self.db = db
         self.path = path
         self.ticksPerCommit = ticksPerCommit
@@ -62,7 +64,8 @@ public final class SampleWriter {
                     """, arguments: [Schema.open])
             }
         } catch {
-            throw StoreError(path: path, underlying: error)
+            Logger(subsystem: AMX.daemonLabel, category: "store")
+                .error("closing open processes failed: \(String(describing: StoreError(path: path, underlying: error)), privacy: .public)")
         }
     }
 

@@ -129,6 +129,47 @@ private struct Rig {
         #expect(p["gpu_avg"] as Double == 50 && p["samples"] as Int == 60)
     }
 
+    @Test func clockStepBackStillRolls() throws {
+        let r = try Rig()
+        try r.raw(b, cpu: 10)
+        try r.run(b + 3665)
+        // The clock goes back a day; the next rollup comes within 60 s of the step.
+        let back = b - 86_400
+        try r.raw(back, cpu: 20)
+        try r.run(back + 30)
+        try r.raw(back + 60, cpu: 20)
+        try r.run(back + 3665)
+        #expect(try r.buckets("process_minute") == [back, b])
+        #expect(try r.buckets("process_hour") == [back, b])
+    }
+
+    @Test func yearGapRollsInFewStatements() throws {
+        let r = try Rig()
+        let year = 365 * 86_400.0
+        try r.raw(b, cpu: 10)
+        try r.raw(b + year, cpu: 20)
+        final class Count: @unchecked Sendable { var statements = 0 }
+        let count = Count()
+        r.db.writeWithoutTransaction { $0.trace { _ in count.statements += 1 } }
+        try r.run(b + year + 3665)
+        // Retention then drops the year-old buckets.
+        #expect(try r.buckets("process_minute") == [b + year])
+        #expect(try r.buckets("process_hour") == [b + year])
+        // One minute and one hour bucket per row, not one statement per empty bucket.
+        #expect(count.statements < 100)
+    }
+
+    @Test func retentionRunsWhenTheRollFails() throws {
+        let r = try Rig()
+        let now = 2_000_000_030.0
+        try r.exec("INSERT INTO process_minute(process_id, bucket, samples) VALUES (\(r.pid), \(now - RetentionPolicy().minute - 1), 1)")
+        try r.raw(now - 600, cpu: 1)
+        // As on a full disk, the roll's inserts fail.
+        try r.exec("CREATE TRIGGER full BEFORE INSERT ON process_minute BEGIN SELECT RAISE(FAIL, 'database or disk is full'); END")
+        #expect(throws: (any Error).self) { try r.run(now) }
+        #expect(try r.count("process_minute") == 0)
+    }
+
     @Test func retentionDefaults() {
         let p = RetentionPolicy()
         #expect(p.raw == 86_400 && p.minute == 2_592_000 && p.hour == 7_776_000)

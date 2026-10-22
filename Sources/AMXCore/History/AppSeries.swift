@@ -75,9 +75,10 @@ public enum AppSeries {
     /// The `top` apps get a series each, in rank order (D18 as amended by R-UI3): by their value in each bucket weighted
     /// by how far the bucket's stack total rises above the median total, then by range average, then by key. A short
     /// spike then outweighs a steady load; on a flat range every weight is 0, so the order is the average's.
+    /// Apps whose key is in `always` (a colour the user chose) get a series too, after the top ones.
     /// Tracks at the indices in `otherOnly` never get a series of their own: their values add to Other.
     public static func stacked(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double, top: Int = 5,
-                               otherOnly: Set<Int> = []) -> [SeriesPoint] {
+                               always: Set<String> = [], otherOnly: Set<Int> = []) -> [SeriesPoint] {
         let (starts, perApp) = bucketed(without(tracks, otherOnly), from: from, to: to, bucket: bucket) { $1.app }
         let forced = otherOnly.isEmpty ? [:] : bucketed(otherOnly.sorted().map { tracks[$0] }, from: from, to: to, bucket: bucket) { $1.app }.perKey
         // Range average is the width-weighted mean of the bucket values.
@@ -90,8 +91,8 @@ public enum AppSeries {
         let excess = totals.map { max(0, $0 - median) }
         let scores = perApp.mapValues { values in zip(values, excess).reduce(0) { $0 + $1.0 * $1.1 } }
         let ordered = perApp.keys.sorted { (scores[$0]!, averages[$0]!, $1.key) > (scores[$1]!, averages[$1]!, $0.key) }
-        let named = Array(ordered.prefix(top))
-        let rest = ordered.dropFirst(top)
+        let named = Array(ordered.prefix(top)) + ordered.dropFirst(top).filter { always.contains($0.key) }
+        let rest = ordered.dropFirst(top).filter { !always.contains($0.key) }
 
         var points: [SeriesPoint] = []
         let other = starts.indices.map { b in
@@ -124,13 +125,18 @@ public enum AppSeries {
         return points + points.filter { $0.bucket == last }.map { SeriesPoint(bucket: last + bucket, app: $0.app, value: $0.value) }
     }
 
-    /// The highest bucket total of a stack, the top of the chart: with `span`, of the buckets that overlap it.
-    public static func peakTotal(_ points: [SeriesPoint], bucket: Double, in span: ClosedRange<Double>? = nil) -> Double {
-        var totals: [Double: Double] = [:]
-        for p in points where span.map({ p.bucket < $0.upperBound && p.bucket + bucket > $0.lowerBound }) ?? true {
-            totals[p.bucket, default: 0] += p.value
+    /// Chart labels in order: nil is "Other", which no app gets; a name already given gets " (n)", the lowest free n.
+    public static func labels(_ names: [String?]) -> [String] {
+        var given: Set<String> = ["Other"]
+        return names.map { name in
+            guard let name else { return "Other" }
+            var (label, n) = (name, 1)
+            while !given.insert(label).inserted {
+                n += 1
+                label = "\(name) (\(n))"
+            }
+            return label
         }
-        return totals.values.max() ?? 0
     }
 
     /// The hover bubble's rows for one bucket: apps by value, Other last, without the rows `hides` (they would read 0).
@@ -155,6 +161,7 @@ public enum AppSeries {
     /// Every app's series in `count` equal buckets: one pass for all sparklines.
     public static func sparklines(_ tracks: [ProcessTrack], from: Double, to: Double, count: Int = 60,
                                   excluding: Set<Int> = []) -> [AppKey: [Double]] {
+        guard to > from else { return [:] }
         let points = stacked(without(tracks, excluding), from: from, to: to, bucket: (to - from) / Double(count), top: .max)
         return Dictionary(grouping: points) { $0.app! }.mapValues { $0.map(\.value) }
     }

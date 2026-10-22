@@ -49,6 +49,18 @@ public final class DaemonClient: @unchecked Sendable {
         return try data.map { try JSONDecoder().decode(LiveSnapshot.self, from: $0) }
     }
 
+    /// Processes in batches of `OpenFiles.maxProcesses`; a process that has exited or belongs to another user has no entry.
+    public func openFiles(_ ids: [ProcessIdentity]) async throws -> [OpenItems] {
+        var out: [OpenItems] = []
+        for start in stride(from: 0, to: ids.count, by: OpenFiles.maxProcesses) {
+            let request = try JSONEncoder().encode(Array(ids[start..<min(ids.count, start + OpenFiles.maxProcesses)]))
+            let data: Data? = try await call { proxy, reply in proxy.openFiles(request) { reply($0) } }
+            guard let data else { throw DaemonClientError.rejected("amxd refused the request.") }
+            out += try JSONDecoder().decode([OpenItems].self, from: data)
+        }
+        return out
+    }
+
     public func signal(pid: Int32, startTime: Double, signal: Int32) async throws {
         let result: Int32 = try await call { proxy, reply in
             proxy.signal(pid: pid, startTime: startTime, signal: signal) { reply($0) }

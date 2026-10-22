@@ -36,4 +36,7 @@ private func event(_ kind: String, _ severity: Int, _ message: String) -> EventM
 @Test func byteLabelsNeverSpellOutZero() {
     #expect(Metric.bytes(0) == "0 bytes")
     #expect(Metric.bytes(1_500_000) == "1.5 MB")
+    #expect(Metric.int64(.nan) == 0)
+    #expect(Metric.int64(.infinity) > .max - 1024 && Metric.int64(-1e30) == .min)
+    #expect(Metric.int64(2.5) == 3)
 }

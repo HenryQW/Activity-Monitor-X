@@ -1,9 +1,10 @@
 import Foundation
 
 /// `ping` reply. Version 1 had the same keys; version 2 adds `settings` and `setSettings`;
-/// version 3 refuses to signal a process of another user.
+/// version 3 refuses to signal a process of another user; version 4 applies per-app alert rules;
+/// version 5 adds `openFiles`.
 public struct DaemonPing: Codable, Sendable, Equatable {
-    public static let protocolVersion = 3
+    public static let protocolVersion = 5
 
     public let version: Int
     public let uptime: Int

@@ -2,7 +2,7 @@ import Foundation
 
 /// Mach service `AMX.daemonLabel`, served by `amxd`.
 @objc public protocol DaemonXPC {
-    /// JSON `DaemonPing`: `{"db":"<path>","pid":<n>,"uptime":<s>,"version":3}`.
+    /// JSON `DaemonPing`: `{"db":"<path>","pid":<n>,"uptime":<s>,"version":5}`.
     func ping(reply: @escaping (String) -> Void)
     /// Replies 0 on success, else an errno: `ESRCH` when no process runs at `pid` with `startTime`,
     /// `EPERM` when `SignalPolicy` refuses, including a process of another user than the caller.
@@ -15,4 +15,7 @@ import Foundation
     /// Validates, saves and applies: rules and terminals from the next tick, the size cap at the next rollup. Replies nil on success, else the problem text;
     /// a refusal leaves the file and the applied settings as they were.
     func setSettings(_ json: Data, reply: @escaping (String?) -> Void)
+    /// JSON `[OpenItems]` for a JSON `[ProcessIdentity]` (see `OpenFiles.request`): the open files and sockets of each
+    /// process that still runs as the caller's user; other processes are left out. Nil for a request that is not valid.
+    func openFiles(_ request: Data, reply: @escaping (Data?) -> Void)
 }

@@ -52,6 +52,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         /// Up to all cores, and never narrower than the fixed range of earlier builds.
         public static func percentRange(_ m: Machine) -> ClosedRange<Double> { 10...max(1000, 100 * Double(m.cores)) }
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, percent, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.percent, or: d.percent),
+                                               c.decode(.minutes, or: d.minutes))
+        }
     }
 
     public struct MemoryGrowth: Codable, Sendable, Equatable {
@@ -61,6 +67,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public static let minutesRange = 10...120
         public static func megabytesRange(_ m: Machine) -> ClosedRange<Int> { 50...max(16384, m.megabytes) }
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, minutes, megabytes) = try (c.decode(.enabled, or: d.enabled), c.decode(.minutes, or: d.minutes),
+                                                 c.decode(.megabytes, or: d.megabytes))
+        }
     }
 
     public struct MemoryJump: Codable, Sendable, Equatable {
@@ -68,6 +80,11 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var megabytes = 1024
         public static func megabytesRange(_ m: Machine) -> ClosedRange<Int> { 128...max(16384, m.megabytes) }
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, megabytes) = try (c.decode(.enabled, or: d.enabled), c.decode(.megabytes, or: d.megabytes))
+        }
     }
 
     public struct Pressure: Codable, Sendable, Equatable {
@@ -80,6 +97,11 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var enabled = true
         public var level = Level.warning
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, level) = try (c.decode(.enabled, or: d.enabled), c.decode(.level, or: d.level))
+        }
     }
 
     public struct Thermal: Codable, Sendable, Equatable {
@@ -101,6 +123,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var minutes = 5
         public static let minutesRange = 1...60
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, state, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.state, or: d.state),
+                                             c.decode(.minutes, or: d.minutes))
+        }
     }
 
     /// An app's writes over the last hour.
@@ -109,6 +137,11 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var bytesPerHour: Int64 = 20 << 30
         public static let bytesPerHourRange: ClosedRange<Int64> = (1 << 30)...(1000 << 30)
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, bytesPerHour) = try (c.decode(.enabled, or: d.enabled), c.decode(.bytesPerHour, or: d.bytesPerHour))
+        }
     }
 
     /// An app's bytes in plus out, held.
@@ -118,6 +151,13 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var minutes = 5
         public static let bytesPerSecondRange: ClosedRange<Int64> = (1 << 20)...(10_000 << 20), minutesRange = 1...60
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, bytesPerSecond, minutes) = try (c.decode(.enabled, or: d.enabled),
+                                                      c.decode(.bytesPerSecond, or: d.bytesPerSecond),
+                                                      c.decode(.minutes, or: d.minutes))
+        }
     }
 
     /// The sampler's energy impact (CPU % of one core plus wakeups per second × 0.1), held.
@@ -127,6 +167,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var minutes = 10
         public static let impactRange = 10...5000, minutesRange = 1...60
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, impact, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.impact, or: d.impact),
+                                              c.decode(.minutes, or: d.minutes))
+        }
     }
 
     /// Of one GPU, held.
@@ -136,6 +182,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var minutes = 5
         public static let percentRange = 10...100, minutesRange = 1...60
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, percent, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.percent, or: d.percent),
+                                               c.decode(.minutes, or: d.minutes))
+        }
     }
 
     public struct Swap: Codable, Sendable, Equatable {
@@ -143,6 +195,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var percentOfMemory = 50
         public static let percentOfMemoryRange = 10...200
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, percentOfMemory) = try (c.decode(.enabled, or: d.enabled),
+                                              c.decode(.percentOfMemory, or: d.percentOfMemory))
+        }
     }
 
     /// Of the boot volume; purgeable space does not count as free.
@@ -151,6 +209,41 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public var percentFree = 10
         public static let percentFreeRange = 1...50
         public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, percentFree) = try (c.decode(.enabled, or: d.enabled), c.decode(.percentFree, or: d.percentFree))
+        }
+    }
+
+    /// One app's own process rules: a nil rule uses the global one; muted turns every process rule off for the app.
+    public struct AppOverride: Codable, Sendable, Equatable {
+        public var muted = false
+        public var sustainedCPU: SustainedCPU?
+        public var memoryGrowth: MemoryGrowth?
+        public var memoryJump: MemoryJump?
+        public var diskWrites: DiskWrites?
+        public var network: Network?
+        public var energy: Energy?
+        public var gpu: GPU?
+        public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            muted = try c.decode(.muted, or: false)
+            sustainedCPU = try c.decodeIfPresent(SustainedCPU.self, forKey: .sustainedCPU)
+            memoryGrowth = try c.decodeIfPresent(MemoryGrowth.self, forKey: .memoryGrowth)
+            memoryJump = try c.decodeIfPresent(MemoryJump.self, forKey: .memoryJump)
+            diskWrites = try c.decodeIfPresent(DiskWrites.self, forKey: .diskWrites)
+            network = try c.decodeIfPresent(Network.self, forKey: .network)
+            energy = try c.decodeIfPresent(Energy.self, forKey: .energy)
+            gpu = try c.decodeIfPresent(GPU.self, forKey: .gpu)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case muted, sustainedCPU = "sustained_cpu", memoryGrowth = "memory_growth", memoryJump = "memory_jump"
+            case diskWrites = "disk_writes", network, energy, gpu
+        }
     }
 
     /// These fixed values are Custom; `DaemonSettings` starts from `make(.balanced, for: .current)`.
@@ -166,12 +259,56 @@ public struct AlertRules: Codable, Sendable, Equatable {
     public var gpu = GPU()
     public var swap = Swap()
     public var freeSpace = FreeSpace()
+    /// By app key (the bundle path, else the process name), as the engine groups processes. Presets keep them.
+    public var apps: [String: AppOverride] = [:]
+    public static let maxApps = 50
 
     public init() {}
 
+    /// A file without a preset keeps its values as Custom; a missing rule takes the Balanced value for this Mac.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self), d = Self.make(.balanced, for: .current)
+        preset = try c.decode(.preset, or: .custom)
+        sustainedCPU = try c.decode(.sustainedCPU, or: d.sustainedCPU)
+        memoryGrowth = try c.decode(.memoryGrowth, or: d.memoryGrowth)
+        memoryJump = try c.decode(.memoryJump, or: d.memoryJump)
+        pressure = try c.decode(.pressure, or: d.pressure)
+        thermal = try c.decode(.thermal, or: d.thermal)
+        diskWrites = try c.decode(.diskWrites, or: d.diskWrites)
+        network = try c.decode(.network, or: d.network)
+        energy = try c.decode(.energy, or: d.energy)
+        gpu = try c.decode(.gpu, or: d.gpu)
+        swap = try c.decode(.swap, or: d.swap)
+        freeSpace = try c.decode(.freeSpace, or: d.freeSpace)
+        apps = try c.decode(.apps, or: [:])
+    }
+
     enum CodingKeys: String, CodingKey {
         case preset, sustainedCPU = "sustained_cpu", memoryGrowth = "memory_growth", memoryJump = "memory_jump", pressure, thermal
-        case diskWrites = "disk_writes", network, energy, gpu, swap, freeSpace = "free_space"
+        case diskWrites = "disk_writes", network, energy, gpu, swap, freeSpace = "free_space", apps
+    }
+
+    /// The rules for the app at `key`: its own process rules over the global ones, every process rule off when muted.
+    public func forApp(_ key: String) -> AlertRules {
+        guard let o = apps[key] else { return self }
+        var r = self
+        r.sustainedCPU = o.sustainedCPU ?? sustainedCPU
+        r.memoryGrowth = o.memoryGrowth ?? memoryGrowth
+        r.memoryJump = o.memoryJump ?? memoryJump
+        r.diskWrites = o.diskWrites ?? diskWrites
+        r.network = o.network ?? network
+        r.energy = o.energy ?? energy
+        r.gpu = o.gpu ?? gpu
+        if o.muted {
+            r.sustainedCPU.enabled = false
+            r.memoryGrowth.enabled = false
+            r.memoryJump.enabled = false
+            r.diskWrites.enabled = false
+            r.network.enabled = false
+            r.energy.enabled = false
+            r.gpu.enabled = false
+        }
+        return r
     }
 
     /// The spec §9 values for `machine` over `base`, whose on/off switches are kept (a preset sets thresholds only;
@@ -226,6 +363,14 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
 
     public init() {}
 
+    /// Keys missing from the file take their defaults, so a file written by an older build still loads.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+        sizeCapBytes = try c.decode(.sizeCapBytes, or: d.sizeCapBytes)
+        terminalBundleIDs = try c.decode(.terminalBundleIDs, or: d.terminalBundleIDs)
+        rules = try c.decode(.rules, or: d.rules)
+    }
+
     enum CodingKeys: String, CodingKey {
         case sizeCapBytes = "size_cap_bytes", terminalBundleIDs = "terminal_bundle_ids", rules
     }
@@ -236,29 +381,19 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
         return try encoder.encode(File(version: Self.version, settings: self))
     }
 
-    /// Keys missing from the file take their defaults, so a file written by an older build still loads.
+    /// `JSONDecoder` rejects a number no `Double` holds (such as `1e400`), so no value is infinite or NaN.
     public static func decodeValidated(_ data: Data) throws -> DaemonSettings {
         do {
             let found = try JSONDecoder().decode(Version.self, from: data).version
             guard found == version else { throw SettingsError.unsupportedVersion(found) }
-            // A file without a preset keeps its values as Custom.
-            var base = DaemonSettings()
-            base.rules.preset = .custom
-            let defaults = try JSONSerialization.jsonObject(with: base.encoded()) as? [String: Any] ?? [:]
-            let stored = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
-            let merged = try JSONSerialization.data(withJSONObject: merge(defaults, stored))
-            let settings = try JSONDecoder().decode(File.self, from: merged).settings
+            let settings = try JSONDecoder().decode(File.self, from: data).settings
             if let problem = settings.validationProblem() { throw SettingsError.invalid(problem) }
             return settings
         } catch let error as DecodingError {
-            let reason = (error as NSError).userInfo[NSDebugDescriptionErrorKey] as? String ?? "unreadable"
+            // A number out of range is reported by the underlying parser error.
+            let ns = error as NSError, detail = ns.userInfo[NSUnderlyingErrorKey] as? NSError ?? ns
+            let reason = detail.userInfo[NSDebugDescriptionErrorKey] as? String ?? "unreadable"
             throw SettingsError.invalid("settings.json: \(reason)")
-        }
-    }
-
-    private static func merge(_ base: [String: Any], _ over: [String: Any]) -> [String: Any] {
-        base.merging(over) { old, new in
-            if let old = old as? [String: Any], let new = new as? [String: Any] { merge(old, new) } else { new }
         }
     }
 
@@ -280,13 +415,26 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
 
     /// The first problem, or nil when every value is in range for `machine`.
     public func validationProblem(for machine: Machine = .current) -> String? {
-        typealias R = AlertRules
-        let cpu = R.SustainedCPU.percentRange(machine), growth = R.MemoryGrowth.megabytesRange(machine),
-            jump = R.MemoryJump.megabytesRange(machine)
         let checks: [(Bool, String)] = [
             (Self.sizeCapRange.contains(sizeCapBytes), "Size cap must be 1 to 50 GB"),
             (!terminalBundleIDs.contains { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }, "A terminal bundle ID is empty"),
             (terminalBundleIDs.count <= 32, "Use at most 32 terminal apps"),
+            (rules.apps.count <= AlertRules.maxApps, "Use at most \(AlertRules.maxApps) apps with their own alert rules"),
+            (!rules.apps.keys.contains(""), "An app key is empty"),
+        ]
+        if let problem = checks.first(where: { !$0.0 })?.1 ?? Self.problem(rules, machine) { return problem }
+        // An app's values must be in the same ranges as the global ones.
+        for key in rules.apps.keys.sorted() {
+            if let problem = Self.problem(rules.forApp(key), machine) { return "\((key as NSString).lastPathComponent): \(problem)" }
+        }
+        return nil
+    }
+
+    private static func problem(_ rules: AlertRules, _ machine: Machine) -> String? {
+        typealias R = AlertRules
+        let cpu = R.SustainedCPU.percentRange(machine), growth = R.MemoryGrowth.megabytesRange(machine),
+            jump = R.MemoryJump.megabytesRange(machine)
+        let checks: [(Bool, String)] = [
             (cpu.contains(rules.sustainedCPU.percent), "Sustained CPU must be 10 to \(Int(cpu.upperBound)) %"),
             (R.SustainedCPU.minutesRange.contains(rules.sustainedCPU.minutes), "Sustained CPU time must be 1 to 60 min"),
             (R.MemoryGrowth.minutesRange.contains(rules.memoryGrowth.minutes), "Memory growth time must be 10 to 120 min"),
@@ -313,4 +461,9 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
         }
         if !terminalBundleIDs.contains(id) { terminalBundleIDs.append(id) }
     }
+}
+
+extension KeyedDecodingContainer {
+    /// The value at `key`, or `value` when the file has no such key (written by an older build).
+    func decode<T: Decodable>(_ key: Key, or value: T) throws -> T { try decodeIfPresent(T.self, forKey: key) ?? value }
 }

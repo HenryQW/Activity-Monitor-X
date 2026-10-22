@@ -21,6 +21,8 @@ struct TimelineChart: View {
     private let otherProcesses: (Double) -> [(name: String, value: Double)]
     /// Reports the app key ("" for Other) of the legend item under the pointer (true) and leaving it (false).
     private let hover: (String, Bool) -> Void
+    /// The hovered app's own line over the stack, nil unless that app has no band.
+    private let line: [Mark]?
     private let series: [Series]
     private let labels: [AppKey?: String]
     private let byBucket: [Double: [SeriesPoint]]
@@ -36,8 +38,9 @@ struct TimelineChart: View {
     /// `points` is non-empty and ordered by bucket; every bucket holds every series.
     /// `colors` holds every named app of `points`. With `highlighted` (search, or the hovered app key, "" for Other),
     /// the other series are dimmed.
+    /// `line` is the series of a hovered app without a band: it is drawn over the dimmed stack in `AppPalette.hover`.
     init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, live: Bool = false, metric: Metric, events: [EventMark],
-         highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
+         highlighted: Set<String>? = nil, line: [SeriesPoint]? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
          otherProcesses: @escaping (Double) -> [(name: String, value: Double)], hover: @escaping (String, Bool) -> Void) {
         (self.points, self.colors, self.bucket, self.live, self.metric, self.events, self.span, self.commitSpan, self.otherProcesses)
             = (points, colors, bucket, live, metric, events, span, commitSpan, otherProcesses)
@@ -54,6 +57,8 @@ struct TimelineChart: View {
             return Mark(date: Self.date(point.bucket), low: low, high: stack.top, label: labels[point.app]!,
                         value: point.value, metric: metric)
         }
+        self.line = line.map { AppSeries.closed($0, bucket: bucket).map {
+            Mark(date: Self.date($0.bucket), low: 0, high: $0.value, label: "", value: $0.value, metric: metric) } }
         byBucket = Dictionary(grouping: points, by: \.bucket)
         totals = byBucket.mapValues { $0.reduce(0) { $0 + $1.value } }
         let peak = totals.values.max() ?? 0
@@ -72,12 +77,25 @@ struct TimelineChart: View {
                 .foregroundStyle(by: .value("App", \.label))
                 // One band's top and the next band's bottom are the same values, so the curves still meet.
                 .interpolationMethod(live ? .monotone : .linear)
+            if let line {
+                // In the colour scale like the bands: a plain style next to the scale traps Charts in layout. A filled area
+                // with a line on top, so the app stands out over the dimmed stack.
+                AreaPlot(line, x: .value("Time", \.date), yStart: .value(metric.label, \.low), yEnd: .value(metric.label, \.high),
+                         series: .value("App", Self.hoverLabel))
+                    .foregroundStyle(by: .value("App", Self.hoverLabel))
+                    .opacity(0.35)
+                    .interpolationMethod(live ? .monotone : .linear)
+                LinePlot(line, x: .value("Time", \.date), y: .value(metric.label, \.value), series: .value("App", Self.hoverLabel))
+                    .foregroundStyle(by: .value("App", Self.hoverLabel))
+                    .interpolationMethod(live ? .monotone : .linear)
+            }
             if let shownSpan {
                 RectangleMark(xStart: .value("Start", shownSpan.lowerBound), xEnd: .value("End", shownSpan.upperBound))
                     .foregroundStyle(Color.accentColor.opacity(0.15))
             }
         }
-        .chartForegroundStyleScale(domain: series.map(\.label), range: series.map(\.color))
+        // The hover entry stays in the scale while no app is hovered: a domain that loses a value Charts still draws traps.
+        .chartForegroundStyleScale(domain: series.map(\.label) + [Self.hoverLabel], range: series.map(\.color) + [AppPalette.hover])
         .chartXScale(domain: Self.date(points.first!.bucket)...Self.date(points.last!.bucket + bucket))
         .chartYScale(domain: 0...top)
         // Labels centred on their ticks: a label leading from a tick near the end was cut off ("4…"); centred, it
@@ -185,6 +203,9 @@ struct TimelineChart: View {
         .font(.caption).fixedSize().padding()
     }
 
+    /// The hover line's key in the colour scale; never a legend label (the legend lists `series` only).
+    private static let hoverLabel = "\u{1}hover"
+
     private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 
     /// The largest named app in the bucket that holds `ts`.
@@ -212,15 +233,12 @@ struct TimelineChart: View {
 
     /// Legend labels are display names, made unique so two apps sharing a name stay two series.
     private static func series(_ points: [SeriesPoint], colors: [AppKey: Color], highlighted: Set<String>?) -> [Series] {
-        var used = ["Other": 1]
-        return points.prefix { $0.bucket == points[0].bucket }.map { point in
+        let first = points.prefix { $0.bucket == points[0].bucket }
+        return zip(first, AppSeries.labels(first.map { $0.app?.name })).map { point, label in
             let color = point.app.map { colors[$0]! } ?? AppPalette.other
             // Other never matches a search; it matches a hover on its legend item ("").
             let shown = highlighted.map { $0.contains(point.app?.key ?? "") } ?? true ? color : color.opacity(0.25)
-            guard let app = point.app else { return Series(app: nil, label: "Other", color: shown) }
-            let n = (used[app.name] ?? 0) + 1
-            used[app.name] = n
-            return Series(app: app, label: n == 1 ? app.name : "\(app.name) (\(n))", color: shown)
+            return Series(app: point.app, label: label, color: shown)
         }
     }
 }

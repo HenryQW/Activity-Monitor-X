@@ -12,14 +12,33 @@ enum LoadState: Equatable {
 @Observable @MainActor
 final class HistoryModel {
     private static let log = Logger(subsystem: AMX.bundleID, category: "history")
-    var range: HistoryRange = .day {
-        didSet {
-            guard range != oldValue else { return }
-            span = nil
-            since = nil
-            state = .loading
-            reload()
-        }
+    /// The quick range ending now; with `custom`, the smallest range that covers it, for its source and chart bucket.
+    var range: HistoryRange {
+        get { shown }
+        set { show(newValue, custom: nil) }
+    }
+    private var shown: HistoryRange = .day
+    /// The window chosen in Custom Range; nil is `range` ending now. Set through `show(from:to:)`; a new range clears it.
+    private(set) var custom: ClosedRange<Double>?
+    func show(from: Double, to: Double) {
+        show(.covering(from: from, to: to, now: Date().timeIntervalSince1970), custom: from...to)
+    }
+    /// What Live was entered from, for `toggleLive()`; 24H until Live has been entered.
+    private var beforeLive: (range: HistoryRange, custom: ClosedRange<Double>?) = (.day, nil)
+    /// Live on, or back to the range (and custom window) it was entered from.
+    func toggleLive() {
+        guard shown == .live else { return range = .live }
+        let back = beforeLive
+        if let window = back.custom { show(from: window.lowerBound, to: window.upperBound) } else { range = back.range }
+    }
+    private func show(_ range: HistoryRange, custom: ClosedRange<Double>?) {
+        guard range != shown || custom != self.custom else { return }
+        if range == .live && shown != .live { beforeLive = (shown, self.custom) }
+        (shown, self.custom) = (range, custom)
+        span = nil
+        since = nil
+        state = .loading
+        reload()
     }
     var metric: Metric = .cpu {
         didSet {
@@ -36,6 +55,20 @@ final class HistoryModel {
             state = .loading
             reload()
         }
+    }
+    /// Colours the user chose, by app key: each such app gets its own band in every chart. Live picks them up on its
+    /// next rebuild.
+    var appColors = (UserDefaults.standard.dictionary(forKey: "appColors") as? [String: String] ?? [:])
+        .compactMapValues(GroupColor.init(rawValue:)) {
+        didSet {
+            guard appColors != oldValue else { return }
+            UserDefaults.standard.set(appColors.mapValues(\.rawValue), forKey: "appColors")
+            reload()
+        }
+    }
+    /// The last chosen colour: what the colour button applies.
+    var lastAppColor = GroupColor(rawValue: UserDefaults.standard.string(forKey: "lastAppColor") ?? "") ?? .blue {
+        didSet { UserDefaults.standard.set(lastAppColor.rawValue, forKey: "lastAppColor") }
     }
     /// The selected group: only its members are loaded, and the quiet filter is off. Set through `show(_:metric:)`.
     private(set) var scope: ProcessGroup?
@@ -58,6 +91,10 @@ final class HistoryModel {
     /// Every app over the whole range (no span): `ranking` while no span is selected.
     private var apps: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
+    /// The apps whose average rose or fell most against the range of the same length before it; nil when that has no data.
+    private(set) var changes: (up: [AppChange], down: [AppChange])?
+    /// Each app by hour of day in the 7 days before the range, for `usual(of:)`.
+    private var profile: UsualProfile?
     private(set) var state: LoadState = .loading
     /// The bundled process glossary, set once it has loaded; nil under `swift run`, which has no bundle resources.
     var glossary: Glossary?
@@ -65,7 +102,7 @@ final class HistoryModel {
     private(set) var start = 0.0
     /// `start` when recording began more than one chart bucket into the range.
     private var since: Double?
-    /// "Since …" when recording began inside the range, else empty: the Range pop-up names the range. Live has none.
+    /// "Since …" when recording began inside the range, else empty: the Range button names the range. Live has none.
     var subtitle: String { since.map { range.since($0, now: end) } ?? "" }
 
     /// `last_seen` reads as a minute's first tick, and amxd commits every few ticks, so a live process can
@@ -78,19 +115,19 @@ final class HistoryModel {
     private var hidden: Set<Int> = []
     /// The last hovered bucket's Other breakdown; cleared with each load.
     @ObservationIgnored private var otherCache: OtherCache?
-    private var end = 0.0
+    private(set) var end = 0.0
     private var generation = 0
     private var requestedAt = 0.0
     private var spanGeneration = 0
     private var loading: Task<Void, Never>?
 
-    /// Runs while a window is open: reload now, then as often as the range's source gains rows. Checks every
-    /// 15 s, so a range change (which reloads at once) restarts the interval.
+    /// Runs while a window is open: reload now, then as often as the range's source gains rows while the window ends now.
+    /// Checks every 15 s, so a range change (which reloads at once) restarts the interval.
     func run() async {
         reload()
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(15))
-            if Date().timeIntervalSince1970 - requestedAt >= range.source.reloadInterval { reload() }
+            if custom == nil, Date().timeIntervalSince1970 - requestedAt >= range.source.reloadInterval { reload() }
         }
         loading?.cancel()
     }
@@ -111,8 +148,9 @@ final class HistoryModel {
         loading?.cancel()
         generation += 1
         guard range != .live else { return }
-        let (generation, range, metric, scope, hideQuiet) = (generation, range, metric, scope, hidesQuiet)
+        let (generation, range, metric, scope, hideQuiet, always) = (generation, range, metric, scope, hidesQuiet, Set(appColors.keys))
         let now = Date().timeIntervalSince1970
+        let (begin, until) = custom.map { ($0.lowerBound, $0.upperBound) } ?? (now - range.seconds, now)
         requestedAt = now
         if state != .ready { state = .loading }
         let pool: DatabasePool
@@ -127,29 +165,39 @@ final class HistoryModel {
             let result = await Task.detached { () -> Result<Loaded, Error> in
                 Result {
                     let reader = HistoryReader(pool: pool)
-                    let all = try reader.tracks(range: range, metric: metric, end: now)
+                    let all = try reader.tracks(source: range.source, from: begin, to: until, metric: metric)
                     let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
-                    let from = AppSeries.recordedStart(all, from: now - range.seconds)
-                    let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: now) : []
+                    let from = AppSeries.recordedStart(all, from: begin)
+                    let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: until) : []
+                    let apps = AppSeries.ranking(tracks, from: from, to: until, bucket: range.chartBucket, excluding: hidden,
+                                                 exitedBefore: until - Self.exitSlack)
+                    // The range before, of the same length, ranked as this one is.
+                    let earlier = try reader.tracks(source: range.source, from: 2 * begin - until, to: begin, metric: metric)
+                    let earlierTracks = scope.map { GroupScores.members(earlier, of: $0) } ?? earlier
+                    let earlierFrom = AppSeries.recordedStart(earlier, from: 2 * begin - until)
+                    let previous = AppSeries.ranking(earlierTracks, from: earlierFrom, to: begin, bucket: range.chartBucket,
+                        excluding: hideQuiet ? QuietFilter.hidden(earlierTracks, metric: metric, from: earlierFrom, to: begin) : [])
+                    let week = try reader.tracks(source: .hour, from: begin - 7 * 86_400, to: begin, metric: metric)
                     return Loaded(tracks: tracks, hidden: hidden, recorded: !all.isEmpty, start: from,
-                           stacked: AppSeries.stacked(tracks, from: from, to: now, bucket: range.chartBucket, otherOnly: hidden),
-                           system: try reader.system(range: range, end: now),
-                           events: try reader.events(from: from, to: now),
-                           apps: AppSeries.ranking(tracks, from: from, to: now, bucket: range.chartBucket, excluding: hidden,
-                                                   exitedBefore: now - Self.exitSlack),
-                           sparklines: AppSeries.sparklines(tracks, from: from, to: now, excluding: hidden))
+                           stacked: AppSeries.stacked(tracks, from: from, to: until, bucket: range.chartBucket, always: always, otherOnly: hidden),
+                           system: try reader.system(source: range.source, from: begin, to: until, bucket: range.chartBucket),
+                           events: try reader.events(from: from, to: until),
+                           apps: apps, sparklines: AppSeries.sparklines(tracks, from: from, to: until, excluding: hidden),
+                           changes: earlier.isEmpty ? nil : AppChange.biggest(apps, previous: previous),
+                           profile: UsualProfile(scope.map { GroupScores.members(week, of: $0) } ?? week))
                 }
             }.value
             guard generation == self.generation else { return }
             switch result {
             case .success(let loaded):
-                (end, start) = (now, loaded.start)
-                since = start - (now - range.seconds) > range.chartBucket ? start : nil
+                (end, start) = (until, loaded.start)
+                since = start - begin > range.chartBucket ? start : nil
                 (tracks, hidden, otherCache) = (loaded.tracks, loaded.hidden, nil)
                 system = loaded.system
                 events = loaded.events
                 apps = loaded.apps
                 sparklines = loaded.sparklines
+                (changes, profile) = (loaded.changes, loaded.profile)
                 stacked = loaded.stacked
                 updateRanking()
                 // A group without members in the range is ready with no points: "No Activity", not "Collecting".
@@ -202,6 +250,17 @@ final class HistoryModel {
         return pool!
     }
 
+    /// The app's usual value at the hours of day of the span or range; nil with too little history.
+    func usual(of app: AppKey) -> Double? {
+        profile?.usual(of: app, from: span?.lowerBound ?? start, to: span?.upperBound ?? end)
+    }
+
+    /// The app's process starts and quits in the span or range, newest first.
+    func launches(of app: AppKey) -> [LaunchEvent] {
+        LaunchEvent.list(tracks.filter { $0.app.key == app.key }, from: span?.lowerBound ?? start, to: span?.upperBound ?? end,
+                         exitedBefore: end - Self.exitSlack)
+    }
+
     /// One app's rank for the span or range, from unfiltered tracks: the inspector and pinned views ignore the quiet filter.
     func rank(of app: AppKey) -> AppRank? {
         let from = span?.lowerBound ?? start, to = span?.upperBound ?? end
@@ -238,6 +297,8 @@ final class HistoryModel {
         let events: [EventMark]
         let apps: [AppRank]
         let sparklines: [AppKey: [Double]]
+        let changes: (up: [AppChange], down: [AppChange])?
+        let profile: UsualProfile
     }
 }
 

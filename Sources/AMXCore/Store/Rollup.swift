@@ -31,25 +31,41 @@ public enum Rollup {
     private static let events = Tier(table: "events", time: "ts", key: "rowid")
     private static let log = Logger(subsystem: AMX.daemonLabel, category: "rollup")
 
+    /// The roll, retention and the size cap each run on their own: on a full disk the roll's inserts fail, and only
+    /// the deletes free space. The roll's error is thrown after the deletes.
     public static func run(db: DatabaseQueue, now: Double, policy: RetentionPolicy) throws {
-        try db.write { try roll($0, minute, to: ((now - 65) / 60).rounded(.down) * 60) }
-        // An hour is complete only when all its minutes are.
-        try db.write { try roll($0, hour, to: (try meta($0, "minute_watermark") / 3600).rounded(.down) * 3600) }
+        var rollError: (any Error)?
+        do {
+            try db.write { try roll($0, minute, to: ((now - 65) / 60).rounded(.down) * 60) }
+            // An hour is complete only when all its minutes are.
+            try db.write { try roll($0, hour, to: (try meta($0, "minute_watermark") / 3600).rounded(.down) * 3600) }
+        } catch {
+            rollError = error
+        }
         // Raw rows from 65 s before the oldest unrolled bucket still feed a tier: never delete them.
         let rawBound = try db.read { try min(meta($0, "minute_watermark"), meta($0, "hour_watermark")) } - 65
-        let windows = [policy.raw, policy.raw, policy.minute, policy.minute, policy.hour, policy.hour, policy.hour]
-        for (tier, window) in zip(tiers + [events], windows) {
-            let cutoff = tier.isRaw ? min(now - window, rawBound) : now - window
-            while try db.write({ try deleteOldest($0, tier, before: cutoff) }) == batch {}
+        do {
+            let windows = [policy.raw, policy.raw, policy.minute, policy.minute, policy.hour, policy.hour, policy.hour]
+            for (tier, window) in zip(tiers + [events], windows) {
+                let cutoff = tier.isRaw ? min(now - window, rawBound) : now - window
+                while try db.write({ try deleteOldest($0, tier, before: cutoff) }) == batch {}
+            }
+            try db.write { try pruneIfDue($0, now: now, cutoff: now - policy.hour) }
+            // Retention frees about as many pages as the next ticks need. Vacuuming those would move the pages the
+            // ticks appended into the holes, then append again: keep up to `reusable` free for the inserts.
+            try db.write { db in
+                let excess = try Int.fetchOne(db, sql: "PRAGMA freelist_count")! - reusable
+                if excess > 0 { try db.execute(sql: "PRAGMA incremental_vacuum(\(min(excess, 2000)))") }
+            }
+        } catch {
+            log.error("retention failed: \(String(describing: error), privacy: .public)")
         }
-        try db.write { try pruneIfDue($0, now: now, cutoff: now - policy.hour) }
-        // Retention frees about as many pages as the next ticks need. Vacuuming those would move the pages the
-        // ticks appended into the holes, then append again: keep up to `reusable` free for the inserts.
-        try db.write { db in
-            let excess = try Int.fetchOne(db, sql: "PRAGMA freelist_count")! - reusable
-            if excess > 0 { try db.execute(sql: "PRAGMA incremental_vacuum(\(min(excess, 2000)))") }
+        do {
+            try enforceSizeCap(db, maxBytes: policy.maxBytes, rawBound: rawBound)
+        } catch {
+            log.error("size cap failed: \(String(describing: error), privacy: .public)")
         }
-        try enforceSizeCap(db, maxBytes: policy.maxBytes, rawBound: rawBound)
+        if let rollError { throw rollError }
     }
 
     /// Free pages kept for reuse: 8 MB, about an hour of inserts.
@@ -67,6 +83,8 @@ public enum Rollup {
 
     private static func roll(_ db: Database, _ level: Level, to: Double) throws {
         let key = "\(level.name)_watermark", from = try meta(db, key)
+        // The clock went back: roll again from `to`, or the rows written from now on stay below the watermark.
+        if to < from { try setMeta(db, key, to) }
         guard to > from else { return }
         try rollProcesses(db, level, from: from, to: to)
         try rollSystem(db, level, from: from, to: to)
@@ -84,12 +102,11 @@ public enum Rollup {
     // last written bucket in the same tier, or that bucket is a heartbeat old. A missing bucket means
     // the process's last written row still holds, until `processes.last_seen`. Buckets roll in order,
     // one statement each, so each compares against the rows written before it. A last row older than
-    // the heartbeat passes the gate anyway, so only rows within the heartbeat are looked up.
+    // the heartbeat passes the gate anyway, so only rows within the heartbeat are looked up. A row
+    // reaches only the buckets from its own on, so the buckets before the next row are skipped: a gap
+    // (sleep, or a clock step forward) costs no statements.
     private static func rollProcesses(_ db: Database, _ level: Level, from: Double, to: Double) throws {
         let w = level.width
-        guard let first = try ProcessSampleRecord.filter(Column("ts") >= from - 65)
-            .select(min(Column("ts")), as: Double.self).fetchOne(db)
-        else { return }
         let m = Schema.procMetrics
         let cols = m.flatMap { ["\($0)_avg", "\($0)_max"] }
         let changed = gate.map { g -> String in
@@ -97,8 +114,11 @@ public enum Rollup {
             return "(a.\(c) IS NULL) != (p.\(c) IS NULL) OR ABS(a.\(c) - p.\(c)) > \(g.threshold)"
                 + (g.zero ? " OR (a.\(c) = 0) != (p.\(c) = 0)" : "")
         }.joined(separator: " OR ")
-        var bucket = max(from, (first / w).rounded(.down) * w)
-        while bucket < to {
+        var bucket = from
+        while bucket < to, let next = try ProcessSampleRecord.filter(Column("ts") >= bucket - 65)
+            .select(min(Column("ts")), as: Double.self).fetchOne(db) {
+            bucket = max(bucket, (next / w).rounded(.down) * w)
+            guard bucket < to else { return }
             try db.execute(literal: """
                 WITH a AS (
                   SELECT process_id, bucket, MAX(1, CAST(ROUND(SUM(dt)) AS INTEGER)) AS samples,

@@ -30,7 +30,7 @@ extension Metric {
     func format(_ value: Double) -> String {
         switch self {
         case .cpu, .gpu, .score: (value / 100).formatted(.percent.precision(.fractionLength(1)))
-        case .memory: Int64(value.rounded()).formatted(.byteCount(style: .memory))
+        case .memory: Metric.int64(value).formatted(.byteCount(style: .memory))
         case .disk, .network: Metric.bytes(value) + "/s"
         case .energy: value.formatted(.number.precision(.fractionLength(1)))
         }
@@ -65,12 +65,16 @@ extension GroupColor {
     }
 }
 
-/// App colours carry meaning only: the current top-5 apps get distinct colours, every other app none. System colours
-/// at least 32° of hue apart in light and dark (measured); red and yellow mean severity (`EventLane`), so they are
-/// left out, and so is pink, 10° from red.
+/// App colours carry meaning only: the current top-5 apps get distinct colours, apps with a colour the user chose get
+/// that one, every other app none. System colours at least 32° of hue apart in light and dark (measured); red and
+/// yellow mean severity (`EventLane`), so they are left out, and so is pink, 10° from red.
 enum AppPalette {
     static let colors: [Color] = [.blue, .orange, .green, .purple, .mint]
+    /// What the user can choose for an app: the palette and a few more system colours, none near red or yellow.
+    static let choices: [GroupColor] = [.blue, .orange, .green, .purple, .mint, .teal, .cyan, .indigo, .brown]
     static let other = Color.secondary.opacity(0.35)
+    /// Reserved for hover: the line of a hovered app that has no colour of its own. Never an app's colour.
+    static let hover = Color.primary
 
     /// Each app's first slot, read once and saved when an app is added, so it keeps its colour across views, metrics
     /// and launches.
@@ -79,12 +83,21 @@ enum AppPalette {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: "appColorSlots") }
     }
 
-    /// Colours of the top apps of `points` (a stacked series), in rank order as `stacked` emits them.
-    @MainActor static func colors(for points: [SeriesPoint]) -> [AppKey: Color] {
-        let top = points.prefix { $0.bucket == points[0].bucket }.compactMap(\.app)
+    /// Colours of the apps of `points` (a stacked series), in rank order as `stacked` emits them: a `chosen` colour
+    /// (by app key) wins, the others get palette slots. An app past the palette (its colour was just cleared, until the
+    /// next load) draws as Other.
+    @MainActor static func colors(for points: [SeriesPoint], chosen: [String: GroupColor]) -> [AppKey: Color] {
+        colors(for: points.prefix { $0.bucket == points[0].bucket }.compactMap(\.app), chosen: chosen)
+    }
+
+    /// Colours of the `named` apps, in rank order, as for a stacked series.
+    @MainActor static func colors(for named: [AppKey], chosen: [String: GroupColor]) -> [AppKey: Color] {
+        let top = named.filter { chosen[$0.key] == nil }.prefix(colors.count)
         var slots = stored
-        let result = AppColor.slots(for: top, paletteSize: colors.count, stored: &slots)
+        let result = AppColor.slots(for: Array(top), paletteSize: colors.count, stored: &slots)
         if slots != stored { stored = slots }
-        return result.mapValues { colors[$0] }
+        return Dictionary(uniqueKeysWithValues: named.map { app in
+            (app, chosen[app.key]?.color ?? result[app].map { colors[$0] } ?? other)
+        })
     }
 }

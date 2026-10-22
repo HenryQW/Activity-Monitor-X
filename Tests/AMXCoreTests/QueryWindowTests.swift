@@ -26,3 +26,10 @@ private let now = 1_792_656_000.0
     #expect(throws: AgentError.invalid("bad time: yesterday")) { try TimeArg.parse("yesterday", now: now) }
     #expect(throws: AgentError.invalid("bad time: -1e400d")) { try TimeArg.parse("-1e400d", now: now) }
 }
+
+@Test func customWindowPicksSmallestCoveringRange() {
+    #expect(HistoryRange.covering(from: now - 3600, to: now, now: now) == .hour)
+    #expect(HistoryRange.covering(from: now - 7200, to: now, now: now) == .day)
+    // Raw keeps 1 day: an older hour reads the minute tier.
+    #expect(HistoryRange.covering(from: now - 90_000, to: now - 86_400, now: now) == .day)
+}

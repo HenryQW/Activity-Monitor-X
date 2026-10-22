@@ -22,6 +22,7 @@ private struct Proc {
 private struct Rig {
     var engine = EventEngine()
     var seen: Set<ProcessIdentity> = []
+    var rules = AlertRules()
 
     mutating func tick(_ now: Double, _ procs: [(Proc, cpu: Double, mem: UInt64)], pressure: Int = 1) -> [EventDraft] {
         tick(now, samples: procs.map { p, cpu, mem in
@@ -36,7 +37,7 @@ private struct Rig {
         }
         var system = SystemSample()
         system.pressureLevel = pressure
-        return engine.evaluate(now: now, processes: procs.map(\.1), new: new, system: system, rules: AlertRules())
+        return engine.evaluate(now: now, processes: procs.map(\.1), new: new, system: system, rules: rules)
     }
 
     /// Alerts of one rule over 5 s ticks from `start` up to, not including, `end`.
@@ -105,6 +106,28 @@ private struct Rig {
         alerts += r.alerts("sustained_cpu", from: 305, to: 2000) { _ in [(Proc(2, "a"), 100, gib)] }
         alerts += r.alerts("sustained_cpu", from: 2100, to: 3895) { _ in [(Proc(2, "a"), 100, gib)] }  // after a sleep
         #expect(alerts.map(\.ts) == [295])
+    }
+
+    @Test func appOverrideAndMute() {
+        let a = Proc(1, "a"), b = Proc(2, "b", appPath: "/B.app", appName: "B")
+        var r = Rig()
+        var own = AlertRules.AppOverride()
+        own.sustainedCPU = AlertRules.SustainedCPU()
+        own.sustainedCPU?.percent = 200
+        r.rules.apps["/A.app"] = own
+        // 100 % alerts for B (global 80 %) but not for A (its own 200 %); A alerts at its own threshold.
+        let both = r.alerts("sustained_cpu", from: 0, to: 300) { _ in [(a, 100, gib), (b, 100, gib)] }
+        #expect(both.map(\.message) == ["B used 100 % CPU for 5 min"])
+        #expect(r.alerts("sustained_cpu", from: 300, to: 600) { _ in [(a, 250, gib)] }.map(\.message) == ["A used 200 % CPU for 5 min"])
+
+        var m = Rig()
+        var mute = AlertRules.AppOverride()
+        mute.muted = true
+        m.rules.apps["/A.app"] = mute
+        let muted = stride(from: 0.0, to: 600, by: 5).flatMap { t in
+            m.tick(t, [(a, 400, t < 300 ? 512 * mib : 4 * gib)]).filter { $0.rule != nil }
+        }
+        #expect(muted.isEmpty)
     }
 
     @Test func kernelTaskIsExempt() {

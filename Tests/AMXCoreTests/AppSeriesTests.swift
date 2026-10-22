@@ -31,6 +31,15 @@ private func value(_ points: [SeriesPoint], _ bucket: Double, _ key: String?) ->
     #expect(five.allSatisfy { $0.app != nil })
 }
 
+@Test func chosenAppOutsideTopFiveGetsItsOwnSeries() {
+    let t = (0..<7).map { track(Int64($0), "app\($0)", [(0, 10, Double(70 - $0 * 10))]) }
+    let points = AppSeries.stacked(t, from: 0, to: 10, bucket: 10, always: ["app6"])
+    #expect(points.compactMap(\.app?.key) == ["app0", "app1", "app2", "app3", "app4", "app6"])
+    #expect(value(points, 0, nil) == 20)
+    // No chosen colour: back in Other.
+    #expect(value(AppSeries.stacked(t, from: 0, to: 10, bucket: 10), 0, "app6") == nil)
+}
+
 @Test func partialOverlapIsTimeWeighted() {
     let t = [track(1, "A", [(0, 5, 60)])]
     let points = AppSeries.stacked(t, from: 0, to: 10, bucket: 10)
@@ -103,6 +112,13 @@ private func randomTracks() -> [ProcessTrack] {
     let renamed = ProcessTrack(processID: 9, pid: 9, startTime: 0, name: "p", app: AppKey(key: "late", name: "Late 2"),
                                slices: [Slice(start: 0, end: 60, value: 1)])
     #expect(AppSeries.sparklines(t + [renamed], from: 0, to: 60, count: 6).count == 9)
+    // An empty range has no buckets.
+    #expect(AppSeries.sparklines(t, from: 60, to: 60).isEmpty)
+}
+
+@Test func chartLabelsAreUnique() {
+    // A second "A" skips "A (2)", a real app's name; an app named "Other" never takes Other's label.
+    #expect(AppSeries.labels(["A (2)", "Other", "A", "A", nil]) == ["A (2)", "Other (2)", "A", "A (3)", "Other"])
 }
 
 @Test func sameNameDifferentPathStaySeparate() {
@@ -353,16 +369,6 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
         ProcessRank(processID: Int64(i), pid: Int32(i), startTime: 0, name: name, average: 0, peak: 0, lastSeen: 0, exited: false)
     }
     #expect(AppRank.byName(procs).map { $0.map(\.pid) } == [[0, 2, 5], [1, 4], [3]])
-}
-
-@Test func peakTotalIsTheHighestBucketSumInsideTheSpan() {
-    let a = AppKey(key: "a", name: "a")
-    let points = [SeriesPoint(bucket: 0, app: a, value: 1), SeriesPoint(bucket: 0, app: nil, value: 2),
-                  SeriesPoint(bucket: 60, app: a, value: 5), SeriesPoint(bucket: 60, app: nil, value: 1),
-                  SeriesPoint(bucket: 120, app: a, value: 2)]
-    #expect(AppSeries.peakTotal(points, bucket: 60) == 6)
-    // A span that ends where bucket 60 starts leaves it out.
-    #expect(AppSeries.peakTotal(points, bucket: 60, in: 30...60) == 3)
 }
 
 @Test func appsOfOneNameGetTheirFolderOrCommandLine() {

@@ -69,6 +69,14 @@ private func toolResult(_ name: String, _ arguments: String) throws -> (text: St
         #expect(parse["id"] is NSNull)
         #expect((parse["error"] as? [String: Any])?["code"] as? Int == -32700)
 
+        // -1e400 parses to -infinity, which no reply can hold; 1e400 does not parse.
+        for line in [request(9, "tools/call", #"{"name":"top_apps","arguments":{"limit":-1e400}}"#),
+                     #"{"jsonrpc":"2.0","id":-1e400,"method":"ping"}"#, request(10, "ping", #"{"x":1e400}"#)] {
+            let out = try send(line)
+            #expect(out["id"] is NSNull)
+            #expect((out["error"] as? [String: Any])?["code"] as? Int == -32700)
+        }
+
         let nullID = try send(#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#)
         #expect((nullID["error"] as? [String: Any])?["code"] as? Int == -32600)
         #expect(MCPHandler.handle(line: "  ", context: try AgentFixture.make().0) == nil)

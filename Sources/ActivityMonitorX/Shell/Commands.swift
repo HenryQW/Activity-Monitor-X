@@ -6,6 +6,7 @@ struct GoCommands: Commands {
     let selection: Selection
     let history: HistoryModel
     let diskMap: DiskMapModel
+    let alerts: AlertsModel
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
@@ -19,6 +20,10 @@ struct GoCommands: Commands {
                 .keyboardShortcut("4")
             Button("Hardware") { selection.sidebar = .hardware }
                 .keyboardShortcut("5")
+            Button("Calendar") { selection.sidebar = .calendar }
+                .keyboardShortcut("6")
+            Button("Energy") { selection.sidebar = .energy }
+                .keyboardShortcut("7")
             Divider()
         }
         CommandGroup(after: .sidebar) {
@@ -31,10 +36,12 @@ struct GoCommands: Commands {
                 .disabled((selection.sidebar ?? .apps) != .apps)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
                 .disabled(selection.isSystem || selection.sidebar == .alerts)
+            Button(alerts.showDismissed ? "Hide Dismissed" : "Show Dismissed") { alerts.showDismissed.toggle() }
+                .disabled(selection.sidebar != .alerts)
             Divider()
             Button("Refresh") { selection.refreshes += 1 }
                 .keyboardShortcut("r")
-                .disabled(!selection.isSystem || selection.sidebar == .diskMap && diskMap.target == nil)
+                .disabled(!selection.isSystem || selection.sidebar == .energy || selection.sidebar == .diskMap && diskMap.target == nil)
         }
     }
 }
@@ -47,32 +54,43 @@ struct GroupCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Group…") { selection.editingGroup = .new }
-                .keyboardShortcut("n")
+                .keyboardShortcut("n", modifiers: [.command, .shift])
                 // While the sheet is open a new group would replace it and lose the draft.
                 .disabled(groups.loadError != nil || selection.editingGroup != nil)
         }
     }
 }
 
-/// Range and Metric menus mirror the toolbar pickers: System screens have no Metric, and only Disk has a Range.
+/// Range and Metric menus mirror the toolbar pickers: System screens have no Metric (Calendar has), and only Disk has a Range.
 struct DataCommands: Commands {
     let history: HistoryModel
     let selection: Selection
 
+    private var noRange: Bool { selection.isSystem && selection.sidebar != .disk || selection.sidebar == .alerts }
+
     var body: some Commands {
         CommandMenu("Range") {
-            ForEach(Array(HistoryRange.allCases.enumerated()), id: \.offset) { i, range in
-                Toggle(range.label, isOn: Binding(get: { history.range == range }, set: { _ in history.range = range }))
-                    .keyboardShortcut(KeyEquivalent(Character(String(i))), modifiers: i == 0 ? .command : [.command, .option])
+            // One Live item: it turns Live on and back off to the range before it.
+            Toggle("Live", isOn: Binding(get: { history.range == .live }, set: { _ in history.toggleLive() }))
+                .keyboardShortcut("l")
+                .disabled(noRange)
+            Divider()
+            ForEach(Array(HistoryRange.allCases.filter { $0 != .live }.enumerated()), id: \.offset) { i, range in
+                Toggle(range.label, isOn: Binding(get: { history.custom == nil && history.range == range }, set: { _ in history.range = range }))
+                    .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .option])
             }
-            .disabled(selection.isSystem && selection.sidebar != .disk || selection.sidebar == .alerts)
+            .disabled(noRange)
+            Divider()
+            Button("Custom Range…") { selection.rangeShown = true }
+                .disabled(noRange)
         }
         CommandMenu("Metric") {
             ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
                 Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
-                    .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
+                    // Digits 1 to 9 only: a 10th metric has no shortcut.
+                    .keyboardShortcut(i < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control]) : nil)
             }
-            .disabled(selection.isSystem || selection.sidebar == .alerts)
+            .disabled(selection.isSystem && selection.sidebar != .calendar || selection.sidebar == .alerts)
         }
     }
 }

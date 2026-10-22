@@ -101,6 +101,7 @@ Size estimate (measured: ~1,160 live processes, ~63 active per minute): minute t
 - `amxd` calls `NSXPCConnection.setCodeSigningRequirement` with `(identifier "com.henryqw.activitymonitorx" or identifier "com.henryqw.activitymonitorx.amx") and certificate leaf = H"<sha1 of amxd's own leaf cert>"`. Other callers are refused. If `amxd` itself is unsigned, it refuses all XPC (fail closed).
 - Operations: `subscribeLive` / `unsubscribeLive` (1 s snapshots), `signal(pid, SIGTERM|SIGKILL)`, `ping` (version, uptime, DB path).
 - `signal` refuses pid 0, pid 1, `kernel_task`, and `amxd` itself. The app confirms every Quit / Force Quit with the user first.
+- `openFiles([pid, start time])` (protocol version 5) gives the open files (path) and sockets (protocol, local and remote address, TCP state) of each process, read with libproc, for the inspector's Files pill. At most 32 processes per request and 500 items per process, with a count of the rest. Like `signal`, it skips a process that did not start at that time or runs as another user than the caller. The app asks when the pill shows and on Refresh only.
 
 ## 8. UI
 
@@ -153,6 +154,8 @@ Rules run in `amxd` and write `events`, so they work while the app is closed. Ea
 | Free space on the boot volume (system) | below 5 % | below 10 % | below 15 % | 24 h |
 
 Units in `settings.json` stay as the daemon uses them (CPU in % of one core, so a preset writes share × core count; bytes and bytes per second for disk and network, % of RAM for swap, % of the boot volume for free space), and the allowed ranges of each value scale with the Mac so that every preset is valid on any core count and memory size. Values in the table are rounded for display; the calibration (13 h of history on a 15-core, 48 GB Mac: Balanced gives about 12 alerts on a heavy developer day, most from pressure and energy) against recorded history.
+
+**Per-app rules.** The inspector's "Alert Rules…" sheet can mute an app or give it its own values for the process rules (sustained CPU, memory growth and jump, disk writes, network, energy, GPU), or turn one of them off for that app. They are in `settings.json` under `rules.apps`, keyed by the app key (the bundle path, else the process name), so they apply while the app is closed. The engine uses an app's own rules in place of the global ones; other apps and the system rules do not change. Presets keep them. At most 50 apps; values have the same ranges as the global ones.
 
 Rule details kept from v1:
 - Rules for memory run per process, not per app, because helpers start and end all the time; the message names the app.

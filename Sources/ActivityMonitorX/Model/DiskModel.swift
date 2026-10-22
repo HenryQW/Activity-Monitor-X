@@ -56,6 +56,8 @@ final class DiskModel {
             let (ts, rates) = await sampler.rates()
             if let rates {
                 perDisk = rates
+                // A wall clock that stepped back starts the line again, so its times only rise.
+                if let last = live.last?.ts, ts <= last { live = [] }
                 live.append((ts, DiskMath.total(Array(rates.values))))
                 live.removeFirst(max(0, live.count - 300))
             }

@@ -24,10 +24,10 @@ final class MenuBarReadout {
 
     func run() async {
         let sampler = SystemSampler()
-        _ = sampler.readout(now: Date().timeIntervalSince1970)
+        _ = sampler.readout(now: ProcessInfo.processInfo.systemUptime)
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(5))
-            let r = sampler.readout(now: Date().timeIntervalSince1970)
+            let r = sampler.readout(now: ProcessInfo.processInfo.systemUptime)
             let new = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
             cpuHistory.append(r.cpu, keepingLast: Self.historyLength)
             // Observation redraws on every set, equal or not.
@@ -67,7 +67,7 @@ struct MenuBarLabel: View {
         let renderer = ImageRenderer(content: HStack(spacing: 3) {
             Image(systemName: "cpu")
             Text(cpu)
-            CPUSparkline(values: readout.cpuHistory).stroke(lineWidth: 1).frame(width: 24, height: 12)
+            SparklineShape(values: readout.cpuHistory).stroke(lineWidth: 1).frame(width: 24, height: 12)
             Image(systemName: "memorychip")
             Text(pressure)
         }

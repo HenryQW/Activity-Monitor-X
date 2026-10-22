@@ -19,7 +19,12 @@ public enum Metric: String, CaseIterable, Sendable {
 
     /// Sizes on disk in decimal units; 0 reads "0 bytes", never "Zero KB".
     public static func bytes(_ value: Double) -> String {
-        Int64(value.rounded()).formatted(.byteCount(style: .file, spellsOutZero: false))
+        int64(value).formatted(.byteCount(style: .file, spellsOutZero: false))
+    }
+
+    /// `value` rounded, clamped to the `Int64` range; NaN is 0. `Int64(_:)` traps on these.
+    public static func int64(_ value: Double) -> Int64 {
+        value.isNaN ? 0 : Int64(min(max(value.rounded(), -0x1p63), 0x1p63.nextDown))
     }
 
     /// Underlying process columns; the metric is their sum.

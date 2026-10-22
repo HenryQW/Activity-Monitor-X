@@ -71,7 +71,8 @@ public struct LiveProcess: Codable, Sendable, Equatable {
     }
 }
 
-/// Live sampling runs while a client asked within the last 3 s.
+/// Live sampling runs while a client asked within the last 3 s. Times are `systemUptime`, so a wall clock step
+/// neither ends nor holds a session.
 public struct LiveDemand: Sendable {
     private var last: Double?
 

@@ -14,6 +14,11 @@ import Testing
         #expect(Volumes.visible(rows).map(\.mountPoint) == ["/", "/Volumes/USB"])
     }
 
+    @Test func bytesSaturate() {
+        #expect(Volumes.bytes(3, 4096) == 12288)
+        #expect(Volumes.bytes(.max / 2, 4096) == .max)
+    }
+
     @Test func snapshotMapsToVolume() {
         #expect(Volumes.strippingSnapshot("disk3s1s1") == "disk3s1")
         #expect(Volumes.strippingSnapshot("disk3s5") == "disk3s5")

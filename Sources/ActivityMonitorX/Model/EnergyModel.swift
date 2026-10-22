@@ -1,0 +1,37 @@
+import AMXCore
+import Foundation
+import Observation
+
+/// The Energy screen's power and app shares, read once a second while the screen shows (`run`).
+@Observable @MainActor
+final class EnergyModel {
+    struct Point {
+        let date: Date
+        /// Nil where the Mac did not report its power.
+        let watts: Double?
+    }
+
+    private(set) var power: PowerReading?
+    /// Nil while amxd gives no live snapshot.
+    private(set) var shares: [EnergyShare]?
+    /// System power over the last 5 min of this visit.
+    private(set) var points: [Point] = []
+
+    /// The screen's `.task`: ends, and so stops reading, when the screen goes. Per-app energy comes from amxd's live
+    /// snapshot, which the Apps screen's poll does not fetch while a System screen shows.
+    func run(client: DaemonClient) async {
+        points = []
+        while !Task.isCancelled {
+            if MainWindowRef.windowShown {
+                let power = PowerReader.read()
+                let snapshot = try? await client.live()
+                let now = Date()
+                self.power = power
+                shares = snapshot.map { EnergyShare.top($0.processes) }
+                points.append(Point(date: now, watts: power.systemWatts))
+                points.removeAll { $0.date < now.addingTimeInterval(-300) }
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+}

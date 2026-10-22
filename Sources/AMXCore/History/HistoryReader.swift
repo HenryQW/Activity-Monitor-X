@@ -151,12 +151,35 @@ public struct HistoryReader {
         }
         return result
     }
+
+    /// For each `bounds[i]..<bounds[i + 1]` (ascending), the metric summed over all processes and averaged over that time,
+    /// from the hour tier (a gap counts as 0); nil where no process has data, as in a time of no width.
+    public func totals(metric: Metric, bounds: [Double]) throws -> [Double?] {
+        guard let first = bounds.first, let last = bounds.last, bounds.count > 1 else { return [] }
+        var sums = [Double](repeating: 0, count: bounds.count - 1), seen = [Bool](repeating: false, count: bounds.count - 1)
+        for track in try tracks(source: .hour, from: first, to: last, metric: metric) {
+            // Slices are in time order inside the bounds: each starts in the interval of the last or a later one.
+            var i = 0
+            for slice in track.slices {
+                while bounds[i + 1] <= slice.start { i += 1 }
+                var j = i
+                while j < sums.count, bounds[j] < slice.end {
+                    let overlap = min(slice.end, bounds[j + 1]) - max(slice.start, bounds[j])
+                    if overlap > 0 { (sums[j], seen[j]) = (sums[j] + slice.value * overlap, true) }
+                    j += 1
+                }
+            }
+        }
+        return sums.indices.map { seen[$0] ? sums[$0] / (bounds[$0 + 1] - bounds[$0]) : nil }
+    }
 }
 
 public struct SystemPoint: Sendable {
     public let bucket: Double
     public let cpu: Double
     public let memUsed: Double
+    /// The highest swap used in the bucket, in bytes.
+    public let swapUsed: Double
     public let pressureLevel: Int
     public let thermalState: Int
     public let diskR: Double
@@ -204,19 +227,21 @@ extension HistoryReader {
     }
 
     public func system(source: HistorySource, from start: Double, to end: Double, bucket: Double) throws -> [SystemPoint] {
-        let table: String, time: String, cpu: String, mem: String, pressure: String, thermal: String
+        let table: String, time: String, cpu: String, mem: String, swap: String, pressure: String, thermal: String
         switch source {
         case .live: preconditionFailure("live range is served over XPC, not the database")
         case .raw:
-            (table, time, cpu, mem, pressure, thermal) = ("system_samples", "ts", "cpu", "mem_used", "pressure_level", "thermal_state")
+            (table, time, cpu, mem, swap, pressure, thermal) =
+                ("system_samples", "ts", "cpu", "mem_used", "swap_used", "pressure_level", "thermal_state")
         case .minute, .hour:
             table = source == .minute ? "system_minute" : "system_hour"
-            (time, cpu, mem, pressure, thermal) = ("bucket", "cpu_avg", "mem_used_avg", "pressure_level_max", "thermal_state_max")
+            (time, cpu, mem, swap, pressure, thermal) =
+                ("bucket", "cpu_avg", "mem_used_avg", "swap_used_max", "pressure_level_max", "thermal_state_max")
         }
         let suffix = source == .raw ? "" : "_avg"
         let sql = """
             SELECT CAST((\(time) - ?1) / ?3 AS INTEGER) AS b,
-                   AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal,
+                   AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(swap)) AS swap, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal,
                    AVG(disk_r\(suffix)) AS diskR, AVG(disk_w\(suffix)) AS diskW, AVG(disk_iops\(suffix)) AS diskIOPS,
                    AVG(disk_lat_ms\(suffix)) AS diskLatMs, AVG(disk_util\(suffix)) AS diskUtil,
                    AVG(disk_free\(suffix)) AS diskFree
@@ -226,7 +251,7 @@ extension HistoryReader {
         return try pool.read { db in
             try Row.fetchAll(db, sql: sql, arguments: [start, end, bucket]).map {
                 SystemPoint(bucket: start + Double($0["b"] as Int) * bucket,
-                            cpu: $0["cpu"] ?? 0, memUsed: $0["mem"] ?? 0,
+                            cpu: $0["cpu"] ?? 0, memUsed: $0["mem"] ?? 0, swapUsed: $0["swap"] ?? 0,
                             pressureLevel: $0["pressure"] ?? 0, thermalState: $0["thermal"] ?? 0,
                             diskR: $0["diskR"] ?? 0, diskW: $0["diskW"] ?? 0, diskIOPS: $0["diskIOPS"] ?? 0,
                             diskLatMs: $0["diskLatMs"] ?? 0, diskUtil: $0["diskUtil"] ?? 0, diskFree: $0["diskFree"])

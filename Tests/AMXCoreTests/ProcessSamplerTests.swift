@@ -21,7 +21,7 @@ import Testing
     }
 
     @Test func firstSightingHasZeroRates() {
-        let r = ProcessSampler().sample(now: 100, raw: [raw(cpu: 9_000_000_000, disk: 5, wakeups: 5)], gpuNanos: [:])
+        let r = ProcessSampler().sample(uptime: 100, raw: [raw(cpu: 9_000_000_000, disk: 5, wakeups: 5)], gpuNanos: [:])
         #expect(r.new.count == 1)
         let s = r.samples[0]
         #expect(s.cpu == 0 && s.diskR == 0 && s.diskW == 0 && s.energy == 0)
@@ -30,15 +30,15 @@ import Testing
     @Test(arguments: [97.0, 161.0])
     func wallClockJumpGivesZeroRates(second: Double) {
         let sampler = ProcessSampler()
-        _ = sampler.sample(now: 100, raw: [raw()], gpuNanos: [:])
-        let s = sampler.sample(now: second, raw: [raw(cpu: 1_000_000_000, disk: 100, wakeups: 10)], gpuNanos: [:]).samples[0]
+        _ = sampler.sample(uptime: 100, raw: [raw()], gpuNanos: [:])
+        let s = sampler.sample(uptime: second, raw: [raw(cpu: 1_000_000_000, disk: 100, wakeups: 10)], gpuNanos: [:]).samples[0]
         #expect(s.cpu == 0 && s.diskR == 0 && s.diskW == 0 && s.energy == 0 && s.gpu == 0)
     }
 
     @Test func steadyTickGivesRates() {
         let sampler = ProcessSampler()
-        _ = sampler.sample(now: 100, raw: [raw()], gpuNanos: [:])
-        let s = sampler.sample(now: 105, raw: [raw(cpu: 2_500_000_000, disk: 500)], gpuNanos: [:]).samples[0]
+        _ = sampler.sample(uptime: 100, raw: [raw()], gpuNanos: [:])
+        let s = sampler.sample(uptime: 105, raw: [raw(cpu: 2_500_000_000, disk: 500)], gpuNanos: [:]).samples[0]
         #expect(s.cpu == 50 && s.diskR == 100 && s.diskW == 100)
     }
 
@@ -73,10 +73,10 @@ import Testing
     @Test func gpuPercentFromNanos() {
         let id = Int32(100)
         let sampler = ProcessSampler()
-        _ = sampler.sample(now: 100, raw: [raw()], gpuNanos: [id: 0])
-        #expect(sampler.sample(now: 105, raw: [raw()], gpuNanos: [id: 2_500_000_000]).samples[0].gpu == 50)
+        _ = sampler.sample(uptime: 100, raw: [raw()], gpuNanos: [id: 0])
+        #expect(sampler.sample(uptime: 105, raw: [raw()], gpuNanos: [id: 2_500_000_000]).samples[0].gpu == 50)
         let capped = ProcessSampler()
-        _ = capped.sample(now: 100, raw: [raw()], gpuNanos: [id: 0])
-        #expect(capped.sample(now: 105, raw: [raw()], gpuNanos: [id: 10_000_000_000]).samples[0].gpu == 100)
+        _ = capped.sample(uptime: 100, raw: [raw()], gpuNanos: [id: 0])
+        #expect(capped.sample(uptime: 105, raw: [raw()], gpuNanos: [id: 10_000_000_000]).samples[0].gpu == 100)
     }
 }

@@ -77,23 +77,26 @@ struct DiskView: View {
             samples.indices.map { DiskPoint(date: Self.date(samples[$0].ts), series: series, value: value(samples[$0]),
                                             segment: segments[$0]) }
         }
+        // From min to max, at least a bucket wide: one sample, or a wall clock that stepped back, gives no valid range.
+        let first = samples.map(\.ts).min() ?? 0
+        let xDomain = Self.date(first)...Self.date(max(samples.map(\.ts).max() ?? 0, first + max(bucket, 1)))
         let throughput = zip(points("Read", \.read), points("Write", \.write)).flatMap { [$0, $1] }
         return Grid(horizontalSpacing: 24, verticalSpacing: 24) {
             GridRow {
-                DiskChart(title: "Throughput", points: throughput, bucket: bucket, format: Metric.disk.format)
+                DiskChart(title: "Throughput", points: throughput, bucket: bucket, format: Metric.disk.format, xDomain: xDomain)
                 DiskChart(title: "IOPS", points: points("IOPS", \.iops), bucket: bucket,
-                          format: { $0.formatted(.number.precision(.fractionLength(0))) })
+                          format: { $0.formatted(.number.precision(.fractionLength(0))) }, xDomain: xDomain)
             }
             GridRow {
                 DiskChart(title: "Latency", points: points("Latency", \.latency), bucket: bucket,
-                          format: { "\($0.formatted(.number.precision(.fractionLength(1)))) ms" })
+                          format: { "\($0.formatted(.number.precision(.fractionLength(1)))) ms" }, xDomain: xDomain)
                 DiskChart(title: "Utilisation", points: points("Utilisation", \.util), bucket: bucket,
-                          format: { ($0 / 100).formatted(.percent.precision(.fractionLength(0))) }, yDomain: 0...100)
+                          format: { ($0 / 100).formatted(.percent.precision(.fractionLength(0))) }, xDomain: xDomain, yDomain: 0...100)
             }
             if !live {
                 GridRow {
                     DiskChart(title: "Free (purgeable not included)", points: free(samples, segments: segments), bucket: bucket, format: Metric.bytes,
-                              yDomain: capacity.map { 0...$0 },
+                              xDomain: xDomain, yDomain: capacity.map { 0...$0 },
                               rule: capacity.map { ($0, "Capacity \(Metric.bytes($0))") })
                         .gridCellColumns(2)
                 }

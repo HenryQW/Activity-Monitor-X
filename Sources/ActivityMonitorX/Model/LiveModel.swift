@@ -99,14 +99,14 @@ final class LiveModel {
         generation += 1
         let end = last + 1
         let withRanking = end - rankedAt >= 5
-        let (generation, all, metric, scope, hideQuiet) =
-            (generation, live.tracks, live.metric, history.scope, history.hidesQuiet)
+        let (generation, all, metric, scope, hideQuiet, always) =
+            (generation, live.tracks, live.metric, history.scope, history.hidesQuiet, Set(history.appColors.keys))
         let built = await Task.detached {
             let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
             let from = AppSeries.recordedStart(all, from: end - 300)
             let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: end) : []
             return (tracks: tracks, hidden: hidden, start: from,
-                    stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),
+                    stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, always: always, otherOnly: hidden),
                     ranking: withRanking ? AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last) : [],
                     sparklines: withRanking ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
         }.value

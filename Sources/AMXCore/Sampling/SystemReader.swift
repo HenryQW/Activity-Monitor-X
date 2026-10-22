@@ -46,13 +46,16 @@ public final class SystemSampler {
 
     private let disks = DiskStatsReader()
     private let smc = SMCReader()
+    /// `sample` measures on the monotonic clock, so a wall clock step gives no false rate; `readout` on its caller's.
+    private var previousUptime: Double?
     private var previousNow: Double?
     private var previousTicks: [CoreTicks]?
     private var previousDisks: [UInt64: DiskCounters] = [:]
     private var previousLoad: UInt64?
 
-    public func sample(now: Double) -> SystemSample {
-        let wall = previousNow.map { now - $0 } ?? 0
+    public func sample() -> SystemSample {
+        let uptime = ProcessInfo.processInfo.systemUptime
+        let wall = previousUptime.map { uptime - $0 } ?? 0
         let valid = wall > 0 && wall <= 60
         var s = SystemSample()
 
@@ -61,7 +64,7 @@ public final class SystemSampler {
         if getloadavg(&loads, 3) == 3 { s.load1 = loads[0] }
         s.thermalState = ProcessInfo.processInfo.thermalState.rawValue
         readMemory(into: &s)
-        guard !liveOnly else { previousNow = now; return s }
+        guard !liveOnly else { previousUptime = uptime; return s }
         readPressure(into: &s, wall: valid ? wall : nil)
 
         let disk = disks.read()
@@ -71,11 +74,11 @@ public final class SystemSampler {
         if statfs("/", &fs) == 0 { s.diskFree = UInt64(fs.f_bavail) * UInt64(fs.f_bsize) }
 
         s.gpu = GPUReader.deviceUtilization()
-        let temps = smc.read(now: now)
+        let temps = smc.read(now: uptime)
         s.tempCPU = temps.cpu
         s.tempGPU = temps.gpu
         s.tempSSD = temps.ssd
-        previousNow = now
+        previousUptime = uptime
         return s
     }
 

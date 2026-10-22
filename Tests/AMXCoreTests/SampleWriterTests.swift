@@ -22,7 +22,7 @@ private struct Rig {
     let writer: SampleWriter
     init(ticksPerCommit: Int = 1) throws {
         db = try Store.openWriter(path: path)
-        writer = try SampleWriter(db: db, path: path, ticksPerCommit: ticksPerCommit)
+        writer = SampleWriter(db: db, path: path, ticksPerCommit: ticksPerCommit)
     }
     func tick(_ now: Double, _ p: [ProcessSample], new: [ProcessIdentity] = [], system: SystemSample = SystemSample()) throws {
         try writer.write(now: now, processes: p, newProcesses: new.map(raw), system: system)
@@ -116,10 +116,20 @@ private struct Rig {
         try r.tick(1065, [sample(idA), sample(idB)])
         try r.tick(1070, [sample(idA), sample(idB), sample(idC)], new: [idC])
         // Restart: the previous writer's last minute opened at 1065; C started after that.
-        let writer = try SampleWriter(db: r.db, path: r.path)
+        let writer = SampleWriter(db: r.db, path: r.path)
         #expect(try [r.lastSeen(idA), r.lastSeen(idB), r.lastSeen(idC)] == [1065, 1065, 1070])
         try writer.write(now: 1200, processes: [sample(idA)], newProcesses: [raw(idA)], system: SystemSample())
         #expect(try [r.lastSeen(idA), r.lastSeen(idB)] == [.infinity, 1065])
+    }
+
+    @Test func newWriterStartsWhenClosingFails() throws {
+        let r = try Rig()
+        try r.tick(1000, [sample(idA)], new: [idA])
+        // As on a full disk, the close's UPDATE fails; the writer still starts and A stays open.
+        var config = Configuration()
+        config.readonly = true
+        _ = SampleWriter(db: try DatabaseQueue(path: r.path, configuration: config), path: r.path)
+        #expect(try r.lastSeen(idA) == .infinity)
     }
 
     @Test func systemRowAlwaysWritten() throws {

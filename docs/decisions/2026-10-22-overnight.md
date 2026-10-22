@@ -267,3 +267,93 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Goal:** a richer, calmer inspector than a plain list of sections.
 - **Call:** a scroll view with `GroupBox` cards in a `Grid` (bento): a header card (icon, name, path), two small tiles (Average, Peak), a full-width chart card, an About card beside a Peak Process card, an Alerts card, a Processes card (Running and Exited; a selectable `List` inside, so arrow keys still move the selection), and the actions (Show Processes, Pin, Quit, Force Quit) at the bottom. The group summary uses the same cards. Default `GroupBox` look; no glass on content cards (glass is for the control layer). Section titles say "Alerts", never "Events" or "Warnings".
 - **Cost if wrong:** layout only; the data and actions stay the same.
+
+## D33: Sidebar and list refinements (user picks)
+
+- **Collapsible sections:** Groups and Pinned Apps collapse with the native section disclosure; the state is saved.
+- **Add Group footer:** an "Add Group" button at the bottom of the sidebar and File > New Group (⌘⇧N) replace the "+" in the Groups header; an empty Groups section is hidden, so the footer is the one way to add the first group. Alert rows in Today and Yesterday show the time only (the section names the day).
+- **Alerts badge:** the count uses the default look; it becomes prominent (`.badgeProminence(.increased)`) only while a critical alert is unread.
+- **Alerts by day:** the Alerts list groups rows under Today, Yesterday and Earlier. A Dismiss action hides an alert; "Show Dismissed" (toolbar toggle and View menu) shows them again, dimmed. Dismissed ids are kept by the app (the daemon stays the only database writer), newest 10,000.
+- **Row menus and swipe:** every app row and alert row has its actions in a right-click menu (app rows: Show in Inspector, Pin or Unpin; alert rows: Show in Apps, Dismiss or Restore); a trackpad swipe left on an alert dismisses it.
+- Not built: hiding sidebar items, search scopes.
+
+## D34: Hide Quiet icon and cheaper Trend lines
+
+- **Icon (user ask):** Hide Quiet System Processes uses `moon.zzz` (idle processes put to sleep) instead of the generic filter lines.
+- **Trend column:** each row draws its sparkline as one path (`SparklineShape`, shared with the menu bar) instead of a chart per row, because Live measured 6 to 6.5 % CPU with the Trend column on the Apps screen (target 5 %).
+
+## D35: Sidebar button after the traffic lights
+
+- **Problem (user ask):** the system sidebar toggle sat in the toolbar and went into the overflow menu at normal widths, so hiding the sidebar took 2 clicks.
+- **Call:** remove the system toggle and add one "Hide Sidebar" / "Show Sidebar" button (`sidebar.left`) at the navigation placement, directly after the window buttons. It sends `toggleSidebar(_:)`, so the native animation and the View menu item stay the same. The window width does not change.
+- **Checked:** one click hides and one click shows the sidebar; the window stays 1300 pt wide; nothing goes into the overflow menu.
+
+## D36: Search as a toolbar icon (user pick)
+
+- **Call:** search moves from the top of the sidebar to the trailing end of the toolbar as a magnifier that expands into the full field on click or ⌘F (`.searchToolbarBehavior(.minimize)`). It takes one icon of width until it is used.
+
+## D37: Inspector pills (user pick)
+
+- **Call:** a segmented control at the top of the inspector switches between Overview (the cards) and Processes (Running and Exited, Force Quit). Each view is short, so the pane does not scroll far. This replaces the single scroll of D32. Opening the inspector at a process selects Processes.
+
+## D38: Calendar screen (user pick)
+
+- **Call:** a Calendar item in Monitor shows Day, Week or Month as cells shaded by the chosen metric, summed over all apps per hour or per day, with ‹ Today › steps. A click opens Apps at that hour or day. One accent scale; no red or yellow.
+- **No Year view:** history keeps 90 days, so a year would be mostly empty.
+- **Day value:** a Month cell shows the mean of its hours, not the sum: each metric is a level or a rate, so a sum of hours has no useful unit. Hours with no data are left out, so a partial today compares with full days.
+- **Screen type:** Calendar shows no app rows, so it acts like a System screen (no search, inspector, Hide Quiet or Live polling) and keeps only Metric in the toolbar. View > Calendar is ⌘6. A saved sidebar order gets Calendar at the end of Monitor.
+- **Show in Apps** (from a cell or an alert) always opens a window that ends now.
+
+## D39: Range menu groups and steps (user pick; steps replaced by D40)
+
+- **Call:** the Range menu splits Live, the short ranges and the long ranges with dividers. Back and forward arrows step the shown window by one range length (not in Live, not past the present or past 90 days); a Now item returns to the present, and the menu title shows when the window is in the past.
+
+## D40: Range popover replaces the arrows (user ask)
+
+- **Problem:** the user found the back and forward arrows next to Range not intuitive.
+- **Options:** keep the arrows; a menu of quick ranges only; a popover with quick ranges and a custom From and To (the common pattern in metrics dashboards).
+- **Call:** a popover on the Range button: From and To date pickers (inside the 90 days of history, up to now) with Apply, and the quick ranges with dividers. The arrows and the step offset are removed. Text expressions, recent ranges, search and time zones are left out: for one Mac's 90 days they add little.
+- **Calendar keeps ‹ Today ›:** that control is the pattern the user asked for on that screen.
+
+## D41: Search magnifier and inspector below the toolbar (user asks)
+
+- **Search:** macOS has no API to keep the toolbar search collapsed, and with free width the system shows the full field. So the toolbar's last item is a magnifier; a click or ⌘F swaps in the system field, and cancel with an empty query swaps the magnifier back. A background view hosts the field, so the swap does not rebuild the screen.
+- **Inspector pane:** its material stays inside the safe area, so it starts below the toolbar and the toolbar keeps one colour across the window.
+
+## D42: Hover highlight and solid toolbar (user asks)
+
+- **Hover:** hovering an app without a band of its own dims every band (Other too) and draws that app's series as a line in `AppPalette.hover` (`Color.primary`), a colour reserved for hover and never given to an app. Before, the chart only dimmed the coloured bands, so it looked all grey.
+- **Toolbar:** the window toolbar draws a solid background (`toolbarBackgroundVisibility(.visible)`), so it keeps one colour over the content and the inspector pane in light and dark.
+
+## D43: Chosen app colour (user pick)
+
+- **Control:** a split button (swatch and chevron menu) in the inspector header and a Colour submenu on app rows. Choices are system colours without red, yellow, pink and the hover colour; None returns the app to automatic.
+- **Meaning:** a chosen colour also keeps the app as its own band in the chart, after the top 5, even when it is not in the top 5. Stored in the app.
+- **Open:** an automatic colour can equal a colour the user chose for another app.
+
+## D44: Inspector functions (user picks)
+
+- **Selected app:** Compared to Usual (this range against the same hours of the 7 days before, from the hour tier; needs 2 days), Launch History (process starts and quits), Alert Rules (per-app mute and thresholds, kept by the daemon so they work while the app is closed), and a Files pill (open files and sockets from the daemon). Pills: Overview, Processes, Files.
+- **No app selected:** System Health (worst memory pressure and most swap in the range, thermal state and uptime now), Biggest Changes (against the previous range of the same length), and alert counts by rule with Show in Alerts.
+- **Privacy:** Files shows only the user's own processes, the same rule as Quit; another account's open files are private.
+- **Protocol:** XPC protocol 5; the daemon needs the matching install.
+
+## D45: Capture review fixes
+
+- Calendar: no-data cells are outlines; today is marked. Hardware: plain names for system keys, readable core counts, tiles sized to content. Disk: one x domain for all charts, legend above the plot. Inspector: one-line app name; a disabled Quit button with its reason as help.
+- Not changed: the marker legend stays grey (its shapes stand for both severities); Apply already is the default button (it looked grey only in an inactive window); orange stays an app colour (the palette keeps 32° of hue from yellow, measured).
+
+## D46: Chart crash and crash audit
+
+- **Crash:** the app closed a few seconds after launch when the pointer rested on a table row. The hover line (D42) used a plain colour next to the chart's colour scale, and Charts traps in layout on that. Fix: the hover line and area use the scale, and the hover entry stays in the scale's domain at all times.
+- **Audit:** three reviewers read the Charts code, the app and core code, and the daemon, XPC and SQLite paths. Fixed: duplicate list ids in the Files pill, overflow in rule fields and volume sizes, reversed or zero-width Disk axes, label and key collisions, a non-Gregorian calendar unwrap, a settings message (`-1e400`) that aborted the daemon, the same in `amx mcp`, clock steps (monotonic rate clocks, rollup watermarks, empty-bucket jumps), full-disk retention order, a zero row after each daemon start, and an open-files read cap.
+- **Open (user call):** the local signing key is imported so that `codesign` needs no prompt; any process of the same user can therefore sign as the app and pass the XPC pin. Closing this means a prompt for each signing.
+
+## D47: Energy flow screen (user pick)
+
+- A System screen "Energy": a live band diagram from Adapter and Battery to the Mac and on to the top 5 apps and Other, band width in watts, updated each second while shown; a 5-minute system power chart below. App watts are the Mac's watts times the app's energy share (an estimate). Missing values show "Not available", not 0 W. Desktops without power data show only shares.
+
+## D48: Live toggle and start settings (user asks)
+
+- **Live:** a toggle before Range and Range > Live (⌘L) turn Live on and back off to the range before it; the quick ranges keep ⌥⌘1 to ⌥⌘5. The compact toolbar now starts below 900 pt of detail so nothing overflows.
+- **Start:** Settings > General has "Open at" (Last Screen by default) and "Time range at open" (Last Used by default). The app now remembers the last screen and range.

@@ -16,6 +16,7 @@ struct MainWindow: View {
     @Environment(GroupsModel.self) private var groups
     @Environment(AlertsModel.self) private var alerts
     @Environment(DiskMapModel.self) private var diskMap
+    @Environment(Preferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
     /// Whether the detail area is too narrow for the Metric segments: toolbar items cannot read the room they have. Only a
     /// crossing of the threshold changes it, so a live resize does not rebuild the window at each point. The inspector pane
@@ -25,13 +26,16 @@ struct MainWindow: View {
     @AppStorage("inspectorWidth") private var inspectorWidth = 280.0
 
     /// Metric falls back to a menu where its segments no longer fit. Measured on Apps (the most items, with Show Chart) with the
-    /// 180 pt sidebar shown: everything fits from 800 pt of detail, and items go into » at 780.
-    private static let compactBelow: CGFloat = 800
+    /// 180 pt sidebar shown and the Live toggle: everything fits from 900 pt of detail (window 860 to 1300 checked).
+    private static let compactBelow: CGFloat = 900
+
+    @AppStorage("sidebarGroupsExpanded") private var groupsExpanded = true
+    @AppStorage("sidebarPinnedExpanded") private var pinnedExpanded = true
 
     private static let monitorKey = "sidebarOrderMonitor"
     private static let systemKey = "sidebarOrderSystem"
-    private static let monitorDefaults = ["apps", "alerts"]
-    private static let systemDefaults = ["disk", "diskMap", "hardware"]
+    private static let monitorDefaults = ["apps", "calendar", "alerts"]
+    private static let systemDefaults = ["disk", "diskMap", "hardware", "energy"]
     /// The saved order of the Monitor and System items; a drag stays inside its section.
     private let _monitorOrder = State(initialValue: MainWindow.load(monitorKey, monitorDefaults))
     private let _systemOrder = State(initialValue: MainWindow.load(systemKey, systemDefaults))
@@ -48,9 +52,12 @@ struct MainWindow: View {
     @ViewBuilder private func row(_ id: String) -> some View {
         switch id {
         case "apps": Label("Apps", systemImage: "square.grid.2x2").tag(SidebarItem.apps)
-        case "alerts": Label("Alerts", systemImage: "exclamationmark.triangle").badge(alerts.unread).tag(SidebarItem.alerts)
+        case "calendar": Label("Calendar", systemImage: "calendar").tag(SidebarItem.calendar)
+        case "alerts": Label("Alerts", systemImage: "exclamationmark.triangle").badge(alerts.unread)
+                .badgeProminence(alerts.hasUnreadCritical ? .increased : .standard).tag(SidebarItem.alerts)
         case "disk": Label("Disk", systemImage: "internaldrive").tag(SidebarItem.disk)
         case "diskMap": Label("Disk Map", systemImage: "square.grid.3x3.square").tag(SidebarItem.diskMap)
+        case "energy": Label("Energy", systemImage: "bolt.fill").tag(SidebarItem.energy)
         default: Label("Hardware", systemImage: "cpu").tag(SidebarItem.hardware)
         }
     }
@@ -67,14 +74,9 @@ struct MainWindow: View {
                         Label("Groups unavailable", systemImage: "exclamationmark.triangle")
                             .help(error)
                     }
-                } else {
-                    Section {
-                        if groups.groups.isEmpty {
-                            Button("Add a Group…") { appSelection.editingGroup = .new }
-                                .buttonStyle(.plain)
-                                .help("Add a group of apps")
-                                .foregroundStyle(.secondary)
-                        }
+                } else if !groups.groups.isEmpty {
+                    // An empty Groups section is hidden: the Add Group footer creates the first group.
+                    Section("Groups", isExpanded: $groupsExpanded) {
                         ForEach(groups.groups) { group in
                             Label {
                                 Text(group.name)
@@ -88,15 +90,6 @@ struct MainWindow: View {
                                 Button("Delete Group…") { _deleting.wrappedValue = group }
                             }
                         }
-                    } header: {
-                        HStack {
-                            Text("Groups")
-                            Spacer()
-                            Button { appSelection.editingGroup = .new } label: { Label("New Group", systemImage: "plus").labelStyle(.iconOnly) }
-                                .buttonStyle(.borderless)
-                                .help("Add a group of apps")
-                                .padding(.trailing, 6)
-                        }
                     }
                 }
                 Section("System") {
@@ -104,7 +97,7 @@ struct MainWindow: View {
                         .onMove { move($0, $1, of: _systemOrder, key: Self.systemKey) }
                 }
                 if !appSelection.pinned.isEmpty {
-                    Section("Pinned Apps") {
+                    Section("Pinned Apps", isExpanded: $pinnedExpanded) {
                         ForEach(appSelection.pinned.filter { appSelection.search.isEmpty || AppSearch.matches($0, appSelection.search) },
                                 id: \.key) { app in
                             Label(app.name, systemImage: "pin")
@@ -114,28 +107,41 @@ struct MainWindow: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .bottom, alignment: .leading) {
+                Button { appSelection.editingGroup = .new } label: { Label("Add Group", systemImage: "plus") }
+                    .buttonStyle(.plain)
+                    .help("Add a group of apps")
+                    .disabled(groups.loadError != nil || appSelection.editingGroup != nil)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+            }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
-            // At the top of the sidebar: the field takes no toolbar width, so Metric and Range never
-            // go into » while searching. Find shows a hidden sidebar first, through the View menu's own action: setting
-            // `columnVisibility` instead widens the window by the sidebar (measured).
-            .modifier(SidebarSearch(selection: appSelection))
+            .toolbar { SidebarButton(shown: _columns.wrappedValue != .detailOnly) }
+            // The system toggle is removed: in a customizable toolbar it lands in » and costs two clicks. `SidebarButton`
+            // replaces it. It is removed from the sidebar column, where the system adds it.
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             GeometryReader { proxy in
                 InspectorPane(shown: appSelection.inspectorShown, width: $inspectorWidth, available: proxy.size.width) {
                     switch appSelection.sidebar ?? .apps {
                     case .apps: TimelineView(focus: nil)
+                    case .calendar: CalendarView()
                     case .alerts: AlertsView()
                     case .pinned(let app): TimelineView(focus: app)
                     case .group(let id): TimelineView(focus: nil, group: groups.groups.first { $0.id == id })
                     case .disk: DiskView()
                     case .diskMap: DiskMapView()
                     case .hardware: HardwareView()
+                    case .energy: EnergyView()
                     }
                 }
                 .onChange(of: proxy.size.width < Self.compactBelow, initial: true) { _, compact in _compact.wrappedValue = compact }
             }
-            // A new id drops toolbar layouts saved before Metric moved to the centre and Show Chart came.
-            .toolbar(id: "window2") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: _compact.wrappedValue) }
+            // A new id drops toolbar layouts saved before the system toggle went and the Sidebar button came.
+            // A solid toolbar: content and the inspector pane do not show through it, so it keeps one colour across the window.
+            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
+            .toolbar(id: "window3") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: _compact.wrappedValue) }
+            .background { ToolbarSearch(selection: appSelection) }
             .frame(minHeight: 480)
             .navigationSplitViewColumnWidth(min: 620, ideal: 980)
         }
@@ -145,11 +151,6 @@ struct MainWindow: View {
             guard let app = appSelection.app, !query.isEmpty else { return }
             let rank = history.range == .live ? live.rank(of: app) : history.rank(of: app)
             if AppSearch.filter(rank.map { [$0] } ?? [], query: query).isEmpty { appSelection.app = nil }
-        }
-        .onChange(of: appSelection.searchPresented) { _, shown in
-            if shown, _columns.wrappedValue == .detailOnly {
-                NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
-            }
         }
         .modifier(SignalConfirmation())
         .sheet(item: Bindable(appSelection).editingGroup) { GroupEditor(group: $0) }
@@ -168,7 +169,9 @@ struct MainWindow: View {
             scope(item)
             if appSelection.isSystem { appSelection.query = "" }
             keepInspector(leaving: old)
+            if let item, let screen = StartScreen(item) { preferences.lastScreen = screen }
         }
+        .onChange(of: history.range) { _, range in preferences.lastRange = StartRange(range) }
         .onChange(of: groups.groups) {
             guard case .group(let id) = appSelection.sidebar else { return }
             if let group = groups.groups.first(where: { $0.id == id }) {
@@ -183,6 +186,12 @@ struct MainWindow: View {
         }
         // Activate after openWindow, or the window can open behind other apps (Task 0 probe 2). The menu bar label sets
         // the same closure, but it does not exist while the item is hidden in Settings.
+        .onAppear {
+            guard !preferences.startApplied else { return }
+            preferences.startApplied = true
+            appSelection.sidebar = preferences.startScreen
+            history.range = preferences.startRange
+        }
         .onAppear { appSelection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() } }
     }
 
@@ -208,16 +217,38 @@ struct MainWindow: View {
     }
 }
 
-/// The sidebar search field, on process screens only: System screens show no app data to search.
-private struct SidebarSearch: ViewModifier {
+/// One Sidebar button, at the leading edge right after the window buttons, shown or hidden. `.navigation` items are not
+/// customizable, so they never go into ». It belongs to the sidebar column and stays in the toolbar while the sidebar is
+/// hidden. Toggles through the responder chain, like the View menu's
+/// command: setting `columnVisibility` instead widens the window by the sidebar (measured).
+private struct SidebarButton: ToolbarContent {
+    let shown: Bool
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button(shown ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.left") {
+                NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+            }
+            .labelStyle(.iconOnly)
+            .help(shown ? "Hide the sidebar" : "Show the sidebar")
+        }
+    }
+}
+
+/// Search in the trailing toolbar, on process screens only: System screens show no app data to search. The toolbar's
+/// magnifier until it is clicked (or ⌘F); then the system field, until it is cancelled while empty. macOS has no
+/// `searchToolbarBehavior(.minimize)`. A background view hosts it, so the swap never rebuilds the screen.
+private struct ToolbarSearch: View {
     let selection: Selection
 
-    func body(content: Content) -> some View {
+    var body: some View {
         if selection.isSystem {
-            content
+            Color.clear
+        } else if selection.searchPresented || !selection.query.isEmpty {
+            Color.clear.searchable(text: Bindable(selection).query, isPresented: Bindable(selection).searchPresented,
+                                   placement: .toolbar, prompt: "App, process or PID")
         } else {
-            content.searchable(text: Bindable(selection).query, isPresented: Bindable(selection).searchPresented, placement: .sidebar,
-                               prompt: "App, process or PID")
+            Color.clear
         }
     }
 }
@@ -269,7 +300,7 @@ private struct InspectorPane<Content: View>: View {
                 InspectorView()
                     .frame(width: paneWidth)
                     .frame(maxHeight: .infinity)
-                    .background(.regularMaterial)
+                    .background(.regularMaterial, ignoresSafeAreaEdges: [])
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")
                     .transition(.move(edge: .trailing))

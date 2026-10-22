@@ -23,7 +23,7 @@ struct MenuBarContent: View {
                 VStack(alignment: .leading) {
                     Text("CPU").font(.headline)
                     Text(readout.percents.map { "\($0.cpu)%" } ?? "…").font(.title2)
-                    CPUSparkline(values: readout.cpuHistory).stroke(.tint, lineWidth: 1).frame(width: 120, height: 24)
+                    SparklineShape(values: readout.cpuHistory).stroke(.tint, lineWidth: 1).frame(width: 120, height: 24)
                 }
                 Spacer()
                 VStack(alignment: .leading) {

@@ -49,6 +49,10 @@ The time the user looks at: Live (last 5 min, 1 s updates), 1H, 24H, 7D, 30D, 90
 **Span**:
 A part of the range the user selected on the chart.
 
+**Period**:
+What the Calendar shows at once: a day or a week of hours, or a month of days, each cell the metric summed over all apps.
+_Avoid_: range (that is what Apps shows)
+
 **Metric**:
 The resource a chart or table shows: CPU, Memory, Disk, Energy, Network, GPU, and Score for groups.
 
@@ -57,6 +61,9 @@ The sum of every app that does not get its own colour in the chart.
 
 **Top during peaks**:
 The five apps that contribute most to the chart's busiest buckets; they get colours.
+
+**Chosen colour**:
+A colour the user gave an app; the app shows in it and gets its own band in every chart, also when it is not in the top five.
 
 ## Alerts
 
@@ -86,3 +93,6 @@ The trailing pane that shows the selected app or process.
 
 **Event lane**:
 The strip above the chart with markers for pressure (▲), thermal (◆) and alert (●) events.
+
+**Energy flow**:
+The Energy screen's band diagram: watts from the adapter and the battery into the Mac, and the Mac's watts split over its top five apps and Other by their share of energy impact right now.

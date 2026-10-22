@@ -20,8 +20,12 @@ struct TimelineView: View {
         let ranking = focus.map { app in (isLive ? live.rank(of: app) : history.rank(of: app)).map { [$0] } ?? [] }
             ?? (isLive ? live.ranking : history.ranking)
         let shown = AppSearch.filter(ranking, query: selection.search)
-        let colors = AppPalette.colors(for: points)
+        let colors = AppPalette.colors(for: points, chosen: history.appColors)
         let title = focus?.name ?? group?.name
+        // A hovered app without a band: dim every band and draw its own series over them.
+        let bandless = _hovered.wrappedValue.flatMap { key in
+            colors.keys.contains { $0.key == key } ? nil : ranking.first { $0.app.key == key }?.app
+        }
         let chart = title != nil || selection.showChart
         Group {
             switch isLive ? live.state : history.state {
@@ -43,9 +47,9 @@ struct TimelineView: View {
                     if chart {
                         TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, live: isLive, metric: history.metric,
                                       events: isLive ? [] : history.events,
-                                      // An app without a band of its own is in Other's.
-                                      highlighted: _hovered.wrappedValue.map { key in [colors.keys.contains { $0.key == key } ? key : ""] }
+                                      highlighted: _hovered.wrappedValue.map { key in bandless == nil ? [key] : [] }
                                           ?? (selection.search.isEmpty ? nil : Set(shown.map(\.app.key))),
+                                      line: bandless.map { isLive ? live.series(of: $0) : history.series(of: $0) },
                                       span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
                                       commitSpan: isLive ? nil : { span in
                                           history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970

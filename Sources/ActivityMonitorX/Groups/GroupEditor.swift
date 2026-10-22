@@ -14,7 +14,7 @@ struct GroupEditor: View {
                                                  "cloud": "Cloud", "cpu": "CPU", "bolt": "Bolt",
                                                  "gamecontroller": "Game Controller", "star": "Star"]
     /// Menus draw SwiftUI images as templates; a palette-coloured symbol keeps its colour.
-    private static let swatches = Dictionary(uniqueKeysWithValues: GroupColor.allCases.map { color in
+    static let swatches = Dictionary(uniqueKeysWithValues: GroupColor.allCases.map { color in
         let symbol = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)!
         return (color, symbol.withSymbolConfiguration(.init(paletteColors: [NSColor(color.color)]))!)
     })

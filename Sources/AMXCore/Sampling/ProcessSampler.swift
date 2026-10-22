@@ -1,22 +1,23 @@
 import Foundation
 
-/// Turns cumulative per-process counters into per-second rates between ticks.
+/// Turns cumulative per-process counters into per-second rates between ticks. Rates divide by the time between
+/// ticks on the monotonic clock (`systemUptime`), so a wall clock step gives no false rate.
 public final class ProcessSampler {
     public init() {}
 
     private var previous: [ProcessIdentity: RawProcess] = [:]
     private var previousGPU: [ProcessIdentity: UInt64] = [:]
-    private var previousNow: Double?
+    private var previousUptime: Double?
 
-    public func sample(now: Double, gpuNanos: [Int32: UInt64] = [:]) -> (samples: [ProcessSample], new: [RawProcess]) {
+    public func sample(gpuNanos: [Int32: UInt64] = [:]) -> (samples: [ProcessSample], new: [RawProcess]) {
         // `previous` holds only processes alive at the last pass, so an exited process drops out of the cache.
         let raw = ProcessReader.listPIDs().compactMap { ProcessReader.read(pid: $0, known: previous) }
-        return sample(now: now, raw: raw, gpuNanos: gpuNanos)
+        return sample(uptime: ProcessInfo.processInfo.systemUptime, raw: raw, gpuNanos: gpuNanos)
     }
 
-    func sample(now: Double, raw: [RawProcess], gpuNanos: [Int32: UInt64])
+    func sample(uptime: Double, raw: [RawProcess], gpuNanos: [Int32: UInt64])
         -> (samples: [ProcessSample], new: [RawProcess]) {
-        let wall = previousNow.map { now - $0 } ?? 0
+        let wall = previousUptime.map { uptime - $0 } ?? 0
         let valid = wall > 0 && wall <= 60
         var samples: [ProcessSample] = []
         var new: [RawProcess] = []
@@ -47,7 +48,7 @@ public final class ProcessSampler {
 
         previous = Dictionary(raw.map { ($0.identity, $0) }, uniquingKeysWith: { $1 })
         previousGPU = nextGPU
-        previousNow = now
+        previousUptime = uptime
         return (samples, new)
     }
 }

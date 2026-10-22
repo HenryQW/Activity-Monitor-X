@@ -25,6 +25,12 @@ import Testing
         let url = tempURL()
         try settings.save(to: url)
         #expect(try DaemonSettings.load(from: url) == settings)
+        var own = AlertRules.AppOverride()
+        own.muted = true
+        own.gpu = AlertRules.GPU()
+        settings.rules.apps["/Applications/A.app"] = own
+        try settings.save(to: url)
+        #expect(try DaemonSettings.load(from: url) == settings)
     }
 
     @Test func fileShape() throws {
@@ -35,7 +41,7 @@ import Testing
         #expect(Set(body.keys) == ["rules", "size_cap_bytes", "terminal_bundle_ids"])
         let rules = try #require(body["rules"] as? [String: Any])
         #expect(Set(rules.keys) == ["disk_writes", "energy", "free_space", "gpu", "memory_growth", "memory_jump", "network",
-                                    "preset", "pressure", "sustained_cpu", "swap", "thermal"])
+                                    "preset", "pressure", "sustained_cpu", "swap", "thermal", "apps"])
         #expect(rules["preset"] as? String == "balanced")
         let pressure = try #require(rules["pressure"] as? [String: Any])
         #expect(pressure["level"] as? String == "warning")
@@ -71,6 +77,36 @@ import Testing
         expected.thermal.state = .fair
         expected.thermal.minutes = 7
         #expect(rules == expected)
+    }
+
+    @Test(arguments: ["-1e400", "1e400"])
+    func numberOutOfRangeThrowsSettingsError(number: String) {
+        let data = Data(#"{"version":1,"settings":{"rules":{"sustained_cpu":{"percent":\#(number)}}}}"#.utf8)
+        #expect(throws: SettingsError.invalid("settings.json: Number \(number) is not representable in Swift.")) {
+            try DaemonSettings.decodeValidated(data)
+        }
+    }
+
+    @Test func missingFieldKeepsTheOtherValues() throws {
+        let data = Data(#"""
+            {"version":1,"settings":{"size_cap_bytes":5000000000,"rules":{"preset":"strict",
+            "sustained_cpu":{"enabled":false,"percent":150},
+            "apps":{"/Applications/A.app":{"gpu":{"percent":30}},"/Applications/B.app":{"muted":true}}}}}
+            """#.utf8)
+        let settings = try DaemonSettings.decodeValidated(data)
+        #expect(settings.sizeCapBytes == 5_000_000_000 && settings.rules.preset == .strict)
+        var cpu = AlertRules.SustainedCPU()
+        cpu.enabled = false
+        cpu.percent = 150
+        #expect(settings.rules.sustainedCPU == cpu)
+        #expect(settings.rules.gpu == DaemonSettings().rules.gpu)
+        var gpu = AlertRules.GPU()
+        gpu.percent = 30
+        var a = AlertRules.AppOverride()
+        a.gpu = gpu
+        var b = AlertRules.AppOverride()
+        b.muted = true
+        #expect(settings.rules.apps == ["/Applications/A.app": a, "/Applications/B.app": b])
     }
 
     @Test func presetsValidOnSmallAndLargeMacs() {
@@ -177,6 +213,15 @@ import Testing
         #expect(big.validationProblem(for: large) == nil)
         big.rules.sustainedCPU.percent = 2401
         #expect(big.validationProblem(for: large) == "Sustained CPU must be 10 to 2400 %")
+        // An app's own values are checked as the global ones.
+        var app = DaemonSettings()
+        var own = AlertRules.AppOverride()
+        own.gpu = AlertRules.GPU()
+        own.gpu?.percent = 101
+        app.rules.apps["/Applications/A.app"] = own
+        #expect(app.validationProblem(for: small) == "A.app: GPU must be 10 to 100 %")
+        app.rules.apps = Dictionary(uniqueKeysWithValues: (0...AlertRules.maxApps).map { ("app\($0)", AlertRules.AppOverride()) })
+        #expect(app.validationProblem(for: small) == "Use at most 50 apps with their own alert rules")
         var low = DaemonSettings()
         low.sizeCapBytes = 100_000_000
         let data = try low.encoded()

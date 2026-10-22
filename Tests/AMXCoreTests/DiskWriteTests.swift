@@ -48,7 +48,7 @@ private final class DiskWriteSim {
          ticksPerCommit: Int = AMX.ticksPerCommit) throws {
         db = try Store.openWriter(path: path)
         try db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA wal_autocheckpoint=0") }
-        writer = try SampleWriter(db: db, path: path, ticksPerCommit: ticksPerCommit)
+        writer = SampleWriter(db: db, path: path, ticksPerCommit: ticksPerCommit)
         self.policy = policy
         self.attribute = attribute
         for i in 0..<1160 { spawn(diesAt: .max, busy: i < 63 ? .max : 0) }

@@ -41,9 +41,9 @@ import Testing
 
     @Test func systemSampleSmoke() async throws {
         let sampler = SystemSampler()
-        _ = sampler.sample(now: Date().timeIntervalSince1970)
+        _ = sampler.sample()
         try await Task.sleep(for: .milliseconds(200))
-        let s = sampler.sample(now: Date().timeIntervalSince1970)
+        let s = sampler.sample()
         #expect([1, 2, 4].contains(s.pressureLevel))
         #expect((0...100).contains(s.cpu))
         #expect(s.memUsed > 0)

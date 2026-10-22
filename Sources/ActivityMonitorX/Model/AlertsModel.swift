@@ -9,6 +9,7 @@ import os
 final class AlertsModel {
     private static let readKey = "alertsReadThrough"
     private static let notifiedKey = "alertsNotifiedThrough"
+    private static let dismissedKey = "alertsDismissed"
     nonisolated private static let limit = 500
     private static let log = Logger(subsystem: AMX.bundleID, category: "alerts")
 
@@ -18,9 +19,14 @@ final class AlertsModel {
     private(set) var readThrough = UserDefaults.standard.object(forKey: AlertsModel.readKey) as? Int64 ?? 0 {
         didSet { UserDefaults.standard.set(readThrough, forKey: Self.readKey) }
     }
+    /// Dismissed alerts are hidden unless `showDismissed`; the app keeps them, the daemon stays the only database writer (D33).
+    private(set) var dismissed = DismissedSet(ids: (UserDefaults.standard.array(forKey: AlertsModel.dismissedKey) as? [Int64]) ?? [])
+    var showDismissed = false
     var unread: Int { unreadRows.count }
+    /// An unread alert has severity 2 (critical): the sidebar badge turns prominent.
+    var hasUnreadCritical: Bool { unreadRows.contains { $0.severity == 2 } }
     var unreadIDs: Set<Int64> { Set(unreadRows.map(\.id)) }
-    private var unreadRows: ArraySlice<EventMark> { alerts.prefix { $0.id > readThrough } }
+    private var unreadRows: [EventMark] { alerts.filter { $0.id > readThrough && !dismissed.contains($0.id) } }
     private(set) var error: String?
     /// Rows up to this id were offered to `onNew`.
     private var notifiedThrough = UserDefaults.standard.object(forKey: AlertsModel.notifiedKey) as? Int64 ?? 0 {
@@ -53,6 +59,16 @@ final class AlertsModel {
             }
             try? await Task.sleep(for: .seconds(15))
         }
+    }
+
+    func dismiss(_ ids: Set<Int64>) {
+        ids.sorted().forEach { dismissed.insert($0) }
+        UserDefaults.standard.set(dismissed.ids, forKey: Self.dismissedKey)
+    }
+
+    func restore(_ ids: Set<Int64>) {
+        ids.forEach { dismissed.remove($0) }
+        UserDefaults.standard.set(dismissed.ids, forKey: Self.dismissedKey)
     }
 
     func markAllRead() {

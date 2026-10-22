@@ -15,6 +15,7 @@ struct ActivityMonitorXApp: App {
     /// App level: the last Disk Map tree stays while the app runs (M5-D10).
     private let diskMap: DiskMapModel
     private let hardware: HardwareModel
+    private let calendar: CalendarModel
     private let readout = MenuBarReadout()
     private let settings: SettingsModel
     /// Kept here: the notification center holds its delegate weakly. Nil outside the bundle (`swift run`).
@@ -25,6 +26,7 @@ struct ActivityMonitorXApp: App {
         self.history = history
         live = LiveModel(history: history, selection: selection)
         groups = GroupsModel(history: history)
+        calendar = CalendarModel(history: history)
         let alerts = AlertsModel(client: live.client, history: history)
         self.alerts = alerts
         settings = SettingsModel(client: live.client, alerts: alerts)
@@ -68,6 +70,9 @@ struct ActivityMonitorXApp: App {
                 .environment(disk)
                 .environment(diskMap)
                 .environment(hardware)
+                .environment(calendar)
+                .environment(settings)
+                .environment(appDelegate.preferences)
                 .task { await history.run() }
                 .task { if history.glossary == nil { history.glossary = await Self.loadGlossary() } }
                 .task { await groups.run() }
@@ -84,7 +89,7 @@ struct ActivityMonitorXApp: App {
                     .disabled(selection.isSystem)
             }
             GroupCommands(selection: selection, groups: groups)
-            GoCommands(selection: selection, history: history, diskMap: diskMap)
+            GoCommands(selection: selection, history: history, diskMap: diskMap, alerts: alerts)
             DataCommands(history: history, selection: selection)
             ProcessCommands(selection: selection)
         }

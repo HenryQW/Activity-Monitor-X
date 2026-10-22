@@ -72,6 +72,17 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(try r.tracks(.day, .cpu, end: 86_400).isEmpty)
     }
 
+    /// The hour tier is sparse: a missing hour carries the last row until `last_seen`.
+    @Test func totalsPerIntervalFromHourTier() throws {
+        let r = try Rig(lastSeen: 10_740)
+        try r.tier("process_hour", 0, cpu: 10)
+        try r.tier("process_hour", 7200, cpu: 30)
+        let reader = HistoryReader(pool: r.pool)
+        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600, 7200, 10_800, 14_400]) == [10, 10, 30, nil])
+        // Half of the interval has data, and a gap counts as 0; an interval of no width has none.
+        #expect(try reader.totals(metric: .cpu, bounds: [9000, 12_600, 12_600]) == [15, nil])
+    }
+
     @Test func rawRowsHoldUntilNextRow() throws {
         let r = try Rig(lastSeen: 59)
         try r.raw(0, cpu: 10)
@@ -168,17 +179,17 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
     @Test func systemSeriesUsesTierForRange() throws {
         let r = try Rig(lastSeen: 0)
         try r.db.write {
-            try $0.execute(sql: "INSERT INTO system_samples(ts, cpu, mem_used, pressure_level, thermal_state) VALUES (0, 10, 100, 1, 0), (5, 30, 300, 2, 1), (20, 50, 500, 1, 0)")
-            try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, cpu_avg, cpu_max, mem_used_avg, mem_used_max, pressure_level_max, thermal_state_max) VALUES (0, 12, 40, 90, 400, 450, 4, 2), (60, 12, 60, 90, 600, 650, 1, 0), (900, 12, 20, 90, 200, 250, 1, 0)")
+            try $0.execute(sql: "INSERT INTO system_samples(ts, cpu, mem_used, swap_used, pressure_level, thermal_state) VALUES (0, 10, 100, 7, 1, 0), (5, 30, 300, 9, 2, 1), (20, 50, 500, 0, 1, 0)")
+            try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, cpu_avg, cpu_max, mem_used_avg, mem_used_max, swap_used_max, pressure_level_max, thermal_state_max) VALUES (0, 12, 40, 90, 400, 450, 8, 4, 2), (60, 12, 60, 90, 600, 650, 3, 1, 0), (900, 12, 20, 90, 200, 250, 0, 1, 0)")
         }
         let reader = HistoryReader(pool: r.pool)
         let raw = try reader.system(range: .hour, end: 3600)
         #expect(raw.map(\.bucket) == [0, 15].map { $0 + 0.0 })
-        #expect(raw[0].cpu == 20 && raw[0].memUsed == 200 && raw[0].pressureLevel == 2 && raw[0].thermalState == 1)
+        #expect(raw[0].cpu == 20 && raw[0].memUsed == 200 && raw[0].swapUsed == 9 && raw[0].pressureLevel == 2 && raw[0].thermalState == 1)
         #expect(raw[1].cpu == 50)
         let day = try reader.system(range: .day, end: 86_400)
         #expect(day.map(\.bucket) == [0, 900])
-        #expect(day[0].cpu == 50 && day[0].pressureLevel == 4 && day[0].thermalState == 2)
+        #expect(day[0].cpu == 50 && day[0].swapUsed == 8 && day[0].pressureLevel == 4 && day[0].thermalState == 2)
     }
 
     @Test func systemSeriesCarriesDisk() throws {

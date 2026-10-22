@@ -1,7 +1,7 @@
 import Foundation
 
 /// A process incarnation: a reused pid has a different start time.
-public struct ProcessIdentity: Hashable, Sendable {
+public struct ProcessIdentity: Hashable, Sendable, Codable {
     public let pid: Int32
     public let startTime: Double
 

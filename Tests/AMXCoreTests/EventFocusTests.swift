@@ -13,6 +13,9 @@ import Testing
         #expect(EventFocus.window(for: now - 3 * 86_400, lookback: 600, now: now).range == .week)
         w = EventFocus.window(for: now - 100 * 86_400, lookback: 600, now: now)
         #expect(w.range == .quarter && w.span == nil)
+        // A Calendar hour that is still running ends at now.
+        w = EventFocus.window(from: now - 1800, to: now + 1800, now: now)
+        #expect(w.range == .hour && w.span == (now - 1800)...now)
     }
 
     @Test func onlyFreshNewRowsNotify() {

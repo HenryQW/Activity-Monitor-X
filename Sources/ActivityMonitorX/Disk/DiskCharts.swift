@@ -19,6 +19,8 @@ struct DiskChart: View {
     /// Seconds per point: the hover time shows seconds below a minute and the day from an hour.
     let bucket: Double
     let format: (Double) -> String
+    /// The X domain: the screen's range, the same for every chart.
+    let xDomain: ClosedRange<Date>
     /// Fixed Y domain; nil scales to the data.
     var yDomain: ClosedRange<Double>? = nil
     /// A horizontal rule with its label (the startup volume's capacity on the Free chart).
@@ -47,14 +49,6 @@ struct DiskChart: View {
                 Text(title).font(.headline)
                 Spacer()
                 if let rule { Text(rule.label).font(.caption).foregroundStyle(.secondary) }
-                // One legend position for every chart: beside the title, so the plot heights match.
-                if names.count > 1 {
-                    ForEach(names.indices, id: \.self) { i in
-                        Label(names[i], systemImage: "circle.fill")
-                            .font(.caption)
-                            .foregroundStyle(i == 0 ? Color.accentColor : Color.secondary)
-                    }
-                }
             }
             if points.isEmpty {
                 Text("No data in this range.")
@@ -75,7 +69,17 @@ struct DiskChart: View {
                     }
                 }
                 .chartForegroundStyleScale(domain: names, range: [Color.accentColor, Color.secondary].prefix(names.count).map { $0 })
-                .chartLegend(.hidden)
+                .chartLegend(position: .top, alignment: .trailing) {
+                    if names.count > 1 {
+                        HStack(spacing: 8) {
+                            ForEach(names.indices, id: \.self) { i in
+                                Label(names[i], systemImage: "circle.fill").foregroundStyle(i == 0 ? Color.accentColor : Color.secondary)
+                            }
+                        }
+                        .font(.caption)
+                    }
+                }
+                .chartXScale(domain: xDomain)
                 .chartXAxis { AxisMarks(preset: .aligned) }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in

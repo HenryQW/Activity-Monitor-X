@@ -4,7 +4,7 @@ import os
 
 /// Listener delegate and exported object. Immutable after init, so concurrent connections are safe.
 final class XPCService: NSObject, NSXPCListenerDelegate, DaemonXPC, @unchecked Sendable {
-    /// Settings bodies are under 2 KB; the cap bounds decoding work on untrusted input.
+    /// Settings bodies are under 2 KB, under 50 KB with 50 apps of own rules; the cap bounds decoding work on untrusted input.
     private static let maxSettingsBytes = 64 * 1024
 
     private let dbPath: String
@@ -68,6 +68,19 @@ final class XPCService: NSObject, NSXPCListenerDelegate, DaemonXPC, @unchecked S
 
     func settings(reply: @escaping (Data) -> Void) {
         reply(currentSettings())
+    }
+
+    func openFiles(_ request: Data, reply: @escaping (Data?) -> Void) {
+        let caller = NSXPCConnection.current()?.processIdentifier ?? -1
+        let callerUID = NSXPCConnection.current()?.effectiveUserIdentifier ?? uid_t.max
+        guard let ids = OpenFiles.request(request) else {
+            log.error("openFiles by caller \(caller, privacy: .public) refused: \(request.count, privacy: .public) bytes not valid")
+            reply(nil)
+            return
+        }
+        let found = ids.filter { SignalPolicy.checkIdentity(pid: $0.pid, startTime: $0.startTime, callerUID: callerUID) == 0 }
+            .compactMap { OpenFiles.read(pid: $0.pid) }
+        reply(try! JSONEncoder().encode(found))
     }
 
     func setSettings(_ json: Data, reply: @escaping (String?) -> Void) {

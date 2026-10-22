@@ -7,7 +7,7 @@ import Testing
     private func rig(_ rows: [(path: String?, team: String?)]) throws -> (DatabaseQueue, SampleWriter) {
         let path = NSTemporaryDirectory() + "amx-\(UUID().uuidString).sqlite"
         let db = try Store.openWriter(path: path)
-        let writer = try SampleWriter(db: db, path: path)
+        let writer = SampleWriter(db: db, path: path)
         try db.write { db in
             for (i, row) in rows.enumerated() {
                 try ProcessRecord(pid: Int32(i + 1), startTime: 1, name: "p", path: row.path, teamId: row.team,
@@ -21,9 +21,11 @@ import Testing
         var q = TeamIDBackfill()
         q.enqueue(["/a", "/b", "/a"])
         #expect(q.take(1) == ["/a"])
-        #expect(q.take(5) == ["/b"])
         q.enqueue(["/a"])
-        #expect(q.take(5) == [])
+        #expect(q.take(5) == ["/b"])
+        // A drained queue forgets its paths.
+        q.enqueue(["/a"])
+        #expect(q.take(5) == ["/a"])
     }
 
     @Test func pathsWithoutTeamIDAreDistinct() throws {

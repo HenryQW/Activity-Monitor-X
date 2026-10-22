@@ -133,8 +133,14 @@ public enum Volumes {
             let block = UInt64(fs.f_bsize)
             return MountRow(mountPoint: string(fs.f_mntonname), device: string(fs.f_mntfromname),
                             fsType: string(fs.f_fstypename), flags: fs.f_flags,
-                            totalBytes: fs.f_blocks * block, freeBytes: fs.f_bavail * block)
+                            totalBytes: bytes(fs.f_blocks, block), freeBytes: bytes(fs.f_bavail, block))
         }
+    }
+
+    /// `blocks` x `size`, at most `UInt64.max`: a bad statfs value does not trap.
+    static func bytes(_ blocks: UInt64, _ size: UInt64) -> UInt64 {
+        let (product, overflow) = blocks.multipliedReportingOverflow(by: size)
+        return overflow ? .max : product
     }
 
     /// `getattrlist(ATTR_VOL_SPACEUSED)`: a 4-byte length, then the 8-byte value unaligned at offset 4.

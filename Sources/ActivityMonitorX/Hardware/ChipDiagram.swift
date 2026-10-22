@@ -13,17 +13,22 @@ struct ChipDiagram: View {
     let gpuUsage: Double?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(chip.name).font(.headline)
-            HStack(alignment: .top, spacing: 14) {
-                ForEach(chip.clusters.indices, id: \.self) { index in cluster(index) }
-                if let gpuCores { gpu(gpuCores) }
+        GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(chip.name).font(.headline)
+                Grid(alignment: .topLeading, horizontalSpacing: 14, verticalSpacing: 10) {
+                    GridRow(alignment: .top) {
+                        ForEach(chip.clusters.indices, id: \.self) { index in cluster(index) }
+                        if let gpuCores { gpu(gpuCores) }
+                    }
+                    GridRow {
+                        block("Memory", detail: memory, label: "Memory, \(memory)", value: nil) { EmptyView() }
+                            .gridCellColumns(chip.clusters.count + (gpuCores == nil ? 0 : 1))
+                    }
+                }
+                Text("Shade shows current use").font(.caption).foregroundStyle(.secondary)
             }
-            block("Memory", detail: memory, label: "Memory, \(memory)", value: nil) { EmptyView() }
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12).fill(.quaternary.opacity(0.5)))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.tertiary))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(chip.name)
     }
@@ -67,7 +72,7 @@ struct ChipDiagram: View {
             content()
         }
         .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 6).fill(.background.opacity(0.6)))
         .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
         .accessibilityElement(children: .ignore)

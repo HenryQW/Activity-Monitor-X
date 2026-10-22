@@ -48,6 +48,14 @@ private struct GeneralSettings: View {
                     Text("Dark").tag(Preferences.Appearance.dark)
                 }
                 .help("Follow the macOS light or dark setting, or always use one")
+                Picker("Open at", selection: prefs.openAt) {
+                    ForEach(StartScreen.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .help("Choose the screen the main window opens at")
+                Picker("Time range at open", selection: prefs.openRange) {
+                    ForEach(StartRange.allCases, id: \.self) { Text($0.label).tag($0) }
+                }
+                .help("Choose the time range the main window opens at")
             }
             Section {
                 Toggle("Launch at Login", isOn: prefs.launchAtLogin)
@@ -117,7 +125,7 @@ private struct AlertSettings: View {
                     Text("Relaxed, Balanced and Strict set the values of every rule below for this Mac's cores and memory, and keep each rule on or off. A change to a value makes it Custom.")
                 }
                 Section {
-                    Toggle("Sustained CPU", isOn: model.binding(\.rules.sustainedCPU.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.sustainedCPU), isOn: model.binding(\.rules.sustainedCPU.enabled, custom: false))
                     Group {
                         // Stored of one core; shown as a share of all cores. Only a value other than the shown one is
                         // stored, so showing never changes it.
@@ -133,7 +141,7 @@ private struct AlertSettings: View {
                     Text("An app stays above this CPU for this long. Then that app is quiet for 60 min.")
                 }
                 Section {
-                    Toggle("Memory Growth", isOn: model.binding(\.rules.memoryGrowth.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.memoryGrowth), isOn: model.binding(\.rules.memoryGrowth.enabled, custom: false))
                     Group {
                         NumberRow(title: "Grows by", value: model.binding(\.rules.memoryGrowth.megabytes),
                                   range: R.MemoryGrowth.megabytesRange(machine), step: 50, unit: "MB")
@@ -145,7 +153,7 @@ private struct AlertSettings: View {
                     Text("A process grows steadily by this much over this time. Once per process.")
                 }
                 Section {
-                    Toggle("Memory Jump", isOn: model.binding(\.rules.memoryJump.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.memoryJump), isOn: model.binding(\.rules.memoryJump.enabled, custom: false))
                     NumberRow(title: "Grows by", value: model.binding(\.rules.memoryJump.megabytes),
                               range: R.MemoryJump.megabytesRange(machine), step: 128, unit: "MB")
                         .disabled(!rules.memoryJump.enabled)
@@ -153,7 +161,7 @@ private struct AlertSettings: View {
                     Text("A process grows by this much in under a minute. Then it is quiet for 30 min.")
                 }
                 Section {
-                    Toggle("Memory Pressure", isOn: model.binding(\.rules.pressure.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.pressure), isOn: model.binding(\.rules.pressure.enabled, custom: false))
                     Picker("At", selection: model.binding(\.rules.pressure.level)) {
                         ForEach(AlertRules.Pressure.Level.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                     }
@@ -175,7 +183,7 @@ private struct AlertSettings: View {
                     Text("The Mac stays at or above this thermal state for this long.")
                 }
                 Section {
-                    Toggle("Disk Writes", isOn: model.binding(\.rules.diskWrites.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.diskWrites), isOn: model.binding(\.rules.diskWrites.enabled, custom: false))
                     NumberRow(title: "Above", value: units(\.rules.diskWrites.bytesPerHour, 1 << 30),
                               range: units(R.DiskWrites.bytesPerHourRange, 1 << 30), unit: "GB per hour")
                         .disabled(!rules.diskWrites.enabled)
@@ -183,7 +191,7 @@ private struct AlertSettings: View {
                     Text("An app writes this much to disk in one hour. Then that app is quiet for 60 min.")
                 }
                 Section {
-                    Toggle("Network", isOn: model.binding(\.rules.network.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.network), isOn: model.binding(\.rules.network.enabled, custom: false))
                     Group {
                         NumberRow(title: "Above", value: units(\.rules.network.bytesPerSecond, 1 << 20),
                                   range: units(R.Network.bytesPerSecondRange, 1 << 20), unit: "MB/s")
@@ -194,7 +202,7 @@ private struct AlertSettings: View {
                     Text("An app receives and sends more than this for this long. Then that app is quiet for 60 min.")
                 }
                 Section {
-                    Toggle("Energy Impact", isOn: model.binding(\.rules.energy.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.energy), isOn: model.binding(\.rules.energy.enabled, custom: false))
                     Group {
                         NumberRow(title: "Above", value: model.binding(\.rules.energy.impact), range: R.Energy.impactRange,
                                   step: 50, unit: "impact")
@@ -205,7 +213,7 @@ private struct AlertSettings: View {
                     Text("An app stays above this energy impact for this long. Then that app is quiet for 60 min.")
                 }
                 Section {
-                    Toggle("GPU", isOn: model.binding(\.rules.gpu.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.gpu), isOn: model.binding(\.rules.gpu.enabled, custom: false))
                     Group {
                         NumberRow(title: "Above", value: model.binding(\.rules.gpu.percent), range: R.GPU.percentRange,
                                   step: 5, unit: "%")
@@ -216,7 +224,7 @@ private struct AlertSettings: View {
                     Text("An app stays above this GPU use for this long. Then that app is quiet for 60 min.")
                 }
                 Section {
-                    Toggle("Swap Used", isOn: model.binding(\.rules.swap.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.swap), isOn: model.binding(\.rules.swap.enabled, custom: false))
                     NumberRow(title: "Above", value: model.binding(\.rules.swap.percentOfMemory),
                               range: R.Swap.percentOfMemoryRange, step: 5, unit: "% of RAM")
                         .disabled(!rules.swap.enabled)
@@ -224,7 +232,7 @@ private struct AlertSettings: View {
                     Text("Swap reaches this share of memory. At most once per 60 min.")
                 }
                 Section {
-                    Toggle("Free Disk Space", isOn: model.binding(\.rules.freeSpace.enabled, custom: false))
+                    Toggle(RuleName.title(RuleName.freeSpace), isOn: model.binding(\.rules.freeSpace.enabled, custom: false))
                     NumberRow(title: "Below", value: model.binding(\.rules.freeSpace.percentFree),
                               range: R.FreeSpace.percentFreeRange, unit: "% free")
                         .disabled(!rules.freeSpace.enabled)
@@ -240,10 +248,11 @@ private struct AlertSettings: View {
     /// CPU % of one core as % of all cores, to one decimal.
     private static func share(_ percent: Double, _ cores: Double) -> Double { (percent / cores * 10).rounded() / 10 }
 
-    /// A byte value in whole `unit`s (GB or MB).
+    /// A byte value in whole `unit`s (GB or MB); a typed value too large for bytes is clamped, so validation rejects it.
     private func units(_ path: WritableKeyPath<DaemonSettings, Int64>, _ unit: Int64) -> Binding<Int> {
         let bytes = model.binding(path)
-        return Binding(get: { Int(bytes.wrappedValue / unit) }, set: { bytes.wrappedValue = Int64($0) * unit })
+        let limit = Int64.max / unit
+        return Binding(get: { Int(bytes.wrappedValue / unit) }, set: { bytes.wrappedValue = min(max(Int64($0), -limit), limit) * unit })
     }
 
     private func units(_ range: ClosedRange<Int64>, _ unit: Int64) -> ClosedRange<Int> {
@@ -355,7 +364,7 @@ private struct HelperSettings: View {
 }
 
 /// Why the daemon-backed controls are disabled, or why the last change was not applied.
-private struct DaemonProblem: View {
+struct DaemonProblem: View {
     @Environment(SettingsModel.self) private var model
 
     var body: some View {
@@ -372,7 +381,7 @@ private struct DaemonProblem: View {
 }
 
 /// A number with its unit, typed or stepped.
-private struct NumberRow<F: ParseableFormatStyle>: View where F.FormatOutput == String, F.FormatInput: Strideable {
+struct NumberRow<F: ParseableFormatStyle>: View where F.FormatOutput == String, F.FormatInput: Strideable {
     let title: String
     let value: Binding<F.FormatInput>
     let range: ClosedRange<F.FormatInput>

@@ -18,6 +18,10 @@ public enum MCPHandler {
         guard let message = json as? [String: Any] else {
             return reply(NSNull(), ["error": ["code": -32600, "message": "invalid request"]])
         }
+        // A number no Double holds (such as -1e400) parses to an infinity that JSONSerialization cannot write.
+        guard JSONSerialization.isValidJSONObject(message) else {
+            return reply(NSNull(), ["error": ["code": -32700, "message": "parse error"]])
+        }
         guard let id = message["id"], message["result"] == nil, message["error"] == nil else { return nil }
         guard let method = message["method"] as? String, !(id is NSNull) else {
             return reply(id, ["error": ["code": -32600, "message": "invalid request"]])
@@ -68,7 +72,10 @@ public enum MCPHandler {
     private static func reply(_ id: Any, _ body: [String: Any]) -> String {
         var body = body
         (body["jsonrpc"], body["id"]) = ("2.0", id)
-        let data = try! JSONSerialization.data(withJSONObject: body, options: [.sortedKeys, .withoutEscapingSlashes])
+        // `data` raises an exception, not an error, for an object it cannot write.
+        guard JSONSerialization.isValidJSONObject(body),
+              let data = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return #"{"error":{"code":-32603,"message":"internal error"},"id":null,"jsonrpc":"2.0"}"# }
         return String(decoding: data, as: UTF8.self)
     }
 }

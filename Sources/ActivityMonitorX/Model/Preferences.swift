@@ -8,12 +8,71 @@ enum MenuBarStyle: String {
     case text, chart
 }
 
+/// The screen the main window opens at: Last Screen, or one of the fixed ones.
+enum StartScreen: String, CaseIterable {
+    case last, apps, calendar, alerts, energy, disk, diskMap, hardware
+
+    var label: String {
+        switch self {
+        case .last: "Last Screen"
+        case .apps: "Apps"
+        case .calendar: "Calendar"
+        case .alerts: "Alerts"
+        case .energy: "Energy"
+        case .disk: "Disk"
+        case .diskMap: "Disk Map"
+        case .hardware: "Hardware"
+        }
+    }
+
+    var item: SidebarItem {
+        switch self {
+        case .last, .apps: .apps
+        case .calendar: .calendar
+        case .alerts: .alerts
+        case .energy: .energy
+        case .disk: .disk
+        case .diskMap: .diskMap
+        case .hardware: .hardware
+        }
+    }
+
+    /// Nil for a pinned app or a group: the last screen stays as it was.
+    init?(_ item: SidebarItem) {
+        guard let screen = Self.allCases.first(where: { $0 != .last && $0.item == item }) else { return nil }
+        self = screen
+    }
+}
+
+/// The time range the main window opens at: Last Used, or one of the quick ranges.
+enum StartRange: String, CaseIterable {
+    case last, live, hour, day, week, month, quarter
+
+    var label: String { self == .last ? "Last Used" : range.label }
+
+    var range: HistoryRange {
+        switch self {
+        case .live: .live
+        case .hour: .hour
+        case .week: .week
+        case .month: .month
+        case .quarter: .quarter
+        case .last, .day: .day
+        }
+    }
+
+    init(_ range: HistoryRange) {
+        self = Self.allCases.first { $0 != .last && $0.range == range } ?? .day
+    }
+}
+
 /// App choices kept in the app: the menu bar item (M4-D11), appearance and launch at login.
 @Observable @MainActor
 final class Preferences {
     enum Appearance: String, CaseIterable { case system, light, dark }
 
     private static let menuBarKey = "menuBarShown", appearanceKey = "appearance", styleKey = "menuBarStyle"
+    private static let openAtKey = "openAt", openRangeKey = "openRange", lastScreenKey = "lastScreen", lastRangeKey = "lastRange"
     private static let log = Logger(subsystem: AMX.bundleID, category: "preferences")
     /// Nil outside the app bundle (`swift run`): a login item needs the bundle.
     private static let service = Bundle.main.bundleIdentifier == AMX.bundleID ? SMAppService.mainApp : nil
@@ -30,6 +89,25 @@ final class Preferences {
             applyAppearance()
         }
     }
+
+    /// An unknown stored value reads as the default.
+    var openAt = StartScreen(rawValue: UserDefaults.standard.string(forKey: Preferences.openAtKey) ?? "") ?? .last {
+        didSet { UserDefaults.standard.set(openAt.rawValue, forKey: Self.openAtKey) }
+    }
+    var openRange = StartRange(rawValue: UserDefaults.standard.string(forKey: Preferences.openRangeKey) ?? "") ?? .last {
+        didSet { UserDefaults.standard.set(openRange.rawValue, forKey: Self.openRangeKey) }
+    }
+    /// The screen and quick range of the last session: what Last Screen and Last Used open at.
+    var lastScreen = StartScreen(rawValue: UserDefaults.standard.string(forKey: Preferences.lastScreenKey) ?? "") ?? .apps {
+        didSet { UserDefaults.standard.set(lastScreen.rawValue, forKey: Self.lastScreenKey) }
+    }
+    var lastRange = StartRange(rawValue: UserDefaults.standard.string(forKey: Preferences.lastRangeKey) ?? "") ?? .day {
+        didSet { UserDefaults.standard.set(lastRange.rawValue, forKey: Self.lastRangeKey) }
+    }
+    var startScreen: SidebarItem { (openAt == .last ? lastScreen : openAt).item }
+    var startRange: HistoryRange { (openRange == .last ? lastRange : openRange).range }
+    /// Set once the main window has opened at its start screen: reopening the window keeps what it shows.
+    var startApplied = false
 
     func applyAppearance() {
         NSApp.appearance = switch appearance {
