@@ -1,0 +1,24 @@
+{
+  "SPHardwareDataType": [
+    {"_name": "hardware_overview", "chip_type": "Apple M0", "machine_model": "Test0,1", "number_processors": "proc 15:10:5", "physical_memory": "32 GB",
+     "serial_number": "FAKE0000", "platform_UUID": "00000000-0000-0000-0000-000000000000", "provisioning_UDID": "FAKE-UDID"}
+  ],
+  "SPDisplaysDataType": [
+    {"_name": "Apple M0 GPU", "sppci_cores": "20", "spdisplays_vendor": "sppci_vendor_Apple",
+     "spdisplays_ndrvs": [
+       {"_name": "Test Display", "_spdisplays_resolution": "1920 x 1080", "spdisplays_supported": "spdisplays_supported", "spdisplays_online": true,
+        "_spdisplays_display-serial-number": "FAKE-DISPLAY", "spcamera_unique-id": "FAKE-CAMERA"}
+     ]}
+  ],
+  "SPPowerDataType": [
+    {"_name": "spbattery_information", "sppower_battery_serial_number": "FAKE-BATTERY", "sppower_battery_cycle_count": 42, "switch_uid_key": "FAKE-SWITCH"}
+  ],
+  "SPBluetoothDataType": [
+    {"controller_properties": {"controller_address": "00:00:00:00:00:00", "controller_state": "attrib_on"},
+     "device_connected": [
+       {"Test Phone": {"device_address": "00:00:00:00:00:01", "device_minorType": "Phone", "device_serialNumber": "FAKE-PHONE"}}
+     ]}
+  ],
+  "SPCameraDataType": [
+  ]
+}

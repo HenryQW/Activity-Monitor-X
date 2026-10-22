@@ -45,10 +45,8 @@ final class Preferences {
     /// The owner can change it in System Settings; Settings re-reads it when its window gains focus.
     func refreshLogin() {
         guard let service = Self.service else { return }
-        loginOn = Self.isOn(service)
+        // A never-registered app reads `notFound`, not `notRegistered` (Task 0 probe 6).
+        loginOn = [.enabled, .requiresApproval].contains(service.status)
         loginNeedsApproval = service.status == .requiresApproval
     }
-
-    /// A never-registered app reads `notFound`, not `notRegistered` (Task 0 probe 6).
-    private static func isOn(_ service: SMAppService) -> Bool { [.enabled, .requiresApproval].contains(service.status) }
 }

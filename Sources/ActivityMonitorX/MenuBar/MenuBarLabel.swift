@@ -37,6 +37,7 @@ struct MenuBarLabel: View {
         let p = readout.percents
         let cpu = p.map { "\($0.cpu)%" } ?? "…", pressure = p.map { "\($0.pressure)%" } ?? "…"
         Text("\(Image(systemName: "cpu")) \(cpu) \(Image(systemName: "memorychip")) \(pressure)")
+            .monospacedDigit()
             .accessibilityLabel(p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
             // Runs while the item is hidden too (Task 0 probe 3); two cheap reads every 5 s.
             .task { await readout.run() }

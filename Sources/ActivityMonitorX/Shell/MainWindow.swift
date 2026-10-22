@@ -8,11 +8,14 @@ struct MainWindow: View {
     /// The group waiting for the Delete confirmation.
     private let _deleting = State<ProcessGroup?>(initialValue: nil)
     private let _deleteError = State<String?>(initialValue: nil)
+    /// Whether the inspector was open before a System screen closed it.
+    private let _inspectorBeforeSystem = State(initialValue: false)
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var appSelection
     @Environment(GroupsModel.self) private var groups
     @Environment(AlertsModel.self) private var alerts
+    @Environment(DiskMapModel.self) private var diskMap
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -26,6 +29,14 @@ struct MainWindow: View {
                     Label("Alerts", systemImage: "exclamationmark.triangle")
                         .badge(alerts.unread)
                         .tag(SidebarItem.alerts)
+                }
+                Section("System") {
+                    Label("Disk", systemImage: "internaldrive")
+                        .tag(SidebarItem.disk)
+                    Label("Disk Map", systemImage: "square.grid.3x3.square")
+                        .tag(SidebarItem.diskMap)
+                    Label("Hardware", systemImage: "cpu")
+                        .tag(SidebarItem.hardware)
                 }
                 if let error = groups.loadError {
                     Section("Groups") {
@@ -77,10 +88,13 @@ struct MainWindow: View {
                 case .alerts: AlertsView()
                 case .pinned(let app): TimelineView(focus: app)
                 case .group(let id): TimelineView(focus: nil, group: groups.groups.first { $0.id == id })
+                case .disk: DiskView()
+                case .diskMap: DiskMapView()
+                case .hardware: HardwareView()
                 }
             }
             // A new id drops toolbar layouts saved before Metric moved to the centre.
-            .toolbar(id: "window") { MainToolbar(history: history, selection: appSelection) }
+            .toolbar(id: "window") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap) }
             .frame(minHeight: 480)
             // With the inspector open the window minimum is sidebar + this + twice the inspector's ideal width
             // (measured): 180 + 620 + 2 × 280 = 1360 pt, the width at which the toolbar fits with the inspector,
@@ -124,9 +138,10 @@ struct MainWindow: View {
         .alert("Cannot Delete Group",
                isPresented: Binding(get: { _deleteError.wrappedValue != nil }, set: { if !$0 { _deleteError.wrappedValue = nil } }),
                presenting: _deleteError.wrappedValue) { _ in } message: { Text($0) }
-        .onChange(of: appSelection.sidebar) { _, item in
+        .onChange(of: appSelection.sidebar) { old, item in
             if case .pinned(let app) = item { appSelection.app = app }
             scope(item)
+            keepInspector(leaving: old)
         }
         .onChange(of: groups.groups) {
             guard case .group(let id) = appSelection.sidebar else { return }
@@ -140,8 +155,21 @@ struct MainWindow: View {
         .onChange(of: appSelection.pinned) {
             if case .pinned(let app) = appSelection.sidebar, !appSelection.isPinned(app) { appSelection.sidebar = .timeline }
         }
-        // Activate after openWindow, or the window can open behind other apps (Task 0 probe 2).
+        // Activate after openWindow, or the window can open behind other apps (Task 0 probe 2). The menu bar label sets
+        // the same closure, but it does not exist while the item is hidden in Settings.
         .onAppear { appSelection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() } }
+    }
+
+    /// System screens have no inspector: it closes on entering one and comes back as it was on leaving.
+    private func keepInspector(leaving old: SidebarItem?) {
+        switch (old?.isSystem == true, appSelection.isSystem) {
+        case (false, true):
+            _inspectorBeforeSystem.wrappedValue = appSelection.inspectorShown
+            appSelection.inspectorShown = false
+        case (true, false) where _inspectorBeforeSystem.wrappedValue && !appSelection.inspectorShown:
+            WindowFit.toggleInspector(appSelection, score: history.scope != nil)
+        default: break
+        }
     }
 
     /// A group is shown by its Score; the Timeline never shows Score, so leaving a group resets it to CPU.

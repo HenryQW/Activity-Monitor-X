@@ -1,6 +1,5 @@
 import AMXCore
 import Foundation
-import GRDB
 import Observation
 import os
 
@@ -35,9 +34,9 @@ final class AlertsModel {
     private(set) var rules = AlertRules()
 
     private let client: DaemonClient
-    private var pool: DatabasePool?
+    private let history: HistoryModel
 
-    init(client: DaemonClient) { self.client = client }
+    init(client: DaemonClient, history: HistoryModel) { (self.client, self.history) = (client, history) }
 
     func run() async {
         await refreshRules()
@@ -68,7 +67,7 @@ final class AlertsModel {
     }
 
     private func load() async throws {
-        let pool = try openPool()
+        let pool = try history.openPool()
         let (rows, latest) = try await Task.detached {
             let reader = HistoryReader(pool: pool)
             return (try reader.alerts(limit: Self.limit), try reader.latestEventID())
@@ -83,7 +82,7 @@ final class AlertsModel {
     }
 
     private func poll() async throws {
-        let pool = try openPool()
+        let pool = try history.openPool()
         let after = alerts.first?.id ?? readThrough
         let new = try await Task.detached { try HistoryReader(pool: pool).alerts(after: after) }.value
         if !new.isEmpty {
@@ -100,11 +99,6 @@ final class AlertsModel {
         if let newest = new.last?.id, newest > notifiedThrough { notifiedThrough = newest }
         if !fresh.isEmpty { onNew?(fresh) }
         return fresh.count
-    }
-
-    private func openPool() throws -> DatabasePool {
-        if pool == nil { pool = try Store.openReader(path: AMX.databasePath) }
-        return pool!
     }
 }
 

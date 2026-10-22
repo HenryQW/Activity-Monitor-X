@@ -19,12 +19,6 @@ struct SignalRequest {
     init(app name: String, running: [NSRunningApplication], signal: Int32) { (target, self.signal) = (.app(name, running), signal) }
 
     var verb: String { signal == SIGKILL ? "Force Quit" : "Quit" }
-    var name: String {
-        switch target {
-        case .process(let p): p.name
-        case .app(let name, _): name
-        }
-    }
     var title: String {
         switch target {
         case .process(let p): "\(verb) “\(p.name)” (PID \(p.pid))?"

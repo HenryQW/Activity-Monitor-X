@@ -21,4 +21,12 @@ int camx_rusage(pid_t pid,
 /// with dlsym). -1 when the symbol is missing, else the call's result.
 pid_t camx_responsible_pid(pid_t pid);
 
+/// Reads the 512-byte NVMe SMART / Health log of the disk with BSD name
+/// `bsd_name`: finds its IOMedia, walks parents in the service plane to the
+/// entry with "NVMe SMART Capable" = Yes, and reads the log through the
+/// IONVMeSMARTUserClient plug-in. `out` is written only on success.
+/// Returns 0, or -1 no such disk, -2 no SMART entry (external, USB),
+/// -3 interface failed, -4 read failed.
+int camx_nvme_smart_read(const char *bsd_name, uint8_t out[512]);
+
 #endif

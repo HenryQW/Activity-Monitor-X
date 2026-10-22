@@ -174,6 +174,14 @@ private struct Rig {
         #expect(s["thermal_state_max"] as Double == 3)
     }
 
+    @Test func rollsDiskFree() throws {
+        let r = try Rig()
+        try r.exec("INSERT INTO system_samples(ts, disk_free) VALUES (\(b), 100), (\(b + 5), 300)")
+        try r.run(b + 125)
+        let s = try #require(try r.row("SELECT * FROM system_minute WHERE bucket = \(b)"))
+        #expect(s["disk_free_avg"] as Double == 200 && s["disk_free_max"] as Double == 300)
+    }
+
     @Test func rollupIsIdempotent() throws {
         let r = try Rig()
         for (i, cpu) in [5.0, 50, 20, 80].enumerated() { try r.raw(b + Double(i) * 17, cpu: cpu) }

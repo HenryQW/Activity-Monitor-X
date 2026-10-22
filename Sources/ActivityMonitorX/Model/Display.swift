@@ -31,10 +31,13 @@ extension Metric {
         switch self {
         case .cpu, .gpu, .score: (value / 100).formatted(.percent.precision(.fractionLength(1)))
         case .memory: Int64(value.rounded()).formatted(.byteCount(style: .memory))
-        case .disk, .network: Int64(value.rounded()).formatted(.byteCount(style: .file)) + "/s"
+        case .disk, .network: Metric.bytes(value) + "/s"
         case .energy: value.formatted(.number.precision(.fractionLength(1)))
         }
     }
+
+    /// Sizes on disk, as the system shows them.
+    static func bytes(_ value: Double) -> String { Int64(value.rounded()).formatted(.byteCount(style: .file)) }
 
     /// Axis ticks carry no decimals for percentages; the bubble and tables keep `format`.
     func axisLabel(_ value: Double) -> String {

@@ -5,8 +5,8 @@ import SwiftUI
 /// Stacked areas for the top apps + Other; hover shows a value bubble, drag selects a span.
 struct TimelineChart: View {
     private let points: [SeriesPoint]
-    /// `points` with the last bucket closed, as drawn.
-    private let drawn: [SeriesPoint]
+    /// `points` with the last bucket closed, as drawn: one vectorized plot, not a mark per point.
+    private let marks: [Mark]
     private let colors: [AppKey: Color]
     private let bucket: Double
     private let metric: Metric
@@ -30,9 +30,18 @@ struct TimelineChart: View {
          highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?) {
         (self.points, self.colors, self.bucket, self.metric, self.events, self.span, self.commitSpan)
             = (points, colors, bucket, metric, events, span, commitSpan)
-        drawn = AppSeries.closed(points, bucket: bucket)
         series = Self.series(points, colors: colors, highlighted: highlighted)
-        labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
+        let labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
+        self.labels = labels
+        // Stacked here, in point order (the first series at the bottom), so Charts does not stack 1800 values again.
+        var stack = (bucket: -Double.infinity, top: 0.0)
+        marks = AppSeries.closed(points, bucket: bucket).map { point in
+            if point.bucket != stack.bucket { stack = (point.bucket, 0) }
+            let low = stack.top
+            stack.top += point.value
+            return Mark(date: Self.date(point.bucket), low: low, high: stack.top, label: labels[point.app]!,
+                        value: point.value, metric: metric)
+        }
         byBucket = Dictionary(grouping: points, by: \.bucket)
         totals = byBucket.mapValues { $0.reduce(0) { $0 + $1.value } }
         let peak = totals.values.max() ?? 0
@@ -43,25 +52,15 @@ struct TimelineChart: View {
     var body: some View {
         let shownSpan = _drag.wrappedValue ?? span
         Chart {
-            ForEach(drawn.indices, id: \.self) { i in
-                AreaMark(x: .value("Time", Self.date(drawn[i].bucket)),
-                         y: .value(metric.label, drawn[i].value),
-                         stacking: .standard)
-                    .foregroundStyle(by: .value("App", labels[drawn[i].app]!))
-            }
+            AreaPlot(marks, x: .value("Time", \.date), yStart: .value(metric.label, \.low), yEnd: .value(metric.label, \.high),
+                     series: .value("App", \.label))
+                // VoiceOver and Audio Graph read each app's own value, not the stacked bounds.
+                .accessibilityLabel(\.label)
+                .accessibilityValue(\.valueText)
+                .foregroundStyle(by: .value("App", \.label))
             if let shownSpan {
                 RectangleMark(xStart: .value("Start", shownSpan.lowerBound), xEnd: .value("End", shownSpan.upperBound))
                     .foregroundStyle(Color.accentColor.opacity(0.15))
-            }
-            if let hover = _hover.wrappedValue,
-               let b = byBucket.keys.filter({ $0 <= hover.timeIntervalSince1970 }).max() {
-                RuleMark(x: .value("Time", hover))
-                    .foregroundStyle(.secondary)
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    .annotation(position: .trailing, alignment: .top, spacing: 6,
-                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                        bubble(bucket: b)
-                    }
             }
         }
         .chartForegroundStyleScale(domain: series.map(\.label), range: series.map(\.color))
@@ -93,7 +92,13 @@ struct TimelineChart: View {
         }
         .chartXSelection(value: _hover.projectedValue)
         .chartXSelection(range: dragBinding)
-        .chartOverlay { proxy in EventLane(events: events, proxy: proxy) }
+        .chartOverlay { proxy in
+            EventLane(events: events, proxy: proxy)
+            // Only this layer reads the hover, so a mouse move does not rebuild the areas.
+            HoverLayer(hover: _hover.projectedValue, proxy: proxy) { date in
+                byBucket.keys.filter { $0 <= date.timeIntervalSince1970 }.max().map(bubble)
+            }
+        }
         // Charts reports no drag end on macOS: commit once the range has not changed for 250 ms.
         .task(id: _drag.wrappedValue) {
             guard let drag = _drag.wrappedValue, let commitSpan,
@@ -117,7 +122,7 @@ struct TimelineChart: View {
         let zero = metric.format(0)
         let rows = AppSeries.bubbleRows(byBucket[b]!) { metric.format($0) == zero }
         return VStack(alignment: .leading, spacing: 3) {
-            Text("\(Self.date(b).formatted(timeFormat)) · \(metric.format(totals[b]!))")
+            Text("\(Self.date(b).formatted(.hover(bucket: bucket))) · \(metric.format(totals[b]!))")
                 .fontWeight(.semibold)
             ForEach(rows.indices, id: \.self) { i in
                 HStack(spacing: 5) {
@@ -130,18 +135,21 @@ struct TimelineChart: View {
                 }
             }
         }
-        .font(.caption)
-        .fixedSize()
-        .padding(8)
-        .glassEffect(.regular, in: .rect(cornerRadius: 10))
-    }
-
-    private var timeFormat: Date.FormatStyle {
-        if bucket >= 3600 { return .dateTime.month(.abbreviated).day().hour().minute() }
-        return bucket < 60 ? .dateTime.hour().minute().second() : .dateTime.hour().minute()
+        .hoverBubble()
     }
 
     private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
+
+    private struct Mark {
+        let date: Date
+        let low: Double
+        let high: Double
+        let label: String
+        let value: Double
+        let metric: Metric
+        /// Formatted only when read.
+        var valueText: String { metric.format(value) }
+    }
 
     private struct Series {
         let app: AppKey?
@@ -161,5 +169,47 @@ struct TimelineChart: View {
             used[app.name] = n
             return Series(app: app, label: n == 1 ? app.name : "\(app.name) (\(n))", color: shown)
         }
+    }
+}
+
+extension FormatStyle where Self == Date.FormatStyle {
+    /// A hover bubble's time: seconds below a minute bucket, the day from an hour bucket.
+    static func hover(bucket: Double) -> Date.FormatStyle {
+        if bucket >= 3600 { return .dateTime.month(.abbreviated).day().hour().minute() }
+        return bucket < 60 ? .dateTime.hour().minute().second() : .dateTime.hour().minute()
+    }
+}
+
+extension View {
+    /// The look of a chart's hover bubble.
+    func hoverBubble() -> some View {
+        font(.caption).fixedSize().padding(8).glassEffect(.regular, in: .rect(cornerRadius: 10))
+    }
+}
+
+/// The hover rule and value bubble over the plot; the bubble sits right of the rule and stays inside the plot. Only this
+/// layer reads the hover, so a mouse move does not rebuild the chart's marks.
+struct HoverLayer<Bubble: View>: View {
+    let hover: Binding<Date?>
+    let proxy: ChartProxy
+    let bubble: (Date) -> Bubble
+
+    var body: some View {
+        GeometryReader { geo in
+            if let date = hover.wrappedValue, let anchor = proxy.plotFrame, let x = proxy.position(forX: date) {
+                let plot = geo[anchor]
+                ZStack(alignment: .topLeading) {
+                    Path { path in
+                        path.move(to: CGPoint(x: plot.minX + x, y: plot.minY))
+                        path.addLine(to: CGPoint(x: plot.minX + x, y: plot.maxY))
+                    }
+                    .stroke(.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    bubble(date)
+                        .alignmentGuide(.leading) { d in -min(plot.minX + x + 6, plot.maxX - d.width) }
+                        .alignmentGuide(.top) { _ in -plot.minY }
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }

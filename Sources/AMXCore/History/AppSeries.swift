@@ -4,7 +4,7 @@ public struct SeriesPoint: Sendable {
     public let value: Double
 }
 
-public struct ProcessRank: Sendable, Identifiable {
+public struct ProcessRank: Sendable, Identifiable, Equatable {
     public var id: Int64 { processID }
     public let processID: Int64
     public let pid: Int32
@@ -17,7 +17,7 @@ public struct ProcessRank: Sendable, Identifiable {
     public let exited: Bool
 }
 
-public struct AppRank: Sendable, Identifiable {
+public struct AppRank: Sendable, Identifiable, Equatable {
     public var id: String { app.key }
     public let app: AppKey
     public let average: Double
@@ -147,7 +147,8 @@ public enum AppSeries {
                                    average: track.average(from: from, to: to), peak: perTrack[i]!.max()!,
                                    lastSeen: track.lastSeen, exited: track.lastSeen < exitedBefore)
             }
-            let sorted = procs.sorted { ($1.average, $0.pid) < ($0.average, $1.pid) }
+            // A reused pid ties on pid too: the start time keeps the order from depending on dictionary order.
+            let sorted = procs.sorted { ($1.average, $0.pid, $0.startTime) < ($0.average, $1.pid, $1.startTime) }
             return AppRank(app: app, average: procs.reduce(0) { $0 + $1.average }, peak: buckets.max()!, processes: sorted)
         }.sorted { ($1.average, $0.app.key) < ($0.average, $1.app.key) }
     }

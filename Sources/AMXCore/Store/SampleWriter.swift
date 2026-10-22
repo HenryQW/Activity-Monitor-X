@@ -197,7 +197,7 @@ public final class SampleWriter {
                            swapUsed: Int64(s.swapUsed), pressureLevel: Int64(s.pressureLevel),
                            pressurePct: s.pressurePct, thermalState: Int64(s.thermalState), load1: s.load1,
                            diskR: s.diskR, diskW: s.diskW, diskIops: s.diskIOPS, diskLatMs: s.diskLatMs,
-                           diskUtil: s.diskUtil, gpu: s.gpu, tempCpu: s.tempCPU, tempGpu: s.tempGPU,
-                           tempSsd: s.tempSSD, netIn: s.netIn, netOut: s.netOut)
+                           diskUtil: s.diskUtil, diskFree: s.diskFree.map(Int64.init), gpu: s.gpu, tempCpu: s.tempCPU,
+                           tempGpu: s.tempGPU, tempSsd: s.tempSSD, netIn: s.netIn, netOut: s.netOut)
     }
 }

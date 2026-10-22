@@ -28,8 +28,14 @@ enum WindowFit {
         if let window { grow(window, to: toolbarWidth(inspector: inspector, score: true)) }
     }
 
+    /// The main window, not minimized, hidden, fully covered, or on a locked screen. The menu bar panel and Settings
+    /// do not count.
+    static var windowShown: Bool {
+        window.map { $0.isVisible && $0.occlusionState.contains(.visible) } ?? false
+    }
+
     /// `Window(id: "main")` names its window "main" (measured).
-    private static var window: NSWindow? { NSApp.windows.first { $0.identifier?.rawValue == "main" } }
+    static var window: NSWindow? { NSApp.windows.first { $0.identifier?.rawValue == "main" } }
 
     private static func grow(_ window: NSWindow, to width: CGFloat) {
         guard window.frame.width < width, !window.styleMask.contains(.fullScreen),

@@ -62,6 +62,7 @@ public struct SystemSampleRecord: Codable, FetchableRecord, PersistableRecord, S
     public var diskIops: Double?
     public var diskLatMs: Double?
     public var diskUtil: Double?
+    public var diskFree: Int64?
     public var gpu: Double?
     public var tempCpu: Double?
     public var tempGpu: Double?
@@ -74,7 +75,7 @@ public struct SystemSampleRecord: Codable, FetchableRecord, PersistableRecord, S
         case memUsed = "mem_used", memCompressed = "mem_compressed", swapUsed = "swap_used"
         case pressureLevel = "pressure_level", pressurePct = "pressure_pct", thermalState = "thermal_state"
         case diskR = "disk_r", diskW = "disk_w", diskIops = "disk_iops", diskLatMs = "disk_lat_ms"
-        case diskUtil = "disk_util", tempCpu = "temp_cpu", tempGpu = "temp_gpu", tempSsd = "temp_ssd"
+        case diskUtil = "disk_util", diskFree = "disk_free", tempCpu = "temp_cpu", tempGpu = "temp_gpu", tempSsd = "temp_ssd"
         case netIn = "net_in", netOut = "net_out"
     }
 }

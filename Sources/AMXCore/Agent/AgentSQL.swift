@@ -69,7 +69,8 @@ public enum AgentSQL {
         minute, plus app (app_name, else name) and app_key (app_path, else name). v_raw, v_minute and v_hour are \
         process_samples, process_minute and process_hour rows plus pid, name, app, app_key, bundle_id, team_id. \
         Units: process cpu % of one core, system cpu % of all cores; mem, mem_used, mem_compressed, swap_used bytes; \
-        disk_r, disk_w, net_in, net_out bytes/s; energy energy impact; gpu % GPU.
+        disk_r, disk_w, net_in, net_out bytes/s; energy energy impact; gpu % GPU; disk_iops ops/s; \
+        disk_lat_ms ms per operation; disk_util % busy of the busiest disk; disk_free bytes free on the startup volume, purgeable not included.
         """,
         schema: AgentTools.schema([#""sql":{"type":"string"}"#], required: ["sql"])
     ) { (a: Arguments, context) -> Result in

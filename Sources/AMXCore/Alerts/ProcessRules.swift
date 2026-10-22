@@ -28,11 +28,16 @@ struct ProcessRules: Sendable {
     /// By app key; kept when the app's processes end, so a restarted app does not alert again at once.
     private var lastCPUAlert: [String: Double] = [:]
 
-    /// After a sleep every spell starts again, but the per-app re-arm keeps counting (M4-D5).
+    /// After a sleep every spell starts again, but the per-app re-arm and the grown processes keep counting (M4-D5).
     mutating func restartSpells() {
-        let kept = lastCPUAlert
+        let kept = lastCPUAlert, grown = processes.filter(\.value.grew)
         self = ProcessRules()
         lastCPUAlert = kept
+        processes = grown.mapValues { _ in
+            var p = Process()
+            p.grew = true
+            return p
+        }
     }
 
     var watchedProcesses: Int { processes.count }

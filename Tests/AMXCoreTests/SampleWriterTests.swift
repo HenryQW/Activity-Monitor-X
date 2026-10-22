@@ -134,6 +134,16 @@ private struct Rig {
         #expect(row?.tempCpu == 55 && row?.memUsed == 42 && row?.pressureLevel == 1)
     }
 
+    @Test func writesDiskFree() throws {
+        let r = try Rig()
+        var s = SystemSample()
+        s.diskFree = 42
+        try r.tick(1000, [], system: s)
+        try r.tick(1005, [])
+        let free = try r.db.read { try Row.fetchAll($0, sql: "SELECT disk_free FROM system_samples ORDER BY ts").map { $0[0] as Int64? } }
+        #expect(free == [42, nil])
+    }
+
     @Test func draftsCarryProcessID() throws {
         let r = try Rig()
         let unknown = ProcessIdentity(pid: 99, startTime: 1)

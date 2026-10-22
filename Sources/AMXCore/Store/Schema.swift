@@ -2,11 +2,14 @@ import GRDB
 
 public enum Schema {
     static let procMetrics = ["cpu", "mem", "disk_r", "disk_w", "energy", "gpu", "net_in", "net_out"]
-    static let sysMetrics = ["cpu", "mem_used", "mem_compressed", "swap_used", "pressure_level",
+    /// The columns migration v1 creates; later migrations add the rest of `sysMetrics`.
+    static let sysMetricsV1 = ["cpu", "mem_used", "mem_compressed", "swap_used", "pressure_level",
                              "pressure_pct", "thermal_state", "load1", "disk_r", "disk_w", "disk_iops",
                              "disk_lat_ms", "disk_util", "gpu", "temp_cpu", "temp_gpu", "temp_ssd",
                              "net_in", "net_out"]
-    private static let sysIntegers: Set = ["mem_used", "mem_compressed", "swap_used", "pressure_level", "thermal_state"]
+    static let sysMetrics = sysMetricsV1 + ["disk_free"]
+    private static let sysIntegers: Set = ["mem_used", "mem_compressed", "swap_used", "pressure_level", "thermal_state",
+                                           "disk_free"]
     static let maxOnly: Set = ["pressure_level", "thermal_state"]
     /// `processes.last_seen` of a process alive at the writer's last tick.
     static let open = Double.infinity
@@ -65,14 +68,14 @@ public enum Schema {
 
             try db.create(table: "system_samples") { t in
                 t.column("ts", .double).primaryKey()
-                for c in sysMetrics { t.column(c, sysIntegers.contains(c) ? .integer : .double) }
+                for c in sysMetricsV1 { t.column(c, sysIntegers.contains(c) ? .integer : .double) }
             }
             for tier in ["minute", "hour"] {
                 let table = "system_\(tier)"
                 try db.create(table: table) { t in
                     t.column("bucket", .double).primaryKey()
                     t.column("samples", .integer).notNull()
-                    for c in sysMetrics {
+                    for c in sysMetricsV1 {
                         if !maxOnly.contains(c) { t.column("\(c)_avg", .double) }
                         t.column("\(c)_max", .double)
                     }
@@ -120,6 +123,12 @@ public enum Schema {
                     DROP TABLE \(tier);
                     ALTER TABLE \(tier)_v2 RENAME TO \(tier);
                     """)
+            }
+        }
+        m.registerMigration("v3") { db in
+            try db.execute(sql: "ALTER TABLE system_samples ADD COLUMN disk_free INTEGER")
+            for tier in ["system_minute", "system_hour"] {
+                try db.execute(sql: "ALTER TABLE \(tier) ADD COLUMN disk_free_avg REAL; ALTER TABLE \(tier) ADD COLUMN disk_free_max REAL")
             }
         }
         return m

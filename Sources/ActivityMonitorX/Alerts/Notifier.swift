@@ -31,7 +31,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     func authorize() async {
         await refreshStatus()
         do {
-            let granted = try await center.requestAuthorization(options: [.alert, .sound])
+            let granted = try await center.requestAuthorization(options: [.alert])
             Self.log.notice("authorization granted: \(granted)")
         } catch {
             let error = error as NSError

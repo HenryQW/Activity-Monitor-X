@@ -111,3 +111,10 @@ struct AppTable: View {
         let processes: [Row]
     }
 }
+
+/// Equal inputs skip the body: in Live the timeline redraws every second, but the ranking changes every 5 s.
+extension AppTable: Equatable {
+    nonisolated static func == (a: AppTable, b: AppTable) -> Bool {
+        (a.ranking, a.colors, a.metric, a.shareTotal) == (b.ranking, b.colors, b.metric, b.shareTotal)
+    }
+}

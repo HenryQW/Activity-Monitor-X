@@ -16,6 +16,9 @@ final class Selection {
     /// The group open in the editor sheet; a new one is not in `GroupsModel.groups` yet.
     var editingGroup: ProcessGroup?
     var inspectorShown = false
+    /// View > Refresh (⌘R) on a System screen: the shown screen re-reads what it otherwise reads once.
+    var refreshes = 0
+    var isSystem: Bool { sidebar?.isSystem == true }
     /// Opens or fronts the main window; set by views that have `openWindow`, for notification clicks.
     var openMain: (() -> Void)?
     /// Sidebar search text as typed; filters the tables and Pinned Apps and dims the chart's other apps.

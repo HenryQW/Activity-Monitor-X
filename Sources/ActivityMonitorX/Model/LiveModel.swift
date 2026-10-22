@@ -1,6 +1,7 @@
 import AMXCore
 import Foundation
 import Observation
+import os
 
 @Observable @MainActor
 final class LiveModel {
@@ -8,51 +9,61 @@ final class LiveModel {
     private(set) var ranking: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
     /// Sparklines cost a second pass per 1 s rebuild, so they are built only while the Apps screen is shown.
-    var sparklinesShown = false { didSet { if sparklinesShown { Task { await rebuild() } } } }
+    var sparklinesShown = false { didSet { if sparklinesShown { rankedAt = -.infinity; Task { await rebuild() } } } }
     private(set) var state: LoadState = .loading
 
+    private static let log = Logger(subsystem: AMX.bundleID, category: "live")
     private let history: HistoryModel
+    private let selection: Selection
     let client: DaemonClient
-    private var snapshots: [LiveSnapshot] = []
-    /// Raw history up to the first snapshot of this Live visit, for the current metric.
-    private var backfill: [ProcessTrack] = []
+    /// This visit's tracks, from its snapshots and the raw history before them.
+    private var live = LiveTracks(metric: .cpu)
+    /// `live` scoped to the group, as last built.
     private var tracks: [ProcessTrack] = []
     private var end = 0.0
     /// Start of recorded time in the 5 min window: averages cover it only; the chart keeps the full 5 min.
     private var start = 0.0
+    /// The `end` of the last ranking: the table gets a new one every 5 s, the chart every second.
+    private var rankedAt = -Double.infinity
     private var generation = 0
     private var failures = 0
 
-    init(history: HistoryModel, client: DaemonClient = DaemonClient()) {
+    init(history: HistoryModel, selection: Selection, client: DaemonClient = DaemonClient()) {
         self.history = history
+        self.selection = selection
         self.client = client
     }
 
-    /// Runs while a window is open; polls once a second while the range is Live. Each visit to Live starts
-    /// afresh, so the backfill covers the time spent away.
+    /// Runs while a window is open; polls once a second while the range is Live, a window shows on screen and the screen
+    /// shows app data (a System screen reads its own data and must not wake amxd every second). Each
+    /// visit to Live, and each return to the screen, starts afresh, so the backfill covers the time away.
     func run() async {
         while !Task.isCancelled {
-            if history.range == .live { await poll() } else { snapshots = [] }
+            if history.range == .live, !selection.isSystem, WindowFit.windowShown { await poll() } else { live = LiveTracks(metric: history.metric) }
             try? await Task.sleep(for: .seconds(1))
         }
     }
 
-    /// Hides data of the old metric or filter and rebuilds from the snapshots at once.
+    /// Hides data of the old metric or filter and rebuilds at once; a new metric first loads its backfill.
     func settingsChanged() {
         state = .loading
+        rankedAt = -.infinity
         Task {
-            await loadBackfill()
+            if live.metric != history.metric { await loadBackfill() }
             await rebuild()
         }
     }
 
-    /// Without the history database Live still works; it then opens with only its own snapshots.
+    /// Without the history database Live still works; it then opens with only its own snapshots. After 5 min in Live
+    /// the raw history ends before the window, so it is not read.
     private func loadBackfill() async {
-        guard let first = snapshots.first else { return }
+        guard let first = live.start, let latest = live.latest else { return }
         let metric = history.metric
-        let raw = (try? await history.rawTracks(metric: metric, from: first.ts - HistoryRange.hour.seconds, to: first.ts)) ?? []
-        // A metric change during the read loads its own backfill.
-        if metric == history.metric { backfill = raw }
+        let raw = latest + 1 - 300 >= first ? []
+            : (try? await history.rawTracks(metric: metric, from: first - HistoryRange.hour.seconds, to: first)) ?? []
+        // A metric change or a new visit during the read loads its own backfill.
+        guard metric == history.metric, first == live.start, let latest = live.latest else { return }
+        live.reset(metric: metric, raw: raw, from: latest + 1 - 300)
     }
 
     /// Fetches a snapshot now instead of waiting for the next tick (after a Quit).
@@ -61,12 +72,14 @@ final class LiveModel {
     private func poll() async {
         do {
             guard let snapshot = try await client.live() else { return }
+            Self.log.debug("live poll: \(snapshot.processes.count) processes")
             failures = 0
             // The daemon repeats its latest snapshot for up to 3 s.
-            guard snapshot.ts > (snapshots.last?.ts ?? -.infinity) else { return }
-            let first = snapshots.isEmpty
-            snapshots.append(snapshot)
-            snapshots.removeAll { $0.ts <= snapshot.ts - 300 }
+            guard snapshot.ts > (live.latest ?? -.infinity) else { return }
+            let first = live.latest == nil
+            if first { live = LiveTracks(metric: history.metric) }
+            live.append(snapshot)
+            live.trim(before: snapshot.ts + 1 - 300)
             if first { await loadBackfill() }
             await rebuild()
         } catch {
@@ -76,26 +89,27 @@ final class LiveModel {
         }
     }
 
-    /// Builds off the main actor; a newer rebuild supersedes an older one still running.
+    /// Builds off the main actor; a newer rebuild supersedes an older one still running. Waits while a new metric's
+    /// backfill loads.
     private func rebuild() async {
-        guard let last = snapshots.last else { return }
+        guard let last = live.latest, live.metric == history.metric else { return }
         generation += 1
-        let (generation, snapshots, backfill, metric, scope, hideQuiet, withSparklines) =
-            (generation, snapshots, backfill, history.metric, history.scope, history.hidesQuiet, sparklinesShown)
-        let end = last.ts + 1
+        let end = last + 1
+        let withRanking = end - rankedAt >= 5
+        let (generation, all, metric, scope, hideQuiet, withSparklines) =
+            (generation, live.tracks, live.metric, history.scope, history.hidesQuiet, sparklinesShown)
         let built = await Task.detached {
-            let all = LiveTracks.backfilled(LiveTracks.build(snapshots, metric: metric), raw: backfill, from: end - 300)
             let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
             let from = AppSeries.recordedStart(all, from: end - 300)
             let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: end) : []
             return (tracks: tracks, start: from,
                     stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),
-                    ranking: AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last.ts),
-                    sparklines: withSparklines ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
+                    ranking: withRanking ? AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last) : [],
+                    sparklines: withRanking && withSparklines ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
         }.value
         guard generation == self.generation else { return }
-        (self.end, start, tracks, stacked, ranking, sparklines)
-            = (end, built.start, built.tracks, built.stacked, built.ranking, built.sparklines)
+        (self.end, start, tracks, stacked) = (end, built.start, built.tracks, built.stacked)
+        if withRanking { (rankedAt, ranking, sparklines) = (end, built.ranking, built.sparklines) }
         // A rebuild during an outage must not hide the error.
         if failures < 3 { state = .ready }
     }

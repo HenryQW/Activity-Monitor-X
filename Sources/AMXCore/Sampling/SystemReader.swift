@@ -12,6 +12,8 @@ public struct SystemSample: Sendable {
     public var diskIOPS = 0.0
     public var diskLatMs = 0.0
     public var diskUtil = 0.0
+    /// Bytes free on the startup volume, purgeable space not included; nil when `statfs` fails.
+    public var diskFree: UInt64?
     public var gpu = 0.0
     public var memUsed: UInt64 = 0
     public var memCompressed: UInt64 = 0
@@ -65,6 +67,8 @@ public final class SystemSampler {
         let disk = disks.read()
         if valid { addDiskRates(to: &s, current: disk, wall: wall) }
         previousDisks = disk
+        var fs = statfs()
+        if statfs("/", &fs) == 0 { s.diskFree = UInt64(fs.f_bavail) * UInt64(fs.f_bsize) }
 
         s.gpu = GPUReader.deviceUtilization()
         let temps = smc.read(now: now)
@@ -119,19 +123,8 @@ public final class SystemSampler {
 
     /// Sums the disks seen on both ticks; a newly attached disk starts at zero.
     private func addDiskRates(to s: inout SystemSample, current: [UInt64: DiskCounters], wall: Double) {
-        var ops: UInt64 = 0, nanos: UInt64 = 0
-        for (id, cur) in current {
-            guard let prev = previousDisks[id] else { continue }
-            let d = { (k: KeyPath<DiskCounters, UInt64>) in CPUMath.delta(cur[keyPath: k], prev[keyPath: k]) }
-            s.diskR += Double(d(\.readBytes)) / wall
-            s.diskW += Double(d(\.writeBytes)) / wall
-            ops += d(\.reads) + d(\.writes)
-            let busy = d(\.readNanos) + d(\.writeNanos)
-            nanos += busy
-            s.diskUtil = max(s.diskUtil, min(100, Double(busy) / (wall * 1e9) * 100))
-        }
-        s.diskIOPS = Double(ops) / wall
-        s.diskLatMs = DiskMath.latencyMs(timeDeltaNanos: nanos, opsDelta: ops)
+        let t = DiskMath.total(Array(DiskMath.rates(current: current, previous: previousDisks, wall: wall).values))
+        (s.diskR, s.diskW, s.diskIOPS, s.diskLatMs, s.diskUtil) = (t.readBps, t.writeBps, t.iops, t.latencyMs, t.utilPct)
     }
 
     // MARK: - CPU

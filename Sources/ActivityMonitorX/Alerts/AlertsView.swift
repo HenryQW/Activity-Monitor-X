@@ -59,7 +59,7 @@ struct AlertsView: View {
                     .bold(unread.contains(event.id))
             }
             .width(min: 120, ideal: 150, max: 180)
-            TableColumn("App") { event in
+            TableColumn("Source") { event in
                 Text(event.subject).bold(unread.contains(event.id))
             }
             .width(min: 100, ideal: 160, max: 260)

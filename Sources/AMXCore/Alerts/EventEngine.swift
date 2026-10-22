@@ -40,7 +40,8 @@ enum AlertLimits {
 }
 
 /// Owns every event rule. Pure: it sees only the tick's samples and keeps its state in memory.
-/// Steps fire on change from the last tick; the first tick only sets the baseline.
+/// Steps fire on change from the last tick; the first tick only sets the baseline. Re-arm state (CPU, growth,
+/// pressure) is in memory only, so after a daemon restart one repeat alert per busy app is possible.
 public struct EventEngine: Sendable {
     private var known: [ProcessIdentity: (name: String, app: AppInfo)] = [:]
     private var pressure: Int?

@@ -180,7 +180,7 @@ final class HistoryModel {
             .flatMap { glossary.lookup(name: $0.name, bundleID: $0.bundleID, path: $0.path) }
     }
 
-    private func openPool() throws -> DatabasePool {
+    func openPool() throws -> DatabasePool {
         if pool == nil { pool = try Store.openReader(path: AMX.databasePath) }
         return pool!
     }

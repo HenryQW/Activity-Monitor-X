@@ -159,6 +159,13 @@ public struct SystemPoint: Sendable {
     public let memUsed: Double
     public let pressureLevel: Int
     public let thermalState: Int
+    public let diskR: Double
+    public let diskW: Double
+    public let diskIOPS: Double
+    public let diskLatMs: Double
+    public let diskUtil: Double
+    /// Bytes free on the startup volume; nil when the bucket has no value.
+    public let diskFree: Double?
 }
 
 /// Words for a stored memory pressure level (the kernel's 1, 2, 4) and thermal state (0 to 3).
@@ -206,9 +213,13 @@ extension HistoryReader {
             table = source == .minute ? "system_minute" : "system_hour"
             (time, cpu, mem, pressure, thermal) = ("bucket", "cpu_avg", "mem_used_avg", "pressure_level_max", "thermal_state_max")
         }
+        let suffix = source == .raw ? "" : "_avg"
         let sql = """
             SELECT CAST((\(time) - ?1) / ?3 AS INTEGER) AS b,
-                   AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal
+                   AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal,
+                   AVG(disk_r\(suffix)) AS diskR, AVG(disk_w\(suffix)) AS diskW, AVG(disk_iops\(suffix)) AS diskIOPS,
+                   AVG(disk_lat_ms\(suffix)) AS diskLatMs, AVG(disk_util\(suffix)) AS diskUtil,
+                   AVG(disk_free\(suffix)) AS diskFree
             FROM \(table) WHERE \(time) >= ?1 AND \(time) < ?2
             GROUP BY b ORDER BY b
             """
@@ -216,7 +227,9 @@ extension HistoryReader {
             try Row.fetchAll(db, sql: sql, arguments: [start, end, bucket]).map {
                 SystemPoint(bucket: start + Double($0["b"] as Int) * bucket,
                             cpu: $0["cpu"] ?? 0, memUsed: $0["mem"] ?? 0,
-                            pressureLevel: $0["pressure"] ?? 0, thermalState: $0["thermal"] ?? 0)
+                            pressureLevel: $0["pressure"] ?? 0, thermalState: $0["thermal"] ?? 0,
+                            diskR: $0["diskR"] ?? 0, diskW: $0["diskW"] ?? 0, diskIOPS: $0["diskIOPS"] ?? 0,
+                            diskLatMs: $0["diskLatMs"] ?? 0, diskUtil: $0["diskUtil"] ?? 0, diskFree: $0["diskFree"])
             }
         }
     }

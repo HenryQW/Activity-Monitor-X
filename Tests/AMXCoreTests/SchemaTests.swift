@@ -26,7 +26,7 @@ private let tables = ["processes", "process_samples", "process_minute", "process
         }
         #expect(mode == "wal")
         #expect(vacuum == 2)
-        #expect(applied == ["v1", "v2"])
+        #expect(applied == ["v1", "v2", "v3"])
     }
 
     @Test func v2KeepsRawAndTierRows() throws {
@@ -54,6 +54,24 @@ private let tables = ["processes", "process_samples", "process_minute", "process
             ["[process_id:1 bucket:60.0 samples:60 cpu_avg:3.0 net_out_max:8.0]"],
             ["[process_id:1 bucket:3600.0 samples:60 mem_max:4.0]"],
         ])
+    }
+
+    @Test func v3AddsDiskFree() throws {
+        let columns = { (w: DatabaseQueue, table: String) in
+            try w.read { try Set(Row.fetchAll($0, sql: "PRAGMA table_info(\(table))").map { $0["name"] as String }) }
+        }
+        let fresh = try Store.openWriter(path: tempDB())
+        #expect(try columns(fresh, "system_samples").contains("disk_free"))
+        for tier in ["system_minute", "system_hour"] {
+            #expect(try columns(fresh, tier).isSuperset(of: ["disk_free_avg", "disk_free_max"]))
+        }
+        let path = tempDB()
+        let v2 = try DatabaseQueue(path: path)
+        try Schema.migrator.migrate(v2, upTo: "v2")
+        try v2.write { try $0.execute(sql: "INSERT INTO system_samples(ts, cpu) VALUES (7, 1)") }
+        try v2.close()
+        let row = try Store.openWriter(path: path).read { try Row.fetchOne($0, sql: "SELECT ts, cpu, disk_free FROM system_samples") }
+        #expect(row?.description == "[ts:7.0 cpu:1.0 disk_free:NULL]")
     }
 
     @Test func reopenIsIdempotent() throws {

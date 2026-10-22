@@ -185,6 +185,10 @@ private func randomTracks() -> [ProcessTrack] {
     let ranks = AppSeries.ranking(t, from: 0, to: 10, bucket: 10)
     #expect(ranks.map(\.app.key) == ["a", "b", "c"])
     #expect(ranks[0].processes.map(\.pid) == [2, 4])
+    // A reused pid with the same average: the earlier start first.
+    let reused = [9.0, 1].map { ProcessTrack(processID: 0, pid: 5, startTime: $0, name: "p", app: AppKey(key: "a", name: "a"),
+                                             slices: [Slice(start: 0, end: 10, value: 10)]) }
+    #expect(AppSeries.ranking(reused, from: 0, to: 10, bucket: 10)[0].processes.map(\.startTime) == [1, 9])
 
     let seven = (0..<7).map { track(Int64($0), "k\(6 - $0)", [(0, 10, 10)]) }
     let points = AppSeries.stacked(seven, from: 0, to: 10, bucket: 10)
@@ -211,7 +215,7 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
     func snap(_ ts: Double, _ pids: [Int32]) -> LiveSnapshot {
         LiveSnapshot(ts: ts, system: LiveSystem(cpu: 0, memUsed: 0, pressureLevel: 0, thermalState: 0), processes: pids.map(proc))
     }
-    let tracks = LiveTracks.build([snap(0, [1, 2]), snap(1, [1])], metric: .cpu)
+    let tracks = liveTracks([snap(0, [1, 2]), snap(1, [1])], metric: .cpu)
     let procs = AppSeries.ranking(tracks, from: 0, to: 2, bucket: 1, exitedBefore: 1)[0].processes
     #expect(procs.first { $0.pid == 1 }?.exited == false)
     #expect(procs.first { $0.pid == 2 }?.exited == true)
@@ -230,9 +234,15 @@ private func exited(lastSeen: Double, before: Double) -> Bool {
         ProcessTrack(processID: id, pid: pid, startTime: 7, name: "p", app: AppKey(key: "A", name: "A"),
                      slices: slices.map { Slice(start: $0.0, end: $0.1, value: 1) })
     }
+    func proc(_ pid: Int32) -> LiveProcess {
+        LiveProcess(pid: pid, startTime: 7, name: "p", appKey: "A", appName: "A", path: nil, cpu: 1,
+                    mem: 0, diskR: 0, diskW: 0, netIn: 0, netOut: 0, gpu: 0, energy: 0)
+    }
     let raw = [t(5, pid: 1, [(0, 50), (50, 100)]), t(6, pid: 2, [(60, 80)]), t(7, pid: 3, [(0, 40)])]
-    let live = [t(0, pid: 1, [(100, 101)]), t(0, pid: 4, [(100, 101)])]
-    let merged = LiveTracks.backfilled(live, raw: raw, from: 50)
+    var live = LiveTracks(metric: .cpu)
+    live.append(LiveSnapshot(ts: 100, system: LiveSystem(cpu: 0, memUsed: 0, pressureLevel: 0, thermalState: 0), processes: [proc(1), proc(4)]))
+    live.reset(metric: .cpu, raw: raw, from: 50)
+    let merged = live.tracks
     // pid 3 ended before `from`; pid 1 keeps one track with its raw slice first.
     #expect(merged.map(\.pid).sorted() == [1, 2, 4])
     #expect(merged.first { $0.pid == 1 }!.slices.map(\.start) == [50, 100])

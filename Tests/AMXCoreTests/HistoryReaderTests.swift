@@ -181,6 +181,19 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(day[0].cpu == 50 && day[0].pressureLevel == 4 && day[0].thermalState == 2)
     }
 
+    @Test func systemSeriesCarriesDisk() throws {
+        let r = try Rig(lastSeen: 0)
+        try r.db.write {
+            try $0.execute(sql: "INSERT INTO system_samples(ts, disk_r, disk_lat_ms, disk_free) VALUES (0, 10, 1, 100), (5, 30, 3, NULL)")
+            try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, disk_util_avg, disk_free_avg) VALUES (0, 12, 40, NULL)")
+        }
+        let reader = HistoryReader(pool: r.pool)
+        let raw = try reader.system(range: .hour, end: 3600)
+        #expect(raw[0].diskR == 20 && raw[0].diskLatMs == 2 && raw[0].diskFree == 100)
+        let day = try reader.system(range: .day, end: 86_400)
+        #expect(day[0].diskUtil == 40 && day[0].diskFree == nil)
+    }
+
     @Test func eventsInRangeWithApp() throws {
         let r = try Rig(lastSeen: 0)
         try r.db.write {

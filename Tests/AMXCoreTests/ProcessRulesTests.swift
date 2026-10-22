@@ -181,5 +181,11 @@ private struct Rig {
         var alerts = r.alerts("sustained_cpu", from: 0, to: 295) { _ in [(a, 100, gib)] }
         alerts += r.tick(350, [(a, 100, gib)]).filter { $0.rule == "sustained_cpu" }
         #expect(alerts.isEmpty)
+
+        var g = Rig()
+        let p = Proc.solo(2, "p")
+        let steady: (Double) -> [(Proc, cpu: Double, mem: UInt64)] = { t in [(p, 0, gib + 10 * mib * UInt64(t / 60))] }
+        #expect(g.alerts("memory_growth", from: 0, to: 1805, steady).count == 1)
+        #expect(g.alerts("memory_growth", from: 1860, to: 3800, steady).isEmpty)
     }
 }

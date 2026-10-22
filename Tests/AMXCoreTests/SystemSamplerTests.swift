@@ -23,6 +23,22 @@ import Testing
         #expect(DiskMath.latencyMs(timeDeltaNanos: 2_000_000, opsDelta: 4) == 0.5)
     }
 
+    @Test func perDiskRates() {
+        let zero = DiskCounters(bsdName: "disk0", readBytes: 0, writeBytes: 0, reads: 0, writes: 0, readNanos: 0, writeNanos: 0)
+        let a = DiskCounters(bsdName: "disk0", readBytes: 10_000_000, writeBytes: 5_000_000, reads: 100, writes: 100,
+                             readNanos: 100_000_000, writeNanos: 100_000_000)
+        var b = zero
+        b.bsdName = "disk1"
+        let rates = DiskMath.rates(current: [1: a, 2: b], previous: [1: zero], wall: 2)
+        #expect(rates == ["disk0": DiskRate(readBps: 5e6, writeBps: 2.5e6, iops: 100, latencyMs: 1, utilPct: 10)])
+    }
+
+    @Test func totalWeightsLatency() {
+        let t = DiskMath.total([DiskRate(readBps: 1, writeBps: 2, iops: 100, latencyMs: 1, utilPct: 10),
+                                DiskRate(readBps: 3, writeBps: 4, iops: 300, latencyMs: 3, utilPct: 60)])
+        #expect(t == DiskRate(readBps: 4, writeBps: 6, iops: 400, latencyMs: 2.5, utilPct: 60))
+    }
+
     @Test func systemSampleSmoke() async throws {
         let sampler = SystemSampler()
         _ = sampler.sample(now: Date().timeIntervalSince1970)
@@ -31,6 +47,7 @@ import Testing
         #expect([1, 2, 4].contains(s.pressureLevel))
         #expect((0...100).contains(s.cpu))
         #expect(s.memUsed > 0)
+        #expect((s.diskFree ?? 0) > 0)
         #expect((0...3).contains(s.thermalState))
     }
 

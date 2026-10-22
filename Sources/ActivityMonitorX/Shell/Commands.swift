@@ -5,6 +5,7 @@ import SwiftUI
 struct GoCommands: Commands {
     let selection: Selection
     let history: HistoryModel
+    let diskMap: DiskMapModel
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
@@ -14,6 +15,12 @@ struct GoCommands: Commands {
                 .keyboardShortcut("2")
             Button("Alerts") { selection.sidebar = .alerts }
                 .keyboardShortcut("3")
+            Button("Disk") { selection.sidebar = .disk }
+                .keyboardShortcut("4")
+            Button("Disk Map") { selection.sidebar = .diskMap }
+                .keyboardShortcut("5")
+            Button("Hardware") { selection.sidebar = .hardware }
+                .keyboardShortcut("6")
             Divider()
         }
         CommandGroup(after: .sidebar) {
@@ -21,7 +28,13 @@ struct GoCommands: Commands {
                 WindowFit.toggleInspector(selection, score: history.scope != nil)
             }
                 .keyboardShortcut("i", modifiers: [.command, .option])
+                .disabled(selection.isSystem)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
+                .disabled(selection.isSystem)
+            Divider()
+            Button("Refresh") { selection.refreshes += 1 }
+                .keyboardShortcut("r")
+                .disabled(!selection.isSystem || selection.sidebar == .diskMap && diskMap.target == nil)
         }
     }
 }
@@ -41,9 +54,10 @@ struct GroupCommands: Commands {
     }
 }
 
-/// Range and Metric menus mirror the toolbar pickers.
+/// Range and Metric menus mirror the toolbar pickers: System screens have no Metric, and only Disk has a Range.
 struct DataCommands: Commands {
     let history: HistoryModel
+    let selection: Selection
 
     var body: some Commands {
         CommandMenu("Range") {
@@ -51,12 +65,14 @@ struct DataCommands: Commands {
                 Toggle(range.label, isOn: Binding(get: { history.range == range }, set: { _ in history.range = range }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i))), modifiers: i == 0 ? .command : [.command, .option])
             }
+            .disabled(selection.isSystem && selection.sidebar != .disk)
         }
         CommandMenu("Metric") {
             ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
                 Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
             }
+            .disabled(selection.isSystem)
         }
     }
 }

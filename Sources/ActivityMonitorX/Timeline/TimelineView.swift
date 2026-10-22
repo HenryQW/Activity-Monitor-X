@@ -49,6 +49,7 @@ struct TimelineView: View {
                     if let span = history.span, !isLive { spanBar(span) }
                     AppTable(ranking: shown, colors: colors, metric: history.metric,
                              shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } })
+                        .equatable()
                 }
             }
         }

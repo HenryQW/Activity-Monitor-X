@@ -167,7 +167,6 @@ struct InspectorView: View {
         }
         // A solid bar, apart from the list, keeps the destructive buttons away from the app's name.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            let apps = selection.process == nil ? Self.running(rank.app) : []
             VStack(spacing: 0) {
                 Divider()
                 HStack {
@@ -176,7 +175,7 @@ struct InspectorView: View {
                         Button("Force Quit") { selection.signalRequest = SignalRequest(process: process, signal: SIGKILL) }
                     } else if let process = selection.process {
                         Text(process.exited ? "Process has exited" : "Cannot quit this process").foregroundStyle(.secondary)
-                    } else if !apps.isEmpty {
+                    } else if case let apps = Self.running(rank.app), !apps.isEmpty {
                         Button("Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGTERM) }
                         Button("Force Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGKILL) }
                     } else if rank.processes.allSatisfy(\.exited) {

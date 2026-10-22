@@ -22,14 +22,4 @@ import Testing
         #expect(EventMark.toNotify(rows, after: 1, now: now).map(\.id) == [3, 4])
         #expect(EventMark.toNotify(rows, after: 4, now: now).isEmpty)
     }
-
-    @Test func lookbackPerRule() {
-        let rules = AlertRules()
-        #expect(rules.lookback(rule: "sustained_cpu") == 300)
-        #expect(rules.lookback(rule: "memory_growth") == 1800)
-        #expect(rules.lookback(rule: "memory_jump") == 50)
-        #expect(rules.lookback(rule: "pressure") == 600)
-        #expect(rules.lookback(rule: "thermal") == 300)
-        #expect(rules.lookback(rule: "other") == 600)
-    }
 }
