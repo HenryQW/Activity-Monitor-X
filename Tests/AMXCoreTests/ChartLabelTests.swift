@@ -3,7 +3,7 @@ import Testing
 @testable import AMXCore
 
 private func event(_ kind: String, _ severity: Int, _ message: String) -> EventMark {
-    EventMark(ts: 0, kind: kind, severity: severity, message: message, app: nil)
+    EventMark(id: 0, ts: 0, kind: kind, severity: severity, message: message, app: nil, rule: nil)
 }
 
 @Test func nearEventsClusterUnderTheMostSevere() {

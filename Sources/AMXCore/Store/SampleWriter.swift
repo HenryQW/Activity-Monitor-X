@@ -21,6 +21,7 @@ public final class SampleWriter {
         let processes: [ProcessSample]
         let newProcesses: [(RawProcess, AppInfo, teamID: String?)]
         let system: SystemSample
+        let events: [EventDraft]
     }
 
     /// What the next tick compares against; applied only after its transaction commits.
@@ -32,8 +33,6 @@ public final class SampleWriter {
         /// `last_seen` of the processes that ended in the minute of the last tick, by id.
         var ended: [Int64: Double] = [:]
         var minute: Int?
-        var pressure: Int?
-        var thermal: Int?
     }
 
     private let db: DatabaseQueue
@@ -45,6 +44,8 @@ public final class SampleWriter {
     private var backfill: [String: String] = [:]
     /// New processes of a failed write; the sampler reports a process as new only once.
     private var pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)] = [:]
+    /// Events of a failed write; the engine sends each only once.
+    private var pendingEvents: [EventDraft] = []
     var ids: [ProcessIdentity: Int64] { state.ids }
 
     /// Closes the processes a previous writer left open at that writer's last minute; the ones still
@@ -66,8 +67,9 @@ public final class SampleWriter {
     }
 
     public func write(now: Double, processes: [ProcessSample],
-                      newProcesses: [(RawProcess, AppInfo, teamID: String?)], system: SystemSample) throws {
-        queued.append(Tick(now: now, processes: processes, newProcesses: newProcesses, system: system))
+                      newProcesses: [(RawProcess, AppInfo, teamID: String?)], system: SystemSample,
+                      events: [EventDraft] = []) throws {
+        queued.append(Tick(now: now, processes: processes, newProcesses: newProcesses, system: system, events: events))
         if queued.count >= ticksPerCommit { try flush() }
     }
 
@@ -92,9 +94,11 @@ public final class SampleWriter {
         do {
             try db.write { db in
                 var carried = pending
+                var carriedEvents = pendingEvents
                 for tick in ticks {
-                    try apply(tick, carrying: carried, to: &next, db)
+                    try apply(tick, carrying: carried, events: carriedEvents + tick.events, to: &next, db)
                     carried = [:]
+                    carriedEvents = []
                 }
                 for (path, team) in found {
                     try ProcessRecord.filter(Column("path") == path && Column("team_id") == nil)
@@ -107,15 +111,19 @@ public final class SampleWriter {
                 for n in ticks.flatMap(\.newProcesses) { pending[n.0.identity] = n }
                 pending = pending.filter { live.contains($0.key) }
             }
+            pendingEvents += ticks.flatMap(\.events)
             throw StoreError(path: path, underlying: error)
         }
-        if !ticks.isEmpty { pending = [:] }
+        if !ticks.isEmpty {
+            pending = [:]
+            pendingEvents = []
+        }
         backfill = [:]
         state = next
     }
 
     private func apply(_ tick: Tick, carrying pending: [ProcessIdentity: (RawProcess, AppInfo, teamID: String?)],
-                       to s: inout State, _ db: Database) throws {
+                       events: [EventDraft], to s: inout State, _ db: Database) throws {
         let now = tick.now
         let bucket = Int((now / 60).rounded(.down))
         let live = Set(tick.processes.map(\.identity))
@@ -156,13 +164,14 @@ public final class SampleWriter {
                                       diskW: p.diskW, netIn: p.netIn, netOut: p.netOut)
         }
         try Self.record(tick.system, now: now).insert(db)
-        try Self.events(tick.system, now: now, processes: tick.processes, state: s).forEach { try $0.insert(db) }
+        for e in events {
+            try EventRecord(ts: e.ts, kind: e.kind, severity: e.severity, processId: e.identity.flatMap { s.ids[$0] },
+                            rule: e.rule, message: e.message, value: e.value).insert(db)
+        }
         s.minute = bucket
         s.ids = s.ids.filter { live.contains($0.key) }
         s.last = s.last.filter { live.contains($0.key) }
         s.lastSeen = s.lastSeen.filter { live.contains($0.key) }
-        s.pressure = tick.system.pressureLevel
-        s.thermal = tick.system.thermalState
     }
 
     private static func fetchId(_ db: Database, _ identity: ProcessIdentity) throws -> Int64? {
@@ -190,23 +199,5 @@ public final class SampleWriter {
                            diskR: s.diskR, diskW: s.diskW, diskIops: s.diskIOPS, diskLatMs: s.diskLatMs,
                            diskUtil: s.diskUtil, gpu: s.gpu, tempCpu: s.tempCPU, tempGpu: s.tempGPU,
                            tempSsd: s.tempSSD, netIn: s.netIn, netOut: s.netOut)
-    }
-
-    /// Events fire on change from the last written level; the first tick only sets the baseline.
-    private static func events(_ s: SystemSample, now: Double, processes: [ProcessSample],
-                               state: State) -> [EventRecord] {
-        var out: [EventRecord] = []
-        if let lastPressure = state.pressure, lastPressure != s.pressureLevel {
-            let top = processes.max { $0.mem < $1.mem }.flatMap { state.ids[$0.identity] }
-            out.append(EventRecord(ts: now, kind: "pressure", severity: [1: 0, 2: 1, 4: 2][s.pressureLevel] ?? 0,
-                                   processId: top, message: "Memory pressure \(SystemState.pressure(s.pressureLevel))",
-                                   value: s.pressurePct))
-        }
-        if let lastThermal = state.thermal, lastThermal != s.thermalState {
-            out.append(EventRecord(ts: now, kind: "thermal", severity: s.thermalState,
-                                   message: "Thermal state \(SystemState.thermal(s.thermalState))",
-                                   value: Double(s.thermalState)))
-        }
-        return out
     }
 }

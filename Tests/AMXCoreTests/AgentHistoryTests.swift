@@ -32,7 +32,15 @@ private func call(_ tool: String, _ arguments: String) throws -> [String: Any] {
         let events = try #require(try call("events", #"{"from":"-1h","kind":"pressure"}"#)["events"] as? [[String: Any]])
         #expect(events.count == 1)
         #expect(events.first?["app"] as? String == "mds_stores")
-        #expect((try call("events", "")["events"] as? [Any])?.count == 2)
+        #expect((try call("events", "")["events"] as? [Any])?.count == 3)
+    }
+
+    @Test func eventsToolShowsRule() throws {
+        let events = try #require(try call("events", #"{"from":"-1h","kind":"alert"}"#)["events"] as? [[String: Any]])
+        #expect(events.count == 1)
+        #expect(events.first?["rule"] as? String == "sustained_cpu" && events.first?["app"] as? String == "Safari")
+        let steps = try #require(try call("events", #"{"from":"-1h","kind":"thermal"}"#)["events"] as? [[String: Any]])
+        #expect(steps.first?["rule"] == nil)
     }
 
     @Test func summarizeSpan() throws {
@@ -42,7 +50,7 @@ private func call(_ tool: String, _ arguments: String) throws -> [String: Any] {
         #expect(system["pressure_max"] as? String == "warning")
         let top = try #require(out["top"] as? [String: [[String: Any]]])
         #expect(top["cpu"]?.first?["app"] as? String == "Safari")
-        #expect(out["event_counts"] as? [String: Int] == ["pressure": 1, "thermal": 1])
+        #expect(out["event_counts"] as? [String: Int] == ["alert": 1, "pressure": 1, "thermal": 1])
     }
 
     @Test func badArguments() {

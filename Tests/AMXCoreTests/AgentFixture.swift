@@ -2,7 +2,7 @@ import Foundation
 import GRDB
 @testable import AMXCore
 
-/// Two hours of three processes, an hour of system samples, two events and two groups. Safari is open.
+/// Two hours of three processes, an hour of system samples, three events and two groups. Safari is open.
 enum AgentFixture {
     static let now = 1_792_656_000.0
     static let device = Device(cores: 10, memory: 17_179_869_184)
@@ -28,13 +28,14 @@ enum AgentFixture {
              10, 536_870_912),
         ]
         try writer.write { db in
-            var mds: Int64 = 0
+            var mds: Int64 = 0, safari: Int64 = 0
             for (i, (record, cpu, mem)) in processes.enumerated() {
                 var record = record
                 record.pid = Int32(100 + i)
                 try record.insert(db)
                 let id = db.lastInsertedRowID
                 if record.name == "mds_stores" { mds = id }
+                if record.name == "Safari" { safari = id }
                 for t in stride(from: now - 7200, to: now, by: 60) {
                     try db.execute(sql: """
                         INSERT INTO process_minute(bucket, process_id, samples, cpu_avg, cpu_max, mem_avg, mem_max)
@@ -49,6 +50,8 @@ enum AgentFixture {
             }
             try EventRecord(ts: now - 1800, kind: "pressure", severity: 1, processId: mds, message: "Memory pressure warning").insert(db)
             try EventRecord(ts: now - 900, kind: "thermal", severity: 1, message: "Thermal state fair").insert(db)
+            try EventRecord(ts: now - 600, kind: "alert", severity: 1, processId: safari, rule: "sustained_cpu",
+                            message: "Safari used 100 % CPU for 5 min").insert(db)
         }
         let pool = try Store.openReader(path: path, prepare: AgentSQL.views)
         let groups = [

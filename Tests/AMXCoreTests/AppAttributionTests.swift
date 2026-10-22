@@ -48,6 +48,16 @@ import Testing
         #expect(info.appPath == "/System/Applications/Calculator.app")
     }
 
+    @Test func customTerminalList() {
+        let custom = AppAttribution.app(forExecutable: "/bin/zsh", processName: "zsh", responsiblePath: Self.calculator,
+                                        terminals: ["com.apple.calculator"])
+        #expect(custom.appPath == nil)
+        #expect(custom.appName == "zsh")
+        let standard = AppAttribution.app(forExecutable: "/bin/zsh", processName: "zsh", responsiblePath: Self.calculator,
+                                          terminals: AppAttribution.defaultTerminalBundleIDs)
+        #expect(standard.appName == "Calculator")
+    }
+
     @Test func responsibleOutsideBundleUsesPath() {
         let info = AppAttribution.app(forExecutable: "/bin/zsh", processName: "zsh", responsiblePath: "/usr/sbin/sshd")
         #expect(info.appPath == nil)

@@ -11,15 +11,16 @@ public enum AppAttribution {
     private static let cache = PathCache<AppInfo>()
 
     /// Apps whose children keep their own path-based app (shells and CLI tools started in a terminal).
-    public static let terminalBundleIDs: Set<String> = [
+    public static let defaultTerminalBundleIDs: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty", "com.kk2.rootshell",
     ]
 
     /// The responsible process's app when it lies in an `.app` that is not a terminal, else the path rule.
-    public static func app(forExecutable path: String?, processName: String, responsiblePath: String?) -> AppInfo {
+    public static func app(forExecutable path: String?, processName: String, responsiblePath: String?,
+                           terminals: Set<String> = defaultTerminalBundleIDs) -> AppInfo {
         if responsiblePath?.contains(".app/") == true {
             let responsible = app(forExecutable: responsiblePath, processName: processName)
-            if !terminalBundleIDs.contains(responsible.bundleID ?? "") { return responsible }
+            if !terminals.contains(responsible.bundleID ?? "") { return responsible }
         }
         return app(forExecutable: path, processName: processName)
     }

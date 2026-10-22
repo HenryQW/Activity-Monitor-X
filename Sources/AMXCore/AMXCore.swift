@@ -5,6 +5,7 @@ public enum AMX {
     public static let cliID = "com.henryqw.activitymonitorx.amx"
     public static let daemonLabel = "com.henryqw.activitymonitorx.daemon"
     public static let databasePath = "/Library/Application Support/ActivityMonitorX/history.sqlite"
+    public static let settingsPath = "/Library/Application Support/ActivityMonitorX/settings.json"
     public static let tick: TimeInterval = 5
     /// Every commit rewrites the last page of each table it touches, so commits set amxd's disk writes.
     public static let ticksPerCommit = 3

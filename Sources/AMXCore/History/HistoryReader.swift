@@ -160,11 +160,14 @@ public enum SystemState {
 }
 
 public struct EventMark: Sendable {
+    public let id: Int64
     public let ts: Double
     public let kind: String
     public let severity: Int
     public let message: String
     public let app: AppKey?
+    /// Set on an alert (M4-D2).
+    public let rule: String?
 }
 
 extension HistoryReader {
@@ -199,15 +202,34 @@ extension HistoryReader {
     }
 
     public func events(from: Double, to: Double) throws -> [EventMark] {
+        try marks("WHERE e.ts >= ? AND e.ts < ? ORDER BY e.ts, e.id", [from, to])
+    }
+
+    /// Alerts (rows with a rule), newest first.
+    public func alerts(limit: Int) throws -> [EventMark] {
+        try marks("WHERE e.rule IS NOT NULL ORDER BY e.id DESC LIMIT ?", [limit])
+    }
+
+    /// Alerts newer than `id`, oldest first.
+    public func alerts(after id: Int64) throws -> [EventMark] {
+        try marks("WHERE e.rule IS NOT NULL AND e.id > ? ORDER BY e.id", [id])
+    }
+
+    /// 0 when there are no events.
+    public func latestEventID() throws -> Int64 {
+        try pool.read { try Int64.fetchOne($0, sql: "SELECT COALESCE(MAX(id), 0) FROM events") ?? 0 }
+    }
+
+    private func marks(_ clause: String, _ arguments: StatementArguments) throws -> [EventMark] {
         try pool.read { db in
             try Row.fetchAll(db, sql: """
-                SELECT e.ts, e.kind, e.severity, e.message, p.name, p.app_path, p.app_name
-                FROM events e LEFT JOIN processes p ON p.id = e.process_id
-                WHERE e.ts >= ? AND e.ts < ? ORDER BY e.ts, e.id
-                """, arguments: [from, to]).map { row in
+                SELECT e.id, e.ts, e.kind, e.severity, e.rule, e.message, p.name, p.app_path, p.app_name
+                FROM events e LEFT JOIN processes p ON p.id = e.process_id \(clause)
+                """, arguments: arguments).map { row in
                 let name: String? = row["name"]
                 let app = name.map { AppKey(key: row["app_path"] ?? $0, name: row["app_name"] ?? $0) }
-                return EventMark(ts: row["ts"], kind: row["kind"], severity: row["severity"], message: row["message"], app: app)
+                return EventMark(id: row["id"], ts: row["ts"], kind: row["kind"], severity: row["severity"],
+                                 message: row["message"], app: app, rule: row["rule"])
             }
         }
     }

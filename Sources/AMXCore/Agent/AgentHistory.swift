@@ -4,7 +4,7 @@ import Foundation
 enum AgentHistory {
     static let tools = [topApps, appHistory, events, summarize]
     static let maxEvents = 500
-    static let kinds = ["pressure", "thermal"]
+    static let kinds = [EventKind.pressure, EventKind.thermal, EventKind.alert]
 
     private static let recordedFrom = """
         from in the output is where recording began when that is later than the requested start.
@@ -100,7 +100,7 @@ enum AgentHistory {
     // MARK: events
 
     struct EventsArguments: Decodable { let from, to: AgentTools.Time?; let kind: String? }
-    struct Event: Encodable { let t: Date; let kind: String; let severity: Int; let message: String; let app: String? }
+    struct Event: Encodable { let t: Date; let kind: String; let severity: Int; let message: String; let app: String?; let rule: String? }
     struct Events: Encodable { let events: [Event]; let truncated: Bool }
 
     static let events = AgentTools.Tool(
@@ -108,7 +108,10 @@ enum AgentHistory {
         """
         Events in the window, oldest first, at most \(maxEvents); truncated is true when more matched. \
         kind is pressure (memory pressure; severity 0 normal, 1 warning, 2 critical) or thermal \
-        (severity 0 nominal, 1 fair, 2 serious, 3 critical). app is the app of the process, if any. \(AgentTools.times)
+        (severity 0 nominal, 1 fair, 2 serious, 3 critical), or alert. An alert is any event with a rule; \
+        pressure alerts are kind \(EventKind.pressure) with rule \(RuleName.pressure); kind \(EventKind.alert) holds \
+        the process rules and the sustained thermal state rule. Rules: \(RuleName.all.joined(separator: ", ")) \
+        (alert severity 1 warning, 2 critical). app is the app of the process, if any. \(AgentTools.times)
         """,
         schema: AgentTools.schema([AgentTools.timeProperties,
                                    #""kind":{"type":"string","enum":["# + kinds.map { "\"\($0)\"" }.joined(separator: ",") + "]}"])
@@ -117,7 +120,7 @@ enum AgentHistory {
         let w = try AgentTools.window(from: a.from, to: a.to, context: context)
         let marks = try context.reader.events(from: w.from, to: w.to).filter { a.kind == nil || $0.kind == a.kind }
         return Events(events: marks.prefix(maxEvents).map {
-            Event(t: date($0.ts), kind: $0.kind, severity: $0.severity, message: $0.message, app: $0.app?.name)
+            Event(t: date($0.ts), kind: $0.kind, severity: $0.severity, message: $0.message, app: $0.app?.name, rule: $0.rule)
         }, truncated: marks.count > maxEvents)
     }
 

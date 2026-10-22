@@ -25,6 +25,13 @@ import Testing
         #expect(SignalPolicy.checkIdentity(pid: me.pid, startTime: me.startTime - 1) == ESRCH)
     }
 
+    @Test func pingJSONShape() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let json = try encoder.encode(DaemonPing(version: 2, uptime: 5, db: "/x", pid: 9))
+        #expect(String(decoding: json, as: UTF8.self) == #"{"db":"/x","pid":9,"uptime":5,"version":2}"#)
+    }
+
     @Test func requirementStringExact() {
         #expect(SigningRequirement.string(leafSHA1Hex: "abc123") ==
             #"(identifier "com.henryqw.activitymonitorx" or identifier "com.henryqw.activitymonitorx.amx") and certificate leaf = H"abc123""#)

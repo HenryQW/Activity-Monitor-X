@@ -4,12 +4,14 @@ public enum DaemonClientError: LocalizedError, Equatable {
     case unreachable(String)
     case refused(Int32)
     case timeout
+    case rejected(String)
 
     public var errorDescription: String? {
         switch self {
         case .unreachable(let reason): "amxd is not reachable: \(reason)"
         case .refused(let code): String(cString: strerror(code))
         case .timeout: "amxd did not reply."
+        case .rejected(let problem): problem
         }
     }
 }
@@ -25,6 +27,22 @@ public final class DaemonClient: @unchecked Sendable {
     init(machServiceName: String) { self.machServiceName = machServiceName }
 
     deinit { connection?.invalidate() }
+
+    public func ping() async throws -> DaemonPing {
+        let json: String = try await call { proxy, reply in proxy.ping { reply($0) } }
+        return try JSONDecoder().decode(DaemonPing.self, from: Data(json.utf8))
+    }
+
+    public func settings() async throws -> DaemonSettings {
+        let data: Data = try await call { proxy, reply in proxy.settings { reply($0) } }
+        return try DaemonSettings.decodeValidated(data)
+    }
+
+    public func setSettings(_ s: DaemonSettings) async throws {
+        let json = try s.encoded()
+        let problem: String? = try await call { proxy, reply in proxy.setSettings(json) { reply($0) } }
+        if let problem { throw DaemonClientError.rejected(problem) }
+    }
 
     public func live() async throws -> LiveSnapshot? {
         let data: Data? = try await call { proxy, reply in proxy.live { reply($0) } }

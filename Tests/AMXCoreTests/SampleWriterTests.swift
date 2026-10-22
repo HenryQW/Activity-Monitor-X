@@ -134,32 +134,37 @@ private struct Rig {
         #expect(row?.tempCpu == 55 && row?.memUsed == 42 && row?.pressureLevel == 1)
     }
 
-    @Test func pressureEventOnlyOnChange() throws {
+    @Test func draftsCarryProcessID() throws {
         let r = try Rig()
-        try r.tick(1000, [sample(idA, mem: 5), sample(idB, mem: 9)], new: [idA, idB])
-        var t = 1005.0
-        for level in [1, 1, 2, 2, 4] {
-            var s = SystemSample()
-            s.pressureLevel = level
-            try r.tick(t, [sample(idA, mem: 5), sample(idB, mem: 9)], system: s)
-            t += 5
+        let unknown = ProcessIdentity(pid: 99, startTime: 1)
+        let drafts = [idA, unknown].map {
+            EventDraft(ts: 1000, kind: EventKind.alert, severity: 1, identity: $0, rule: "memory_jump",
+                       message: "p jumped by 1.5 GB", value: 1_610_612_736)
         }
-        let events = try r.db.read { try EventRecord.fetchAll($0, sql: "SELECT * FROM events ORDER BY id") }
-        #expect(events.count == 2)
-        #expect(events.map(\.severity) == [1, 2])
-        let topId = try r.db.read { try Int64.fetchOne($0, sql: "SELECT id FROM processes WHERE pid = 11") }
-        #expect(events.last?.processId == topId)
-        #expect(events.last?.kind == "pressure" && events.last?.message == "Memory pressure critical")
+        try r.writer.write(now: 1000, processes: [sample()], newProcesses: [raw(idA)], system: SystemSample(),
+                           events: drafts)
+        let rows = try r.db.read { try EventRecord.fetchAll($0, sql: "SELECT * FROM events ORDER BY id") }
+        let idOfA = try r.db.read { try Int64.fetchOne($0, sql: "SELECT id FROM processes WHERE pid = 10") }
+        #expect(rows.map(\.processId) == [idOfA, nil])
+        #expect(rows.allSatisfy { $0.rule == "memory_jump" && $0.value == 1_610_612_736 && $0.message == "p jumped by 1.5 GB" })
     }
 
-    @Test func thermalEventOnChange() throws {
+    @Test func failedWriteKeepsDrafts() throws {
         let r = try Rig()
-        try r.tick(1000, [])
-        var s = SystemSample()
-        s.thermalState = 2
-        try r.tick(1005, [], system: s)
-        let e = try r.db.read { try EventRecord.fetchOne($0) }
-        #expect(e?.kind == "thermal" && e?.severity == 2 && e?.processId == nil)
+        func draft(_ ts: Double, _ id: ProcessIdentity?) -> EventDraft {
+            EventDraft(ts: ts, kind: EventKind.thermal, severity: 2, identity: id, rule: nil, message: "m", value: 2)
+        }
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 1") }
+        #expect(throws: StoreError.self) {
+            try r.writer.write(now: 1000, processes: [sample()], newProcesses: [raw(idA)], system: SystemSample(),
+                               events: [draft(1000, idA)])
+        }
+        try r.db.writeWithoutTransaction { try $0.execute(sql: "PRAGMA query_only = 0") }
+        try r.writer.write(now: 1005, processes: [sample()], newProcesses: [], system: SystemSample(),
+                           events: [draft(1005, nil)])
+        let rows = try r.db.read { try EventRecord.fetchAll($0, sql: "SELECT * FROM events ORDER BY id") }
+        let idOfA = try r.db.read { try Int64.fetchOne($0, sql: "SELECT id FROM processes WHERE pid = 10") }
+        #expect(rows.map(\.ts) == [1000, 1005] && rows.map(\.processId) == [idOfA, nil])
     }
 
     @Test func failedWriteKeepsNewProcesses() throws {

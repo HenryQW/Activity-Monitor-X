@@ -194,6 +194,27 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(e.map(\.ts) == [10, 20])
         #expect(e[0].app == AppKey(key: "/A.app", name: "A") && e[1].app == nil)
     }
+
+    @Test func alertsAreRuleRows() throws {
+        let r = try Rig(lastSeen: 0)
+        let reader = HistoryReader(pool: r.pool)
+        #expect(try reader.latestEventID() == 0)
+        try r.db.write {
+            try $0.execute(sql: "UPDATE processes SET app_path = '/Applications/Safari.app', app_name = 'Safari' WHERE id = ?",
+                           arguments: [r.pid])
+            try $0.execute(sql: """
+                INSERT INTO events(id, ts, kind, severity, process_id, rule, message) VALUES
+                (1, 10, 'pressure', 1, NULL, NULL, 'step'), (2, 20, 'pressure', 1, NULL, 'pressure', 'alert'),
+                (3, 30, 'alert', 1, ?, 'sustained_cpu', 'busy')
+                """, arguments: [r.pid])
+        }
+        let newest = try reader.alerts(limit: 10)
+        #expect(newest.map(\.id) == [3, 2])
+        #expect(newest[0].app?.key == "/Applications/Safari.app" && newest[0].rule == "sustained_cpu")
+        #expect(try reader.alerts(after: 2).map(\.id) == [3])
+        #expect(try reader.alerts(limit: 1).map(\.id) == [3])
+        #expect(try reader.latestEventID() == 3)
+    }
 }
 
 @Test func trackCarriesExecutablePath() throws {

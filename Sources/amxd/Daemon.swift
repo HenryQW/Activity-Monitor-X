@@ -31,6 +31,10 @@ final class Daemon: @unchecked Sendable {
     /// Team ID per executable path; nil means unsigned or no team.
     private var teamIDs: [String: String?] = [:]
     private var backfill = TeamIDBackfill()
+    private var engine = EventEngine()
+    private let settingsURL = URL(fileURLWithPath: AMX.settingsPath)
+    /// Read and replaced on `queue` only.
+    private var settings = DaemonSettings()
     private var ticks = 0
     private var timer: DispatchSourceTimer?
     private var sigterm: DispatchSourceSignal?
@@ -50,6 +54,12 @@ final class Daemon: @unchecked Sendable {
         writer = try SampleWriter(db: db, path: dbPath, ticksPerCommit: AMX.ticksPerCommit)
         self.xpc = xpc
         self.dbPath = dbPath
+        do {
+            settings = try DaemonSettings.load(from: settingsURL)
+        } catch {
+            // The file stays as it is until the next accepted setSettings replaces it.
+            log.error("settings not applied, using defaults: \(error.localizedDescription, privacy: .public)")
+        }
         do {
             backfill.enqueue(try writer.pathsWithoutTeamID())
         } catch {
@@ -82,7 +92,9 @@ final class Daemon: @unchecked Sendable {
     }
 
     private func startXPC() {
-        let service = XPCService(dbPath: dbPath, live: { [self] in queue.sync { liveSnapshot() } })
+        let service = XPCService(dbPath: dbPath, live: { [self] in queue.sync { liveSnapshot() } },
+                                 settings: { [self] in queue.sync { try! settings.encoded() } },
+                                 setSettings: { [self] json in queue.sync { applySettings(json) } })
         let l = NSXPCListener(machServiceName: AMX.daemonLabel)
         l.delegate = service // weak; xpcService keeps it alive
         l.resume()
@@ -126,8 +138,10 @@ final class Daemon: @unchecked Sendable {
             return (raw, app, team)
         }
 
+        let events = engine.evaluate(now: now, processes: samples, new: attributed.map { ($0.0, $0.1) },
+                                     system: sys, rules: settings.rules)
         do {
-            try writer.write(now: now, processes: samples, newProcesses: attributed, system: sys)
+            try writer.write(now: now, processes: samples, newProcesses: attributed, system: sys, events: events)
         } catch {
             log.error("write failed: \(String(describing: error), privacy: .public)")
         }
@@ -143,12 +157,26 @@ final class Daemon: @unchecked Sendable {
         if ticks % Self.rollupEvery == 0 {
             flush()  // the rollup reads every tick so far
             do {
-                try Rollup.run(db: db, now: now, policy: RetentionPolicy())
+                var policy = RetentionPolicy()
+                policy.maxBytes = settings.sizeCapBytes
+                try Rollup.run(db: db, now: now, policy: policy)
             } catch {
                 log.error("rollup failed: \(String(describing: error), privacy: .public)")
             }
         }
         if ticks % AMX.ticksPerCheckpoint == 0 { checkpoint() }
+    }
+
+    /// Called on `queue`. Rules and terminals apply from the next tick, the size cap at the next rollup; nil on success, else the problem, with file and settings unchanged.
+    private func applySettings(_ json: Data) -> String? {
+        do {
+            let new = try DaemonSettings.decodeValidated(json)
+            try new.save(to: settingsURL)
+            settings = new
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
     }
 
     private func resolveTeamID(_ path: String) -> String? {
@@ -161,7 +189,8 @@ final class Daemon: @unchecked Sendable {
     /// Recording and Live share this rule. Rows already written keep their app (M3-D5).
     private func attribute(_ raw: RawProcess) -> AppInfo {
         AppAttribution.app(forExecutable: raw.path, processName: raw.name,
-                           responsiblePath: Responsibility.responsiblePath(of: raw.identity.pid))
+                           responsiblePath: Responsibility.responsiblePath(of: raw.identity.pid),
+                           terminals: Set(settings.terminalBundleIDs))
     }
 
     private func flush() {
