@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 #ifndef CAMX_H
 #define CAMX_H
 

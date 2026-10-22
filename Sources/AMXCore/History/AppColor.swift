@@ -6,17 +6,43 @@ public enum AppColor {
         return Int(hash % UInt64(paletteSize))
     }
 
-    /// Palette slots for the ranked top apps: in rank order each takes its own `index`, or the next free
-    /// slot when a higher-ranked app has it, so no two top apps share a colour.
-    public static func slots(for top: [AppKey], paletteSize: Int) -> [AppKey: Int] {
+    /// Palette slots for the top apps, all distinct. An app keeps the slot it got the first time it was coloured
+    /// (`stored`, by app key), in every view and metric. Apps go in key order, not rank order, so the same set of apps
+    /// always gets the same colours: of two apps sharing a stored slot the smaller key keeps it and the other gets the
+    /// next free slot for this call only. A new app takes its `index`, or the next free slot, and that slot is stored.
+    public static func slots(for top: [AppKey], paletteSize: Int, stored: inout StoredSlots) -> [AppKey: Int] {
         precondition(top.count <= paletteSize, "more top apps than palette colours")
+        let apps = top.sorted { ($0.key, $0.name) < ($1.key, $1.name) }
         var taken = Set<Int>()
         var result: [AppKey: Int] = [:]
-        for app in top {
-            var slot = index(for: app, paletteSize: paletteSize)
+        // Stored slots first, so a new app never takes the slot of a shown app.
+        for app in apps {
+            if let slot = stored[app.key].map({ $0 % paletteSize }), taken.insert(slot).inserted { result[app] = slot }
+        }
+        for app in apps where result[app] == nil {
+            var slot = (stored[app.key] ?? index(for: app, paletteSize: paletteSize)) % paletteSize
             while !taken.insert(slot).inserted { slot = (slot + 1) % paletteSize }
             result[app] = slot
+            if stored[app.key] == nil { stored.add(app.key, slot) }
         }
         return result
+    }
+}
+
+/// Each app's palette slot by app key, in the order the apps were first coloured; the newest `limit` apps are kept.
+public struct StoredSlots: Codable, Sendable, Equatable {
+    public static let limit = 256
+    /// Oldest first.
+    public private(set) var keys: [String] = []
+    private var slots: [String: Int] = [:]
+
+    public init() {}
+
+    public subscript(key: String) -> Int? { slots[key] }
+
+    public mutating func add(_ key: String, _ slot: Int) {
+        keys.append(key)
+        slots[key] = slot
+        if keys.count > Self.limit { slots[keys.removeFirst()] = nil }
     }
 }

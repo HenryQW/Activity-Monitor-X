@@ -37,8 +37,9 @@ struct ChipDiagram: View {
 
     private func block(_ title: String, detail: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 4) {
-                Text(title)
+            // Stacked, so a long cluster name ("Performance") never truncates.
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title).lineLimit(1).fixedSize()
                 Text(detail).foregroundStyle(.secondary).monospacedDigit()
             }
             .font(.caption)

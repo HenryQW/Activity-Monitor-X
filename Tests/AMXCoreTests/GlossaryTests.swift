@@ -44,7 +44,7 @@ import Testing
             .deletingLastPathComponent().appendingPathComponent("Packaging/glossary.json")
         let g = try JSONDecoder().decode(Glossary.self, from: Data(contentsOf: url))
         #expect(g.entries.count == 711)
-        #expect(!g.entries.contains { $0.title.contains("Mac Performance Monitor") || $0.description.contains("Mac Performance Monitor") })
+        #expect(!g.entries.contains { $0.match.name == "nettop" || $0.match.path == "/usr/bin/nettop" })
         #expect(g.lookup(name: "kernel_task", bundleID: nil, path: nil)?.expectedHigh == true)
     }
 }

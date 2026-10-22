@@ -14,6 +14,10 @@ struct TimelineChart: View {
     private let span: ClosedRange<Date>?
     /// nil when the range has no span (Live).
     private let commitSpan: ((ClosedRange<Date>) -> Void)?
+    /// The largest processes inside Other for the bucket starting at the given time.
+    private let otherProcesses: (Double) -> [(name: String, value: Double)]
+    /// Reports the app key ("" for Other) of the legend item under the pointer (true) and leaving it (false).
+    private let hover: (String, Bool) -> Void
     private let series: [Series]
     private let labels: [AppKey?: String]
     private let byBucket: [Double: [SeriesPoint]]
@@ -23,13 +27,18 @@ struct TimelineChart: View {
     private let _hover = State<Date?>(initialValue: nil)
     /// The span while dragging; committed to the model once the drag rests, so ranking runs once per drag.
     private let _drag = State<ClosedRange<Date>?>(initialValue: nil)
+    /// The event marker under the pointer (its lead ts): its bubble replaces the value bubble.
+    private let _event = State<Double?>(initialValue: nil)
 
     /// `points` is non-empty and ordered by bucket; every bucket holds every series.
-    /// `colors` holds every named app of `points`. With `highlighted` (search), other apps' series are dimmed.
+    /// `colors` holds every named app of `points`. With `highlighted` (search, or the hovered app key, "" for Other),
+    /// the other series are dimmed.
     init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, metric: Metric, events: [EventMark],
-         highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?) {
-        (self.points, self.colors, self.bucket, self.metric, self.events, self.span, self.commitSpan)
-            = (points, colors, bucket, metric, events, span, commitSpan)
+         highlighted: Set<String>? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
+         otherProcesses: @escaping (Double) -> [(name: String, value: Double)], hover: @escaping (String, Bool) -> Void) {
+        (self.points, self.colors, self.bucket, self.metric, self.events, self.span, self.commitSpan, self.otherProcesses)
+            = (points, colors, bucket, metric, events, span, commitSpan, otherProcesses)
+        self.hover = hover
         series = Self.series(points, colors: colors, highlighted: highlighted)
         let labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
         self.labels = labels
@@ -68,7 +77,14 @@ struct TimelineChart: View {
         .chartYScale(domain: 0...top)
         // Labels centred on their ticks: a label leading from a tick near the end was cut off ("4…"); centred, it
         // needs only half its width past the plot, inside the trailing y-axis column.
-        .chartXAxis { AxisMarks(preset: .aligned) }
+        .chartXAxis {
+            // Solid, faint gridlines: dashed ones read as a selection or a threshold.
+            AxisMarks(preset: .aligned) { _ in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                AxisTick()
+                AxisValueLabel()
+            }
+        }
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                 AxisGridLine()
@@ -77,13 +93,24 @@ struct TimelineChart: View {
                 }
             }
         }
-        // One line: names truncate instead of wrapping into a second row.
+        // One line: names truncate instead of wrapping into a second row. The top apps are ranked by the busiest
+        // buckets (D18), so the title says so: the table below keeps its own sort.
         .chartLegend(position: .bottom, alignment: .leading) {
             HStack(spacing: 12) {
+                if series.count > 1 { Text("Top during peaks").fontWeight(.medium).lineLimit(1) }
                 ForEach(series.indices, id: \.self) { i in
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 2).fill(series[i].color).frame(width: 8, height: 8)
                         Text(series[i].label).lineLimit(1)
+                    }
+                    .onHover { hover(series[i].app?.key ?? "", $0) }
+                    .onDisappear { hover(series[i].app?.key ?? "", false) }
+                }
+                // The lane shows warning and critical events only.
+                if events.contains(where: { ($0.level ?? 0) >= 1 }) {
+                    Spacer(minLength: 12)
+                    ForEach(EventLane.legend, id: \.symbol) { item in
+                        Label(item.name, systemImage: item.symbol).imageScale(.small).lineLimit(1)
                     }
                 }
             }
@@ -93,10 +120,13 @@ struct TimelineChart: View {
         .chartXSelection(value: _hover.projectedValue)
         .chartXSelection(range: dragBinding)
         .chartOverlay { proxy in
-            EventLane(events: events, proxy: proxy)
+            EventLane(events: events, proxy: proxy, bucket: bucket, start: points[0].bucket, select: commitSpan, topApp: topApp,
+                      hovered: _event.projectedValue)
             // Only this layer reads the hover, so a mouse move does not rebuild the areas.
-            HoverLayer(hover: _hover.projectedValue, proxy: proxy) { date in
-                byBucket.keys.filter { $0 <= date.timeIntervalSince1970 }.max().map(bubble)
+            if _event.wrappedValue == nil {
+                HoverLayer(hover: _hover.projectedValue, proxy: proxy) { date in
+                    byBucket.keys.filter { $0 <= date.timeIntervalSince1970 }.max().map(bubble)
+                }
             }
         }
         // Charts reports no drag end on macOS: commit once the range has not changed for 250 ms.
@@ -134,11 +164,29 @@ struct TimelineChart: View {
                     Text(metric.format(rows[i].value)).monospacedDigit()
                 }
             }
+            // Other's largest processes, under its row.
+            if rows.last?.app == nil {
+                let inOther = otherProcesses(b).filter { metric.format($0.value) != zero }
+                ForEach(inOther.indices, id: \.self) { i in
+                    HStack(spacing: 5) {
+                        Text(inOther[i].name).padding(.leading, 13)
+                        Spacer(minLength: 8)
+                        Text(metric.format(inOther[i].value)).monospacedDigit()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+            }
         }
         .hoverBubble()
     }
 
     private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
+
+    /// The largest named app in the bucket that holds `ts`.
+    private func topApp(at ts: Double) -> String? {
+        guard let b = byBucket.keys.filter({ $0 <= ts }).max() else { return nil }
+        return byBucket[b]!.filter { $0.app != nil && $0.value > 0 }.max { $0.value < $1.value }.map { labels[$0.app]! }
+    }
 
     private struct Mark {
         let date: Date
@@ -162,7 +210,7 @@ struct TimelineChart: View {
         var used = ["Other": 1]
         return points.prefix { $0.bucket == points[0].bucket }.map { point in
             let color = point.app.map { colors[$0]! } ?? AppPalette.other
-            // Other never matches a search.
+            // Other never matches a search; it matches a hover on its legend item ("").
             let shown = highlighted.map { $0.contains(point.app?.key ?? "") } ?? true ? color : color.opacity(0.25)
             guard let app = point.app else { return Series(app: nil, label: "Other", color: shown) }
             let n = (used[app.name] ?? 0) + 1

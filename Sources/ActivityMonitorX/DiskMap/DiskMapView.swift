@@ -32,8 +32,13 @@ struct DiskMapView: View {
         } else if let error = model.error {
             ContentUnavailableView("Cannot Scan", systemImage: "exclamationmark.triangle", description: Text(error))
         } else {
-            ContentUnavailableView("Disk Map", systemImage: "square.grid.3x3.square",
-                                   description: Text("Choose a volume or folder, then click Scan."))
+            ContentUnavailableView {
+                Label("Disk Map", systemImage: "square.grid.3x3.square")
+            } description: {
+                Text("Choose a volume or folder, then click Scan.")
+            } actions: {
+                Button("Choose Folder…") { DiskMapTargetMenu.choose(model) }
+            }
         }
     }
 
@@ -222,7 +227,9 @@ struct DiskMapTargetMenu: View {
         .help("Volume or folder to scan")
     }
 
-    private func choose() {
+    private func choose() { Self.choose(model) }
+
+    static func choose(_ model: DiskMapModel) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -230,7 +237,7 @@ struct DiskMapTargetMenu: View {
         let done = { (response: NSApplication.ModalResponse) in
             if response == .OK, let url = panel.url { model.target = .folder(url) }
         }
-        if let window = WindowFit.window { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
+        if let window = MainWindowRef.window { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
     }
 }
 
@@ -240,10 +247,11 @@ struct DiskMapScanButton: View {
 
     var body: some View {
         if model.isScanning {
-            Button("Stop", systemImage: "stop.fill") { model.stop() }
+            Button("Stop") { model.stop() }
                 .help("Stop the scan")
         } else {
-            Button("Scan", systemImage: "play.fill") { model.scan() }
+            Button("Scan") { model.scan() }
+                .buttonStyle(.borderedProminent)
                 .help("Scan the volume or folder")
                 .disabled(model.target == nil)
         }

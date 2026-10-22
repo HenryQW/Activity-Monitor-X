@@ -88,8 +88,15 @@ final class HardwareModel {
         seen[node.id] = count + 1
         let id = count == 0 ? node.id : "\(node.id)#\(count)"
         let properties = node.properties.map { HardwareRow(id: "\(id)=\($0.key)", name: $0.label, value: $0.value, children: nil) }
-        let children = properties + (node.children ?? []).map { row($0, seen: &seen) }
-        return HardwareRow(id: id, name: title(node.name), value: "", children: children.isEmpty ? nil : children)
+        let nodes = (node.children ?? []).map { row($0, seen: &seen) }
+        // A group of one child is that child; a group of one property shows the value on its own row.
+        if properties.isEmpty, nodes.count == 1 { return nodes[0] }
+        if nodes.isEmpty, properties.count == 1 {
+            return HardwareRow(id: id, name: title(node.name), value: properties[0].value, children: nil)
+        }
+        let children = properties + nodes
+        return HardwareRow(id: id, name: title(node.name), value: children.isEmpty ? "" : "\(children.count) items",
+                           children: children.isEmpty ? nil : children)
     }
 
     /// Raw item names (`hardware_overview`) through the inventory's label; device names ("iPhone") as they are. Only

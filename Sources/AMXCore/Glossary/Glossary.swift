@@ -1,5 +1,4 @@
-// Derived from mac-performance-monitor. Copyright (c) 2026 Mac Performance Monitor contributors, MIT License;
-// the full notice is in Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 import Foundation
 
 /// A bundled "what is this process?" glossary, matched locally: no process name leaves the Mac.

@@ -4,7 +4,7 @@ import Security
 
 public enum SigningRequirement {
     public static func string(leafSHA1Hex: String) -> String {
-        #"(identifier "\#(AMX.bundleID)" or identifier "\#(AMX.cliID)") and certificate leaf = H"\#(leafSHA1Hex)""#
+        #"(identifier "\#(AMX.bundleID)" or identifier "\#(AMX.cliID)" or identifier "\#(AMX.devBundleID)") and certificate leaf = H"\#(leafSHA1Hex)""#
     }
 
     /// SHA-1 of this process's leaf signing certificate, lowercase hex; nil if unsigned or ad-hoc (no certificates).

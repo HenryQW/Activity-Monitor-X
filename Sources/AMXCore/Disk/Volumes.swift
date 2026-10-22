@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 import Foundation
 import IOKit
 import IOKit.storage
@@ -70,7 +70,7 @@ public enum Volumes {
             var total = row.totalBytes, free = row.freeBytes
             let used: UInt64?
             if row.mountPoint == "/", let c = owner?.container, let poolFree = c.freeBytes {
-                // As the system shows Macintosh HD.
+                // The system volume reports the free space of its whole APFS container.
                 total = c.sizeBytes
                 free = poolFree
                 used = total - free

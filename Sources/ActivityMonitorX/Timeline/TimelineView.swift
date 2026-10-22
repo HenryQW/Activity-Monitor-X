@@ -9,6 +9,8 @@ struct TimelineView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var selection
+    /// The app key under the pointer in the legend or the table ("" for Other): its band stays, the others dim.
+    private let _hovered = State<String?>(initialValue: nil)
 
     var body: some View {
         let isLive = history.range == .live
@@ -38,23 +40,38 @@ struct TimelineView: View {
                 VStack(spacing: 0) {
                     TimelineChart(points: points, colors: colors, bucket: history.range.chartBucket, metric: history.metric,
                                   events: isLive ? [] : history.events,
-                                  highlighted: selection.search.isEmpty ? nil : Set(shown.map(\.app.key)),
+                                  // An app without a band of its own is in Other's.
+                                  highlighted: _hovered.wrappedValue.map { key in [colors.keys.contains { $0.key == key } ? key : ""] }
+                                      ?? (selection.search.isEmpty ? nil : Set(shown.map(\.app.key))),
                                   span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
                                   commitSpan: isLive ? nil : { span in
                                       history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970
-                                  })
+                                  },
+                                  otherProcesses: { b in
+                                      let named = Set(colors.keys)
+                                      return isLive ? live.otherProcesses(bucket: b, named: named)
+                                          : history.otherProcesses(bucket: b, named: named)
+                                  },
+                                  hover: hover)
                         .frame(height: 280)
                         .padding()
                         .backgroundExtensionEffect()
+                        // Above the table, so an event bubble that reaches past the chart never draws under it.
+                        .zIndex(1)
                     if let span = history.span, !isLive { spanBar(span) }
                     AppTable(ranking: shown, colors: colors, metric: history.metric,
-                             shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } })
+                             shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } }, live: isLive, hover: hover)
                         .equatable()
                 }
             }
         }
         .navigationTitle(title ?? "Timeline")
         .navigationSubtitle(selection.subtitle(history.subtitle, shown: shown.count, of: ranking.count))
+    }
+
+    private func hover(_ key: String, _ inside: Bool) {
+        // Moving between two rows can report the new row before the old one's exit.
+        if inside { _hovered.wrappedValue = key } else if _hovered.wrappedValue == key { _hovered.wrappedValue = nil }
     }
 
     private var collecting: some View {

@@ -20,6 +20,10 @@ final class LiveModel {
     private var live = LiveTracks(metric: .cpu)
     /// `live` scoped to the group, as last built.
     private var tracks: [ProcessTrack] = []
+    /// Indices of `tracks` the quiet filter moved into Other.
+    private var hidden: Set<Int> = []
+    /// The last hovered bucket's Other breakdown; cleared with each rebuild.
+    @ObservationIgnored private var otherCache: OtherCache?
     private var end = 0.0
     /// Start of recorded time in the 5 min window: averages cover it only; the chart keeps the full 5 min.
     private var start = 0.0
@@ -39,7 +43,7 @@ final class LiveModel {
     /// visit to Live, and each return to the screen, starts afresh, so the backfill covers the time away.
     func run() async {
         while !Task.isCancelled {
-            if history.range == .live, !selection.isSystem, WindowFit.windowShown { await poll() } else { live = LiveTracks(metric: history.metric) }
+            if history.range == .live, !selection.isSystem, MainWindowRef.windowShown { await poll() } else { live = LiveTracks(metric: history.metric) }
             try? await Task.sleep(for: .seconds(1))
         }
     }
@@ -103,13 +107,14 @@ final class LiveModel {
             let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
             let from = AppSeries.recordedStart(all, from: end - 300)
             let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: end) : []
-            return (tracks: tracks, start: from,
+            return (tracks: tracks, hidden: hidden, start: from,
                     stacked: AppSeries.stacked(tracks, from: end - 300, to: end, bucket: 1, otherOnly: hidden),
                     ranking: withRanking ? AppSeries.ranking(tracks, from: from, to: end, bucket: 1, excluding: hidden, exitedBefore: last) : [],
                     sparklines: withRanking && withSparklines ? AppSeries.sparklines(tracks, from: from, to: end, excluding: hidden) : [:])
         }.value
         guard generation == self.generation else { return }
-        (self.end, start, tracks, stacked) = (end, built.start, built.tracks, built.stacked)
+        (self.end, start, tracks, hidden, stacked) = (end, built.start, built.tracks, built.hidden, built.stacked)
+        otherCache = nil
         if withRanking { (rankedAt, ranking, sparklines) = (end, built.ranking, built.sparklines) }
         // A rebuild during an outage must not hide the error.
         if failures < 3 { state = .ready }
@@ -119,6 +124,14 @@ final class LiveModel {
     func rank(of app: AppKey) -> AppRank? {
         AppSeries.ranking(tracks.filter { $0.app.key == app.key }, from: start, to: end, bucket: 1,
                           exitedBefore: end - 1).first
+    }
+
+    /// The hover bubble's largest processes inside Other, for the 1 s bucket that starts at `bucket`.
+    func otherProcesses(bucket: Double, named: Set<AppKey>) -> [(name: String, value: Double)] {
+        if let cache = otherCache, cache.bucket == bucket, cache.named == named { return cache.rows }
+        let rows = AppSeries.otherProcesses(tracks, named: named, otherOnly: hidden, from: bucket, to: min(bucket + 1, end))
+        otherCache = OtherCache(bucket: bucket, named: named, rows: rows)
+        return rows
     }
 
     /// One app's single series for the last 5 min.

@@ -1,4 +1,4 @@
-// MIT License. Team ID lookup ported from mac-performance-monitor (CodeSigningResolver).
+// MIT License. See Packaging/Credits.html.
 import Foundation
 import Security
 

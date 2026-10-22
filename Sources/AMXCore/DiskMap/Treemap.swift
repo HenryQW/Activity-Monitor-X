@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 import CoreGraphics
 
 /// The squarified treemap of Bruls, Huizing and van Wijk: items are laid out in rows along the shorter side of

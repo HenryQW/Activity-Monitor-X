@@ -72,6 +72,9 @@ public enum AppSeries {
         return (starts, slot.mapValues { values[$0] })
     }
 
+    /// The `top` apps get a series each, in rank order (D18 as amended by R-UI3): by their value in each bucket weighted
+    /// by how far the bucket's stack total rises above the median total, then by range average, then by key. A short
+    /// spike then outweighs a steady load; on a flat range every weight is 0, so the order is the average's.
     /// Tracks at the indices in `otherOnly` never get a series of their own: their values add to Other.
     public static func stacked(_ tracks: [ProcessTrack], from: Double, to: Double, bucket: Double, top: Int = 5,
                                otherOnly: Set<Int> = []) -> [SeriesPoint] {
@@ -80,7 +83,13 @@ public enum AppSeries {
         // Range average is the width-weighted mean of the bucket values.
         let widths = starts.map { min($0 + bucket, to) - $0 }
         let averages = perApp.mapValues { zip($0, widths).reduce(0) { $0 + $1.0 * $1.1 } / (to - from) }
-        let ordered = perApp.keys.sorted { (averages[$0]!, $1.key) > (averages[$1]!, $0.key) }
+        let totals = starts.indices.map { b in
+            perApp.values.reduce(0) { $0 + $1[b] } + forced.values.reduce(0) { $0 + $1[b] }
+        }
+        let median = percentile(totals, 0.5)
+        let excess = totals.map { max(0, $0 - median) }
+        let scores = perApp.mapValues { values in zip(values, excess).reduce(0) { $0 + $1.0 * $1.1 } }
+        let ordered = perApp.keys.sorted { (scores[$0]!, averages[$0]!, $1.key) > (scores[$1]!, averages[$1]!, $0.key) }
         let named = Array(ordered.prefix(top))
         let rest = ordered.dropFirst(top)
 
@@ -94,6 +103,15 @@ public enum AppSeries {
             if otherTotal > 0 { points.append(SeriesPoint(bucket: start, app: nil, value: other[b])) }
         }
         return points
+    }
+
+    /// The `p` quantile with linear interpolation between ranks (inclusive method); 0 for no values.
+    private static func percentile(_ values: [Double], _ p: Double) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let rank = p * Double(sorted.count - 1)
+        let i = Int(rank)
+        return i + 1 < sorted.count ? sorted[i] + (rank - Double(i)) * (sorted[i + 1] - sorted[i]) : sorted[i]
     }
 
     private static func without(_ tracks: [ProcessTrack], _ indices: Set<Int>) -> [ProcessTrack] {
@@ -120,6 +138,18 @@ public enum AppSeries {
         points.filter { !hides($0.value) }.sorted {
             ($0.app == nil ? 1 : 0, $1.value, $0.app?.key ?? "") < ($1.app == nil ? 1 : 0, $0.value, $1.app?.key ?? "")
         }
+    }
+
+    /// The hover bubble's breakdown of Other in [from, to) (one chart bucket): its `count` largest processes by mean.
+    /// Other holds every track outside the `named` apps, and the tracks at the indices in `otherOnly`, as in `stacked`.
+    public static func otherProcesses(_ tracks: [ProcessTrack], named: Set<AppKey>, otherOnly: Set<Int> = [],
+                                      from: Double, to: Double, count: Int = 3) -> [(name: String, value: Double)] {
+        tracks.enumerated()
+            .filter { otherOnly.contains($0.offset) || !named.contains($0.element.app) }
+            .map { (name: $0.element.name, value: $0.element.average(from: from, to: to)) }
+            .filter { $0.value > 0 }
+            .sorted { ($1.value, $0.name) < ($0.value, $1.name) }
+            .prefix(count).map { $0 }
     }
 
     /// Every app's series in `count` equal buckets: one pass for all sparklines.

@@ -1,7 +1,7 @@
 import AMXCore
 import SwiftUI
 
-/// Alert rows newest first, listed as a message list: rows that were unread when someone could last start to see
+/// Alert rows newest first: rows that were unread when someone could last start to see
 /// the screen stay bold while it is shown. The sidebar search filters by app or message. Double-click or Show in
 /// Timeline opens the Timeline at the alert.
 struct AlertsView: View {
@@ -54,17 +54,17 @@ struct AlertsView: View {
             .width(min: 64, ideal: 64, max: 72)
             .alignment(.center)
             TableColumn("Time") { event in
-                Text(Date(timeIntervalSince1970: event.ts).formatted(date: .abbreviated, time: .shortened))
+                Text(AlertTime.format(event.ts))
                     .monospacedDigit()
                     .bold(unread.contains(event.id))
             }
-            .width(min: 120, ideal: 150, max: 180)
+            .width(min: 130, ideal: 140, max: 180)
             TableColumn("Source") { event in
                 Text(event.subject).bold(unread.contains(event.id))
             }
             .width(min: 100, ideal: 160, max: 260)
             TableColumn("Message") { event in
-                Text(event.message).bold(unread.contains(event.id))
+                Text(event.message).bold(unread.contains(event.id)).help(event.message)
             }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in

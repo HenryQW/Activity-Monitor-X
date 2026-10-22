@@ -74,6 +74,10 @@ final class HistoryModel {
 
     private var pool: DatabasePool?
     private var tracks: [ProcessTrack] = []
+    /// Indices of `tracks` the quiet filter moved into Other.
+    private var hidden: Set<Int> = []
+    /// The last hovered bucket's Other breakdown; cleared with each load.
+    @ObservationIgnored private var otherCache: OtherCache?
     private var end = 0.0
     private var generation = 0
     private var requestedAt = 0.0
@@ -127,7 +131,7 @@ final class HistoryModel {
                     let tracks = scope.map { GroupScores.members(all, of: $0) } ?? all
                     let from = AppSeries.recordedStart(all, from: now - range.seconds)
                     let hidden = hideQuiet ? QuietFilter.hidden(tracks, metric: metric, from: from, to: now) : []
-                    return Loaded(tracks: tracks, recorded: !all.isEmpty, start: from,
+                    return Loaded(tracks: tracks, hidden: hidden, recorded: !all.isEmpty, start: from,
                            stacked: AppSeries.stacked(tracks, from: from, to: now, bucket: range.chartBucket, otherOnly: hidden),
                            system: try reader.system(range: range, end: now),
                            events: try reader.events(from: from, to: now),
@@ -141,7 +145,7 @@ final class HistoryModel {
             case .success(let loaded):
                 (end, start) = (now, loaded.start)
                 since = start - (now - range.seconds) > range.chartBucket ? start : nil
-                tracks = loaded.tracks
+                (tracks, hidden, otherCache) = (loaded.tracks, loaded.hidden, nil)
                 system = loaded.system
                 events = loaded.events
                 apps = loaded.apps
@@ -160,6 +164,15 @@ final class HistoryModel {
     /// One app's single series for the range, at chart resolution.
     func series(of app: AppKey) -> [SeriesPoint] {
         AppSeries.stacked(tracks.filter { $0.app.key == app.key }, from: start, to: end, bucket: range.chartBucket)
+    }
+
+    /// The hover bubble's largest processes inside Other, for the chart bucket that starts at `bucket`.
+    func otherProcesses(bucket: Double, named: Set<AppKey>) -> [(name: String, value: Double)] {
+        if let cache = otherCache, cache.bucket == bucket, cache.named == named { return cache.rows }
+        let rows = AppSeries.otherProcesses(tracks, named: named, otherOnly: hidden, from: bucket,
+                                            to: min(bucket + range.chartBucket, end))
+        otherCache = OtherCache(bucket: bucket, named: named, rows: rows)
+        return rows
     }
 
     /// The raw tier over [from, to): Live backfills its first 5 min from the last hour, groups read the last 60 s.
@@ -216,6 +229,7 @@ final class HistoryModel {
 
     private struct Loaded: Sendable {
         let tracks: [ProcessTrack]
+        let hidden: Set<Int>
         /// The range has data, in the scope or not.
         let recorded: Bool
         let start: Double
@@ -225,6 +239,13 @@ final class HistoryModel {
         let apps: [AppRank]
         let sparklines: [AppKey: [Double]]
     }
+}
+
+/// A hover bubble's Other breakdown: the pointer moves within one bucket many times.
+struct OtherCache {
+    let bucket: Double
+    let named: Set<AppKey>
+    let rows: [(name: String, value: Double)]
 }
 
 private extension HistorySource {

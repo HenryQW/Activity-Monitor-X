@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 import DiskArbitration
 import Foundation
 import IOKit

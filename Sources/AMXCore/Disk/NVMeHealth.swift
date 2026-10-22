@@ -1,4 +1,4 @@
-// Derived from mac-performance-monitor (Zesty0wl), MIT License. See Packaging/Credits.html.
+// MIT License. See Packaging/Credits.html.
 import CAMX
 
 /// The NVMe SMART / Health log of one disk. The C shim fetches the raw

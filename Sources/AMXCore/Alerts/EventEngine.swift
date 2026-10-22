@@ -130,7 +130,7 @@ public struct EventEngine: Sendable {
         entry.app.appName == entry.name ? entry.name : "\(entry.name) (\(entry.app.appName))"
     }
 
-    /// `x.x GB` from 1 GiB, else `n MB`, in binary units. GB starts where MB would
+    /// `x.x GB` from 1 GiB, else `n MB`, in binary units (GB is 2^30 bytes). GB starts where MB would
     /// round to 1024.
     static func bytes(_ count: UInt64) -> String {
         let mib = Double(count) / 1_048_576

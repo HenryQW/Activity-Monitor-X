@@ -47,7 +47,7 @@ final class DiskModel {
 
     private func pollRates() async {
         while !Task.isCancelled {
-            guard WindowFit.windowShown else {
+            guard MainWindowRef.windowShown else {
                 // The first rate after the pause covers 1 s, not the pause.
                 await sampler.reset()
                 try? await Task.sleep(for: .seconds(1))
@@ -66,7 +66,7 @@ final class DiskModel {
 
     private func pollVolumes() async {
         repeat {
-            if WindowFit.windowShown { await readVolumes() }
+            if MainWindowRef.windowShown { await readVolumes() }
         } while (try? await Task.sleep(for: .seconds(30))) != nil
     }
 

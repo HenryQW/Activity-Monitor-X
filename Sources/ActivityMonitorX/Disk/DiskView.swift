@@ -93,13 +93,15 @@ struct DiskView: View {
             if !live {
                 GridRow {
                     DiskChart(title: "Free (purgeable not included)", points: free(samples, segments: segments), bucket: bucket, format: Metric.bytes,
-                              rule: disk.volumes.first { $0.mountPoint == "/" }
-                                  .map { (Double($0.totalBytes), "Capacity \(Metric.bytes(Double($0.totalBytes)))") })
+                              yDomain: capacity.map { 0...$0 },
+                              rule: capacity.map { ($0, "Capacity \(Metric.bytes($0))") })
                         .gridCellColumns(2)
                 }
             }
         }
     }
+
+    private var capacity: Double? { disk.volumes.first { $0.mountPoint == "/" }.map { Double($0.totalBytes) } }
 
     /// The startup volume's free space; a record without a value also starts a new line segment.
     private func free(_ samples: [Sample], segments: [Int]) -> [DiskPoint] {

@@ -9,17 +9,23 @@ struct AppTable: View {
     let metric: Metric
     /// The group's total average; the table then shows each row's share of it.
     var shareTotal: Double? = nil
+    /// Live re-ranks every 5 s: the row order then holds while the pointer is over the table (D19).
+    var live = false
+    /// Reports the app key of the row under the pointer (true) and leaving it (false), for the chart to highlight.
+    var hover: (String, Bool) -> Void = { _, _ in }
 
     @Environment(Selection.self) private var selection
     private let _expanded = State<Set<Row.ID>>(initialValue: [])
     private let _sortOrder = State(initialValue: [KeyPathComparator(\Row.average, order: .reverse)])
+    /// Row positions (apps and processes) while the order holds; nil while the table sorts.
+    private let _held = State<[Row.ID: Int]?>(initialValue: nil)
+    private let _showIdle = State(initialValue: false)
 
     var body: some View {
-        let sortOrder = _sortOrder.wrappedValue
-        let rows = ranking.map { app in
-            Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
-                processes: Self.processRows(app).sorted(using: sortOrder))
-        }.sorted(using: sortOrder)
+        let sorted = rows(sortedBy: _sortOrder.wrappedValue)
+        let held = live ? _held.wrappedValue : nil
+        let rows = held.map { Self.holding(sorted, at: $0) } ?? sorted
+        let idle = ranking.count(where: isIdle)
         let details = AppKey.details(for: ranking.map(\.app))
         let byID = Dictionary(uniqueKeysWithValues: rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) })
         let selected = Binding<Row.ID?>(
@@ -32,49 +38,136 @@ struct AppTable: View {
                     .first { $0.process?.pid == p.pid && $0.process?.startTime == p.startTime }?.id ?? app.key
             },
             set: { id in
+                // The idle row is a button, not a selection.
+                guard id != Row.idleID else { return }
                 let row = id.flatMap { byID[$0] }
                 // App first: changing the app clears the process.
                 selection.app = row?.app
                 selection.process = row?.process
             })
 
-        Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue) {
-            TableColumn("App", value: \.name) { row in
-                if let process = row.process {
-                    HStack {
-                        Text("\(row.name) (\(String(process.pid)))")
-                        if process.exited {
-                            Spacer()
-                            Text("Exited").font(.caption)
+        ScrollViewReader { proxy in
+            Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue) {
+                TableColumn("App", value: \.name) { row in
+                    if row.id == Row.idleID {
+                        idleToggle(idle)
+                    } else if let process = row.process {
+                        linked(HStack {
+                            Text("\(row.name) (\(String(process.pid)))")
+                            if process.exited {
+                                Spacer()
+                                Text("Exited").font(.caption)
+                            }
+                        }
+                        .foregroundStyle(process.exited ? .tertiary : .secondary), row, .leading)
+                    } else {
+                        linked(AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app), detail: details[row.app.key]),
+                               row, .leading)
+                    }
+                }
+                .width(min: 140)
+                TableColumn("Average", value: \.average) { row in
+                    if row.id != Row.idleID { linked(Text(metric.format(row.average)).monospacedDigit(), row, .trailing) }
+                }
+                .width(min: 80, ideal: 88, max: 110)
+                .alignment(.trailing)
+                TableColumn("Peak", value: \.peak) { row in
+                    if row.id != Row.idleID { linked(Text(metric.format(row.peak)).monospacedDigit(), row, .trailing) }
+                }
+                .width(min: 80, ideal: 88, max: 110)
+                .alignment(.trailing)
+                if let shareTotal {
+                    TableColumn("Share", value: \.average) { row in
+                        if row.id != Row.idleID {
+                            linked(Text((shareTotal > 0 ? row.average / shareTotal : 0).formatted(.percent.precision(.fractionLength(1))))
+                                .monospacedDigit(), row, .trailing)
                         }
                     }
-                    .foregroundStyle(process.exited ? .tertiary : .secondary)
-                } else {
-                    AppLabel(app: row.app, color: colors[row.app], pinned: selection.isPinned(row.app), detail: details[row.app.key])
+                    .width(min: 64, ideal: 72, max: 90)
+                    .alignment(.trailing)
                 }
-            }
-            .width(min: 140)
-            TableColumn("Average", value: \.average) { Text(metric.format($0.average)).monospacedDigit() }
-                .width(min: 80, ideal: 88, max: 110)
-                .alignment(.trailing)
-            TableColumn("Peak", value: \.peak) { Text(metric.format($0.peak)).monospacedDigit() }
-                .width(min: 80, ideal: 88, max: 110)
-                .alignment(.trailing)
-            if let shareTotal {
-                TableColumn("Share", value: \.average) { row in
-                    Text((shareTotal > 0 ? row.average / shareTotal : 0).formatted(.percent.precision(.fractionLength(1))))
-                        .monospacedDigit()
+            } rows: {
+                ForEach(rows) { app in
+                    DisclosureTableRow(app, isExpanded: expansion(app)) {
+                        ForEach(app.processes) { TableRow($0) }
+                    }
                 }
-                .width(min: 64, ideal: 72, max: 90)
-                .alignment(.trailing)
+                if idle > 0 { TableRow(Row.idle) }
             }
-        } rows: {
-            ForEach(rows) { app in
-                DisclosureTableRow(app, isExpanded: expansion(app)) {
-                    ForEach(app.processes) { TableRow($0) }
+            // Double-click or Return opens the inspector on the row.
+            .contextMenu(forSelectionType: Row.ID.self) { _ in
+            } primaryAction: { ids in
+                guard let id = ids.first, id != Row.idleID else { return }
+                selection.inspectorShown = true
+            }
+            // A hard edge under the header: the soft one blurred into the gap above it.
+            .scrollEdgeEffectStyle(.hard, for: .top)
+            .onHover { inside in _held.wrappedValue = inside && live ? Self.positions(sorted) : nil }
+            // Back in Live, an old order must not hold before the pointer comes back.
+            .onChange(of: live) { _held.wrappedValue = nil }
+            // A sort picked while the order holds applies at once, and holds in turn.
+            .onChange(of: _sortOrder.wrappedValue) { _, order in
+                if _held.wrappedValue != nil { _held.wrappedValue = Self.positions(self.rows(sortedBy: order)) }
+            }
+            // Sorting again can move the selected row out of view.
+            .onChange(of: held == nil) { _, sorting in
+                if sorting, let id = selected.wrappedValue { Task { proxy.scrollTo(id) } }
+            }
+            .overlay(alignment: .top) {
+                if held != nil {
+                    Label("Sorting paused", systemImage: "pause.circle.fill")
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.regularMaterial, in: .capsule)
+                        .padding(.top, 4)
+                        .allowsHitTesting(false)
                 }
             }
         }
+    }
+
+    /// Apps of the ranking in `order`, each with its processes; idle apps only when shown or selected.
+    private func rows(sortedBy order: [KeyPathComparator<Row>]) -> [Row] {
+        ranking.filter { _showIdle.wrappedValue || !isIdle($0) || $0.app == selection.app }.map { app in
+            Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
+                processes: Self.processRows(app).sorted(using: order))
+        }.sorted(using: order)
+    }
+
+    /// Average and peak both read 0 in this metric.
+    private func isIdle(_ app: AppRank) -> Bool {
+        let zero = metric.format(0)
+        return metric.format(app.average) == zero && metric.format(app.peak) == zero
+    }
+
+    private func idleToggle(_ count: Int) -> some View {
+        let shown = _showIdle.wrappedValue
+        let label = "\(count) idle app\(count == 1 ? "" : "s")"
+        return Button(label, systemImage: shown ? "chevron.down" : "chevron.right") { _showIdle.wrappedValue.toggle() }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("\(shown ? "Hide" : "Show") \(label)")
+    }
+
+    /// A cell that reports its row's app under the pointer, over the cell's full width.
+    private func linked(_ content: some View, _ row: Row, _ alignment: Alignment) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: alignment)
+            .contentShape(.rect)
+            .onHover { hover(row.app.key, $0) }
+    }
+
+    /// Each row's position, apps and processes, in display order.
+    private static func positions(_ rows: [Row]) -> [Row.ID: Int] {
+        Dictionary(rows.flatMap { [$0] + $0.processes }.enumerated().map { ($1.id, $0) }) { first, _ in first }
+    }
+
+    /// `rows` in the held positions; rows that came after the order was held go last, in sort order.
+    private static func holding(_ rows: [Row], at positions: [Row.ID: Int]) -> [Row] {
+        rows.enumerated()
+            .sorted { (positions[$0.element.id] ?? .max, $0.offset) < (positions[$1.element.id] ?? .max, $1.offset) }
+            .map { var row = $0.element; row.processes = holding(row.processes, at: positions); return row }
     }
 
     /// An app found by search only through its processes opens to show them.
@@ -108,13 +201,17 @@ struct AppTable: View {
         let process: ProcessRank?
         let average: Double
         let peak: Double
-        let processes: [Row]
+        var processes: [Row]
+
+        static let idleID = "\u{0}idle"
+        /// The last row: shows or hides the idle apps.
+        static let idle = Row(id: idleID, name: "", app: AppKey(key: "", name: ""), process: nil, average: 0, peak: 0, processes: [])
     }
 }
 
 /// Equal inputs skip the body: in Live the timeline redraws every second, but the ranking changes every 5 s.
 extension AppTable: Equatable {
     nonisolated static func == (a: AppTable, b: AppTable) -> Bool {
-        (a.ranking, a.colors, a.metric, a.shareTotal) == (b.ranking, b.colors, b.metric, b.shareTotal)
+        (a.ranking, a.colors, a.metric, a.shareTotal, a.live) == (b.ranking, b.colors, b.metric, b.shareTotal, b.live)
     }
 }

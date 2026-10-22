@@ -39,6 +39,6 @@ import Testing
 
     @Test func requirementStringExact() {
         #expect(SigningRequirement.string(leafSHA1Hex: "abc123") ==
-            #"(identifier "com.henryqw.activitymonitorx" or identifier "com.henryqw.activitymonitorx.amx") and certificate leaf = H"abc123""#)
+            #"(identifier "com.henryqw.activitymonitorx" or identifier "com.henryqw.activitymonitorx.amx" or identifier "com.henryqw.activitymonitorx.dev") and certificate leaf = H"abc123""#)
     }
 }

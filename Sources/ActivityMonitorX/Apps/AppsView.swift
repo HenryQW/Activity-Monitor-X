@@ -2,7 +2,7 @@ import AMXCore
 import Charts
 import SwiftUI
 
-/// Every app seen in the range with its average, peak and sparkline; pin or unpin from the context menu.
+/// Every app seen in the range with its average, peak and sparkline; pin or unpin from the row button or the context menu.
 struct AppsView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
@@ -37,6 +37,8 @@ struct AppsView: View {
         let metric = history.metric
         let colors = AppPalette.colors(for: history.range == .live ? live.stacked : history.stacked)
         let details = AppKey.details(for: apps.map(\.app))
+        // One y scale per metric: 0 to the largest value in view, so rows compare with each other.
+        let top = apps.compactMap { sparklines[$0.app]?.max() }.max() ?? 1
 
         return Table(rows, selection: Bindable(selection).app, sortOrder: _sortOrder.projectedValue) {
             TableColumn("App", value: \.name) { AppLabel(app: $0.app, color: colors[$0.app], pinned: selection.isPinned($0.app), detail: details[$0.app.key]) }
@@ -48,9 +50,14 @@ struct AppsView: View {
                 .width(min: 80, ideal: 88, max: 110)
                 .alignment(.trailing)
             TableColumn("Trend") { row in
-                Sparkline(values: sparklines[row.app] ?? [], color: colors[row.app] ?? .secondary)
+                Sparkline(values: sparklines[row.app] ?? [], color: colors[row.app] ?? .secondary, top: top)
             }
             .width(min: 60, ideal: 80, max: 120)
+            TableColumn("") { row in
+                pinButton(row.app).labelStyle(.iconOnly).buttonStyle(.borderless)
+                    .accessibilityLabel(selection.isPinned(row.app) ? "Unpin \(row.name)" : "Pin \(row.name)")
+            }
+                .width(28)
         }
         .contextMenu(forSelectionType: AppKey.self) { apps in
             if let app = apps.first { pinButton(app) }
@@ -72,10 +79,11 @@ struct AppsView: View {
     }
 }
 
-/// One line, no axes; the y scale is the row's own.
+/// One line, no axes; the y scale is shared by every row (0 to `top`).
 private struct Sparkline: View {
     let values: [Double]
     let color: Color
+    let top: Double
 
     var body: some View {
         Chart {
@@ -86,6 +94,7 @@ private struct Sparkline: View {
         .foregroundStyle(color)
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
+        .chartYScale(domain: 0...max(top, .leastNonzeroMagnitude))
         .chartLegend(.hidden)
         .frame(height: 18)
         .accessibilityHidden(true)

@@ -1,13 +1,15 @@
 import AMXCore
-import Foundation
+import AppKit
 import Observation
 import os
 import ServiceManagement
 
-/// App choices kept in the app: the menu bar item (M4-D11) and launch at login.
+/// App choices kept in the app: the menu bar item (M4-D11), appearance and launch at login.
 @Observable @MainActor
 final class Preferences {
-    private static let menuBarKey = "menuBarShown"
+    enum Appearance: String, CaseIterable { case system, light, dark }
+
+    private static let menuBarKey = "menuBarShown", appearanceKey = "appearance"
     private static let log = Logger(subsystem: AMX.bundleID, category: "preferences")
     /// Nil outside the app bundle (`swift run`): a login item needs the bundle.
     private static let service = Bundle.main.bundleIdentifier == AMX.bundleID ? SMAppService.mainApp : nil
@@ -15,6 +17,22 @@ final class Preferences {
     /// Shown by default; while shown, closing the window keeps the app running for notifications.
     var menuBarShown = UserDefaults.standard.object(forKey: Preferences.menuBarKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(menuBarShown, forKey: Self.menuBarKey) }
+    }
+
+    /// System follows the macOS light or dark setting as it changes; Light and Dark hold for this app only.
+    var appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: Preferences.appearanceKey) ?? "") ?? .system {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
+            applyAppearance()
+        }
+    }
+
+    func applyAppearance() {
+        NSApp.appearance = switch appearance {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
     }
 
     /// On while registered, also while Login Items waits for approval. Setting it registers or unregisters.

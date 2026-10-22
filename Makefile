@@ -1,4 +1,4 @@
-.PHONY: build test clean cert sign install uninstall app install-app run-app
+.PHONY: build test clean cert sign install uninstall app install-app run-app dev-app run-dev
 
 IDENTITY := Activity Monitor X Local Signing
 LABEL := com.henryqw.activitymonitorx.daemon
@@ -6,6 +6,8 @@ PLIST := /Library/LaunchDaemons/$(LABEL).plist
 BIN := .build/release
 APP := .build/Activity Monitor X.app
 APP_ID := com.henryqw.activitymonitorx
+DEV_APP := .build/Activity Monitor X Dev.app
+DEV_ID := com.henryqw.activitymonitorx.dev
 
 build:
 	swift build -c release
@@ -32,6 +34,20 @@ app: build
 	cp Packaging/glossary.json Packaging/Credits.html "$(APP)/Contents/Resources/"
 	cp $(BIN)/ActivityMonitorX "$(APP)/Contents/MacOS/ActivityMonitorX"
 	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(APP_ID) "$(APP)"
+
+# A dev build with its own identity and name, for checks while the installed app runs.
+dev-app: app
+	rm -rf "$(DEV_APP)"
+	ditto "$(APP)" "$(DEV_APP)"
+	rm -rf "$(APP)"
+	plutil -replace CFBundleIdentifier -string $(DEV_ID) "$(DEV_APP)/Contents/Info.plist"
+	plutil -replace CFBundleName -string "Activity Monitor X Dev" "$(DEV_APP)/Contents/Info.plist"
+	plutil -replace CFBundleDisplayName -string "Activity Monitor X Dev" "$(DEV_APP)/Contents/Info.plist"
+	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(DEV_ID) "$(DEV_APP)"
+
+# One dev build at a time on this Mac: waits for the others, runs until the app quits, then unregisters it.
+run-dev: dev-app
+	Scripts/run-dev.sh "$(CURDIR)/$(DEV_APP)"
 
 install-app: app
 	rm -rf "/Applications/Activity Monitor X.app"

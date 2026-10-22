@@ -1,3 +1,5 @@
+import Foundation
+
 public enum Metric: String, CaseIterable, Sendable {
     case cpu, memory, disk, network, energy, gpu, score
 
@@ -13,6 +15,11 @@ public enum Metric: String, CaseIterable, Sendable {
         case .gpu: "% GPU"
         case .score: "% of this Mac, 0 to 100 (0.5 x cpu/cores + 50 x mem/memory)"
         }
+    }
+
+    /// Sizes on disk in decimal units; 0 reads "0 bytes", never "Zero KB".
+    public static func bytes(_ value: Double) -> String {
+        Int64(value.rounded()).formatted(.byteCount(style: .file, spellsOutZero: false))
     }
 
     /// Underlying process columns; the metric is their sum.

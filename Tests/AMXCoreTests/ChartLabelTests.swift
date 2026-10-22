@@ -32,3 +32,8 @@ private func event(_ kind: String, _ severity: Int, _ message: String) -> EventM
     #expect(since(.week, now - 4 * 3600 - 54 * 60, us) == "Since Oct 21")
     #expect(since(.week, now - 4 * 3600 - 54 * 60, gb) == "Since 21 Oct")
 }
+
+@Test func byteLabelsNeverSpellOutZero() {
+    #expect(Metric.bytes(0) == "0 bytes")
+    #expect(Metric.bytes(1_500_000) == "1.5 MB")
+}

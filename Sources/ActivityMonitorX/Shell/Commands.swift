@@ -25,12 +25,12 @@ struct GoCommands: Commands {
         }
         CommandGroup(after: .sidebar) {
             Button(selection.inspectorShown ? "Hide Inspector" : "Show Inspector") {
-                WindowFit.toggleInspector(selection, score: history.scope != nil)
+                selection.inspectorShown.toggle()
             }
                 .keyboardShortcut("i", modifiers: [.command, .option])
                 .disabled(selection.isSystem)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
-                .disabled(selection.isSystem)
+                .disabled(selection.isSystem || selection.sidebar == .alerts)
             Divider()
             Button("Refresh") { selection.refreshes += 1 }
                 .keyboardShortcut("r")
@@ -65,14 +65,14 @@ struct DataCommands: Commands {
                 Toggle(range.label, isOn: Binding(get: { history.range == range }, set: { _ in history.range = range }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i))), modifiers: i == 0 ? .command : [.command, .option])
             }
-            .disabled(selection.isSystem && selection.sidebar != .disk)
+            .disabled(selection.isSystem && selection.sidebar != .disk || selection.sidebar == .alerts)
         }
         CommandMenu("Metric") {
             ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
                 Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
                     .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control])
             }
-            .disabled(selection.isSystem)
+            .disabled(selection.isSystem || selection.sidebar == .alerts)
         }
     }
 }
@@ -86,7 +86,7 @@ struct ProcessCommands: Commands {
             Button(selection.app.map(selection.isPinned) == true ? "Unpin App" : "Pin App") {
                 selection.app.map(selection.togglePin)
             }
-            // The usual shortcut for Add to Sidebar.
+            // The same shortcut as the File > Add to Sidebar action.
             .keyboardShortcut("t", modifiers: [.command, .control])
             .disabled(selection.app == nil)
             Divider()

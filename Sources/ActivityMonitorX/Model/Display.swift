@@ -36,9 +36,6 @@ extension Metric {
         }
     }
 
-    /// Sizes on disk, as the system shows them.
-    static func bytes(_ value: Double) -> String { Int64(value.rounded()).formatted(.byteCount(style: .file)) }
-
     /// Axis ticks carry no decimals for percentages; the bubble and tables keep `format`.
     func axisLabel(_ value: Double) -> String {
         switch self {
@@ -75,9 +72,19 @@ enum AppPalette {
     static let colors: [Color] = [.blue, .orange, .green, .purple, .mint]
     static let other = Color.secondary.opacity(0.35)
 
+    /// Each app's first slot, read once and saved when an app is added, so it keeps its colour across views, metrics
+    /// and launches.
+    @MainActor private static var stored = UserDefaults.standard.data(forKey: "appColorSlots")
+        .flatMap { try? JSONDecoder().decode(StoredSlots.self, from: $0) } ?? StoredSlots() {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(stored), forKey: "appColorSlots") }
+    }
+
     /// Colours of the top apps of `points` (a stacked series), in rank order as `stacked` emits them.
-    static func colors(for points: [SeriesPoint]) -> [AppKey: Color] {
+    @MainActor static func colors(for points: [SeriesPoint]) -> [AppKey: Color] {
         let top = points.prefix { $0.bucket == points[0].bucket }.compactMap(\.app)
-        return AppColor.slots(for: top, paletteSize: colors.count).mapValues { colors[$0] }
+        var slots = stored
+        let result = AppColor.slots(for: top, paletteSize: colors.count, stored: &slots)
+        if slots != stored { stored = slots }
+        return result.mapValues { colors[$0] }
     }
 }

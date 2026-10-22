@@ -35,10 +35,10 @@ struct AppLabel: View {
 enum AppIcon {
     private static var cache: [String: NSImage] = [:]
 
-    /// The bundle's icon for an app path; a process without an app gets the generic executable icon.
+    /// The bundle's icon for an app path; every command-line process (no bundle) gets the same generic executable icon.
     static func image(for app: AppKey) -> NSImage {
         if let image = cache[app.key] { return image }
-        let image = app.key.hasPrefix("/") ? NSWorkspace.shared.icon(forFile: app.key) : NSWorkspace.shared.icon(for: .unixExecutable)
+        let image = app.key.hasSuffix(".app") ? NSWorkspace.shared.icon(forFile: app.key) : NSWorkspace.shared.icon(for: .unixExecutable)
         cache[app.key] = image
         return image
     }

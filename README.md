@@ -103,7 +103,7 @@ make uninstall PURGE=1
 
 ## Third-party code
 
-Some source files and the process glossary come from mac-performance-monitor. The history database uses GRDB.swift. Both use the MIT License. The full notices are in `Packaging/Credits.html`.
+Some source files and the process glossary come from an MIT-licensed open source project. The history database uses GRDB.swift. Both use the MIT License. The full notices are in `Packaging/Credits.html`.
 
 ## License
 

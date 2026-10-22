@@ -43,7 +43,19 @@ struct DiskChart: View {
         let names = series
         let latest = points.last.map { values(at: $0.date) } ?? []
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.headline)
+                Spacer()
+                if let rule { Text(rule.label).font(.caption).foregroundStyle(.secondary) }
+                // One legend position for every chart: beside the title, so the plot heights match.
+                if names.count > 1 {
+                    ForEach(names.indices, id: \.self) { i in
+                        Label(names[i], systemImage: "circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(i == 0 ? Color.accentColor : Color.secondary)
+                    }
+                }
+            }
             if points.isEmpty {
                 Text("No data in this range.")
                     .foregroundStyle(.secondary)
@@ -60,20 +72,18 @@ struct DiskChart: View {
                         RuleMark(y: .value(rule.label, rule.value))
                             .foregroundStyle(.secondary)
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .annotation(position: .top, alignment: .leading) {
-                                Text(rule.label).font(.caption).foregroundStyle(.secondary)
-                            }
                     }
                 }
                 .chartForegroundStyleScale(domain: names, range: [Color.accentColor, Color.secondary].prefix(names.count).map { $0 })
-                .chartLegend(names.count > 1 ? .visible : .hidden)
-                .chartLegend(position: .bottom, alignment: .leading)
+                .chartLegend(.hidden)
                 .chartXAxis { AxisMarks(preset: .aligned) }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine()
                         AxisValueLabel {
-                            if let v = value.as(Double.self) { Text(format(v)) }
+                            if let v = value.as(Double.self) {
+                                Text(format(v)).frame(width: 64, alignment: .trailing)
+                            }
                         }
                     }
                 }

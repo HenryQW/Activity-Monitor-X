@@ -153,15 +153,87 @@ private func randomTracks() -> [ProcessTrack] {
     #expect(Set(first).count > 6)
 }
 
+private func slots(_ pairs: [(String, Int)]) -> StoredSlots {
+    var stored = StoredSlots()
+    for (key, slot) in pairs { stored.add(key, slot) }
+    return stored
+}
+
 @Test func topAppsGetDistinctSlots() throws {
     let keys = (0..<50).map { AppKey(key: "/Apps/App\($0).app", name: "x") }
     let home = AppColor.index(for: keys[0], paletteSize: 10)
     let rival = try #require(keys.dropFirst().first { AppColor.index(for: $0, paletteSize: 10) == home })
-    let slots = AppColor.slots(for: [keys[0], rival], paletteSize: 10)
+    var stored = StoredSlots()
+    let slots = AppColor.slots(for: [keys[0], rival], paletteSize: 10, stored: &stored)
     #expect(slots == [keys[0]: home, rival: (home + 1) % 10])
-    #expect(AppColor.slots(for: [keys[0], rival], paletteSize: 10) == slots)
-    // Rank order decides who keeps the shared slot.
-    #expect(AppColor.slots(for: [rival, keys[0]], paletteSize: 10) == [rival: home, keys[0]: (home + 1) % 10])
+    #expect(AppColor.slots(for: [keys[0], rival], paletteSize: 10, stored: &stored) == slots)
+    // New apps: the smaller key keeps the shared slot, whatever the rank.
+    var fresh = StoredSlots()
+    #expect(AppColor.slots(for: [rival, keys[0]], paletteSize: 10, stored: &fresh) == slots)
+}
+
+@Test func storedSlotKeepsAnAppsColourAcrossTopSets() {
+    let keys = (0..<10).map { AppKey(key: "/Apps/App\($0).app", name: "x") }
+    var stored = StoredSlots()
+    let first = AppColor.slots(for: Array(keys[0..<5]), paletteSize: 5, stored: &stored)
+    #expect(stored.keys.count == 5)
+    let second = AppColor.slots(for: [keys[7], keys[8], keys[2], keys[9], keys[6]], paletteSize: 5, stored: &stored)
+    #expect(second[keys[2]] == first[keys[2]])
+    #expect(Set(second.values).count == 5)
+}
+
+@Test func collidingStoredSlotsGiveTheSameColoursInAnyRankOrder() {
+    let a = AppKey(key: "a", name: "a"), b = AppKey(key: "b", name: "b"), c = AppKey(key: "c", name: "c")
+    var stored = slots([("c", 1), ("b", 1), ("a", 1)])
+    let colours = AppColor.slots(for: [c, b, a], paletteSize: 5, stored: &stored)
+    // The smallest key keeps the slot; the others take the next free slots in key order.
+    #expect(colours == [a: 1, b: 2, c: 3])
+    #expect(AppColor.slots(for: [a, c, b], paletteSize: 5, stored: &stored) == colours)
+    #expect(AppColor.slots(for: [b, a, c], paletteSize: 5, stored: &stored) == colours)
+    #expect(stored == slots([("c", 1), ("b", 1), ("a", 1)]))
+}
+
+@Test func storedSlotsKeepTheNewest256Apps() {
+    var stored = StoredSlots()
+    for i in 0...256 { stored.add("k\(i)", i % 5) }
+    #expect(stored.keys.count == 256)
+    #expect(stored["k0"] == nil)
+    #expect(stored["k256"] == 1)
+}
+
+@Test func peakRankingPicksSpikeCauser() {
+    // Five steady apps (10 down to 6) and one app that makes the only spike: 100 in one of 288 buckets, an average
+    // of 0.35, below all five.
+    let steady = (0..<5).map { track(Int64($0), "app\($0)", [(0, 2880, Double(10 - $0))]) }
+    let t = steady + [track(9, "spike", [(1000, 1010, 100)])]
+    let points = AppSeries.stacked(t, from: 0, to: 2880, bucket: 10)
+    #expect(points.filter { $0.bucket == 0 }.compactMap(\.app?.key) == ["spike", "app0", "app1", "app2", "app3"])
+    // The table keeps the range average.
+    #expect(AppSeries.ranking(t, from: 0, to: 2880, bucket: 10).last?.app.key == "spike")
+}
+
+@Test func equalExcessScoreOrdersByAverage() {
+    // Both give 10 to the only bucket above the median; "z" also runs in the quiet buckets, so its average is higher.
+    let t = [track(1, "a", [(0, 10, 10)]), track(2, "z", [(0, 10, 10), (10, 40, 1)])]
+    let points = AppSeries.stacked(t, from: 0, to: 40, bucket: 10)
+    #expect(points.filter { $0.bucket == 0 }.compactMap(\.app?.key) == ["z", "a"])
+}
+
+@Test func flatRangeEqualsAverageRanking() {
+    let t = (0..<8).map { track(Int64($0), "app\($0)", [(0, 100, Double(3 + ($0 * 5) % 8))]) }
+    let points = AppSeries.stacked(t, from: 0, to: 100, bucket: 10)
+    let byAverage = AppSeries.ranking(t, from: 0, to: 100, bucket: 10).prefix(5).map(\.app.key)
+    #expect(points.filter { $0.bucket == 0 }.compactMap(\.app?.key) == Array(byAverage))
+}
+
+@Test func otherProcessesAreTheTopThreeOutsideTheNamedApps() {
+    let t = [track(1, "A", [(0, 10, 50)], name: "a"), track(2, "B", [(0, 10, 4)], name: "b1"),
+             track(3, "B", [(0, 5, 10)], name: "b2"), track(4, "C", [(0, 10, 3)], name: "c"),
+             track(5, "A", [(0, 10, 3.5)], name: "quiet")]
+    // A named app's quiet process (`otherOnly`) is part of Other.
+    let rows = AppSeries.otherProcesses(t, named: [AppKey(key: "A", name: "A")], otherOnly: [4], from: 0, to: 10)
+    #expect(rows.map(\.name) == ["b2", "b1", "quiet"])
+    #expect(rows.map(\.value) == [5, 4, 3.5])
 }
 
 @Test func spanRankingIgnoresSlicesOutsideSpan() {

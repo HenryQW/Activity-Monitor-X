@@ -1,0 +1,3 @@
+# Sparse sample tiers with carry-forward
+
+Raw, minute and hour tiers store a process row only when it moved past small jitter thresholds (or a heartbeat expired); readers carry the last row forward until the next row or the process's `last_seen`. About 94 % of processes are idle, and a dense design was measured at about 6.5 GB against about 0.7 GB sparse. Process tables are keyed time first (`WITHOUT ROWID`) with no index that starts with `process_id`, so a tick appends at the right edge; this keeps the daemon under macOS's daily disk-write limit. Readers must never assume a row exists per bucket. Spec §6, decisions D6, D7.

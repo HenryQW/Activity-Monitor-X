@@ -42,6 +42,14 @@ private struct GeneralSettings: View {
         let prefs = Bindable(preferences)
         Form {
             Section {
+                Picker("Appearance", selection: prefs.appearance) {
+                    Text("System").tag(Preferences.Appearance.system)
+                    Text("Light").tag(Preferences.Appearance.light)
+                    Text("Dark").tag(Preferences.Appearance.dark)
+                }
+                .help("Follow the macOS light or dark setting, or always use one")
+            }
+            Section {
                 Toggle("Launch at Login", isOn: prefs.launchAtLogin)
                 if preferences.loginNeedsApproval {
                     LabeledContent("Needs approval") {

@@ -81,6 +81,7 @@ struct ActivityMonitorXApp: App {
                 Divider()
                 Button("Find…") { selection.searchPresented = true }
                     .keyboardShortcut("f")
+                    .disabled(selection.isSystem)
             }
             GroupCommands(selection: selection, groups: groups)
             GoCommands(selection: selection, history: history, diskMap: diskMap)
@@ -113,6 +114,8 @@ struct ActivityMonitorXApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = Preferences()
+
+    func applicationWillFinishLaunching(_ notification: Notification) { preferences.applyAppearance() }
 
     /// A menu bar item alone does not keep a SwiftUI app running (Task 0 probe 1): while it is shown, closing the
     /// window keeps the app, so the alert poll and notifications go on; while hidden, the app quits (probe 3).
