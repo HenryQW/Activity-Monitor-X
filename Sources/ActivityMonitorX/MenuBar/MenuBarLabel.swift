@@ -35,9 +35,11 @@ final class MenuBarReadout {
     }
 }
 
-/// CPU and memory pressure in the menu bar; "…" until the first real reading, never 0 %.
+/// CPU and memory pressure in the menu bar; "…" until the first real reading, never 0 %. A warning glyph shows only
+/// while an unread alert exists; it is part of the template image, so it has no colour (D25).
 struct MenuBarLabel: View {
     @Environment(MenuBarReadout.self) private var readout
+    @Environment(AlertsModel.self) private var alerts
     @Environment(Selection.self) private var selection
     @Environment(Preferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
@@ -45,27 +47,31 @@ struct MenuBarLabel: View {
     var body: some View {
         let p = readout.percents
         let cpu = p.map { "\($0.cpu)%" } ?? "…", pressure = p.map { "\($0.pressure)%" } ?? "…"
-        content(cpu: cpu, pressure: pressure)
-            .accessibilityLabel(p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
+        let unread = alerts.unread > 0
+        content(cpu: cpu, pressure: pressure, unread: unread)
+            .accessibilityLabel((p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
+                + (unread ? ", unread alert" : ""))
             // Runs while the item is hidden too (Task 0 probe 3); two cheap reads every 5 s.
             .task { await readout.run() }
             // The label lives for the app's whole life, so the menu bar and notifications can reopen a closed window.
             .onAppear { selection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() } }
     }
 
-    @ViewBuilder private func content(cpu: String, pressure: String) -> some View {
+    @ViewBuilder private func content(cpu: String, pressure: String, unread: Bool) -> some View {
         if preferences.menuBarStyle == .chart {
-            Image(nsImage: image(cpu: cpu, pressure: pressure))
+            Image(nsImage: image(cpu: cpu, pressure: pressure, unread: unread))
         } else {
-            Text("\(Image(systemName: "cpu")) \(cpu) \(Image(systemName: "memorychip")) \(pressure)").monospacedDigit()
+            let glyph = unread ? Text("\(Image(systemName: "exclamationmark.triangle")) ") : Text("")
+            Text("\(Image(systemName: "cpu")) \(cpu) \(glyph)\(Image(systemName: "memorychip")) \(pressure)").monospacedDigit()
         }
     }
 
     /// A template image: the menu bar sets the colour from its alpha, so light, dark and tint stay right.
-    private func image(cpu: String, pressure: String) -> NSImage {
+    private func image(cpu: String, pressure: String, unread: Bool) -> NSImage {
         let renderer = ImageRenderer(content: HStack(spacing: 3) {
             Image(systemName: "cpu")
             Text(cpu)
+            if unread { Image(systemName: "exclamationmark.triangle").imageScale(.small) }
             SparklineShape(values: readout.cpuHistory).stroke(lineWidth: 1).frame(width: 24, height: 12)
             Image(systemName: "memorychip")
             Text(pressure)

@@ -26,6 +26,8 @@ final class AlertsModel {
     /// An unread alert has severity 2 (critical): the sidebar badge turns prominent.
     var hasUnreadCritical: Bool { unreadRows.contains { $0.severity == 2 } }
     var unreadIDs: Set<Int64> { Set(unreadRows.map(\.id)) }
+    /// The newest unread alert: the menu bar glyph and the popover's top line.
+    var latestUnread: EventMark? { unreadRows.first }
     private var unreadRows: [EventMark] { alerts.filter { $0.id > readThrough && !dismissed.contains($0.id) } }
     private(set) var error: String?
     /// Rows up to this id were offered to `onNew`.
@@ -64,6 +66,20 @@ final class AlertsModel {
     func dismiss(_ ids: Set<Int64>) {
         ids.sorted().forEach { dismissed.insert($0) }
         UserDefaults.standard.set(dismissed.ids, forKey: Self.dismissedKey)
+    }
+
+    /// The rows the Alerts screen lists for `search` (by app or message); dismissed rows only while shown.
+    func listed(search: String) -> [EventMark] {
+        alerts.filter { event in
+            (showDismissed || !dismissed.contains(event.id))
+                && (search.isEmpty || event.subject.localizedStandardContains(search) || event.message.localizedStandardContains(search)
+                    || event.app.map { AppSearch.matches($0, search) } == true)
+        }
+    }
+
+    /// The listed rows that are not dismissed: Dismiss All dismisses them.
+    func undismissed(search: String) -> Set<Int64> {
+        Set(listed(search: search).map(\.id).filter { !dismissed.contains($0) })
     }
 
     func restore(_ ids: Set<Int64>) {

@@ -13,12 +13,13 @@ struct SignalRequest {
     }
 
     let target: Target
-    let signal: Int32
+    var signal: Int32
 
     init(process: ProcessRank, signal: Int32) { (target, self.signal) = (.process(process), signal) }
     init(app name: String, running: [NSRunningApplication], signal: Int32) { (target, self.signal) = (.app(name, running), signal) }
 
     var verb: String { signal == SIGKILL ? "Force Quit" : "Quit" }
+    var kind: String { if case .app = target { "App" } else { "Process" } }
     var title: String {
         switch target {
         case .process(let p): "\(verb) “\(p.name)” (PID \(p.pid))?"
@@ -28,9 +29,9 @@ struct SignalRequest {
     var message: String {
         switch (target, signal == SIGKILL) {
         case (.process, true): "The process stops at once. Unsaved changes are lost."
-        case (.process, false): "The process is asked to quit."
+        case (.process, false): "The process is asked to quit. Force Quit stops it at once; unsaved changes are lost."
         case (.app, true): "The app stops at once. Unsaved changes are lost."
-        case (.app, false): "The app is asked to quit. It can ask to save changes first."
+        case (.app, false): "The app is asked to quit. It can ask to save changes first. Force Quit stops it at once; unsaved changes are lost."
         }
     }
 }
@@ -50,7 +51,15 @@ struct SignalConfirmation: ViewModifier {
                                 isPresented: Binding(get: { selection.signalRequest != nil },
                                                      set: { if !$0 { selection.signalRequest = nil } }),
                                 titleVisibility: .visible, presenting: selection.signalRequest) { request in
-                Button(request.verb, role: .destructive) { send(request) }
+                Button("\(request.verb) \(request.kind)", role: .destructive) { send(request) }
+                // A Quit the target ignores needs no second trip: Force Quit is one more button here.
+                if request.signal == SIGTERM {
+                    Button("Force Quit \(request.kind)", role: .destructive) {
+                        var forced = request
+                        forced.signal = SIGKILL
+                        send(forced)
+                    }
+                }
                 Button("Cancel", role: .cancel) {}
             } message: { request in
                 Text(request.message)

@@ -60,11 +60,12 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(try #require(try raw.tracks(.hour, .score, end: 60, device: testDevice).first).slices.first?.value == 2.5)
     }
 
-    @Test func tracksCarryBundleAndTeam() throws {
+    @Test func tracksCarryBundleTeamAndUID() throws {
         let r = try Rig(lastSeen: 59, bundleId: "com.x", teamId: "T1")
         try r.raw(0, cpu: 1)
         let t = try #require(try r.tracks(.hour, .cpu, end: 60).first)
         #expect(t.candidate == GroupCandidate(name: "p", path: nil, bundleID: "com.x", teamID: "T1"))
+        #expect(t.uid == 0)
     }
 
     @Test func emptyDatabaseGivesNoTracks() throws {
@@ -205,14 +206,18 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
     @Test func systemSeriesCarriesDisk() throws {
         let r = try Rig(lastSeen: 0)
         try r.db.write {
-            try $0.execute(sql: "INSERT INTO system_samples(ts, disk_r, disk_lat_ms, disk_free) VALUES (0, 10, 1, 100), (5, 30, 3, NULL)")
-            try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, disk_util_avg, disk_free_avg) VALUES (0, 12, 40, NULL)")
+            try $0.execute(sql: """
+                INSERT INTO system_samples(ts, disk_r, disk_lat_ms, disk_free, net_in, temp_cpu)
+                VALUES (0, 10, 1, 100, 4, NULL), (5, 30, 3, NULL, 8, 60)
+                """)
+            try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, disk_util_avg, disk_free_avg, gpu_avg) VALUES (0, 12, 40, NULL, 7)")
         }
         let reader = HistoryReader(pool: r.pool)
         let raw = try reader.system(source: .raw, from: 0, to: 3600, bucket: 15)
         #expect(raw[0].diskR == 20 && raw[0].diskLatMs == 2 && raw[0].diskFree == 100)
+        #expect(raw[0].netIn == 6 && raw[0].tempCPU == 60 && raw[0].tempGPU == nil)
         let day = try reader.system(source: .minute, from: 0, to: 86_400, bucket: 300)
-        #expect(day[0].diskUtil == 40 && day[0].diskFree == nil)
+        #expect(day[0].diskUtil == 40 && day[0].diskFree == nil && day[0].gpu == 7)
     }
 
     @Test func eventsInRangeWithApp() throws {

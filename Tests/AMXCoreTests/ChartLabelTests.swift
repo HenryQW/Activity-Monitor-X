@@ -19,20 +19,6 @@ private func event(_ kind: String, _ severity: Int, _ message: String) -> EventM
     #expect(clusters[1].lead.message == "next")
 }
 
-@Test func sinceNamesTodayYesterdayOrTheDay() throws {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
-    let us = Locale(identifier: "en_US"), gb = Locale(identifier: "en_GB")
-    let now = 1_792_641_600.0  // 2026-10-22 04:00 UTC
-    func since(_ range: HistoryRange, _ start: Double, _ locale: Locale) -> String {
-        range.since(start, now: now, calendar: calendar, locale: locale).replacingOccurrences(of: "\u{202F}", with: " ")
-    }
-    #expect(since(.hour, now - 2 * 3600 - 54 * 60, us) == "Since 1:06 AM")
-    #expect(since(.day, now - 4 * 3600 - 54 * 60, us) == "Since Yesterday, 11:06 PM")
-    #expect(since(.week, now - 4 * 3600 - 54 * 60, us) == "Since Oct 21")
-    #expect(since(.week, now - 4 * 3600 - 54 * 60, gb) == "Since 21 Oct")
-}
-
 @Test func byteLabelsNeverSpellOutZero() {
     #expect(Metric.bytes(0) == "0 bytes")
     #expect(Metric.bytes(1_500_000) == "1.5 MB")

@@ -48,10 +48,10 @@ private struct GeneralSettings: View {
                     Text("Dark").tag(Preferences.Appearance.dark)
                 }
                 .help("Follow the macOS light or dark setting, or always use one")
-                Picker("Open at", selection: prefs.openAt) {
+                Picker("Window opens with", selection: prefs.openAt) {
                     ForEach(StartScreen.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
-                .help("Choose the screen the main window opens at")
+                .help("Choose the screen the main window opens with")
                 Picker("Time range at open", selection: prefs.openRange) {
                     ForEach(StartRange.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
@@ -97,6 +97,7 @@ private struct GeneralSettings: View {
 
 private struct AlertSettings: View {
     @Environment(SettingsModel.self) private var model
+    @AppStorage(Notifier.criticalBannersOnlyKey) private var criticalBannersOnly = true
 
     private typealias R = AlertRules
 
@@ -104,6 +105,17 @@ private struct AlertSettings: View {
         let rules = (model.settings ?? DaemonSettings()).rules
         let machine = Machine.current
         Form {
+            Section {
+                Picker("Banners for", selection: $criticalBannersOnly) {
+                    Text("All Alerts").tag(false)
+                    Text("Critical Only").tag(true)
+                }
+                .help("Choose which alerts show a banner. The other alerts go to Notification Center only.")
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text(criticalBannersOnly ? "Warnings go to Notification Center without a banner." : "Every alert shows a banner.")
+            }
             DaemonProblem()
             Group {
                 Section {
@@ -311,7 +323,7 @@ private struct RecordingSettings: View {
                             .help("Remove this app from the list")
                         }
                     }
-                    Button("Add App…", systemImage: "plus") { addTerminal() }
+                    Button("Add Terminal App…", systemImage: "plus") { addTerminal() }
                 } header: {
                     Text("Terminal Apps")
                 } footer: {
@@ -372,7 +384,7 @@ private struct HelperSettings: View {
                 }
             }
             Section {
-                Button("Check Again") { Task { await model.load() } }
+                Button("Check Helper Again") { Task { await model.load() } }
             }
         }
         .formStyle(.grouped)

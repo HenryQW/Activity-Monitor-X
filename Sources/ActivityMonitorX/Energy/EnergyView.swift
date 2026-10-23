@@ -3,8 +3,8 @@ import Charts
 import SwiftUI
 
 /// Live power: where the Mac's watts come from and which apps use them, then system power for the last 5 min.
-/// Read once a second while the screen shows. The search keeps the apps it matches, the rest go into Other; a click on
-/// an app selects it for the inspector. Content layer: no glass.
+/// Read once a second while the screen shows. The search keeps the apps it matches, the rest go into Other; kept apps
+/// always have a band; Sort orders the apps by watts or name. Content layer: no glass.
 struct EnergyView: View {
     @Environment(LiveModel.self) private var live
     @Environment(HistoryModel.self) private var history
@@ -20,18 +20,30 @@ struct EnergyView: View {
 
     @ViewBuilder private func content(_ model: EnergyModel) -> some View {
         if let power = model.power {
-            let shares = model.processes.map { EnergyShare.top($0, query: selection.search) } ?? []
+            let shares = model.processes.map {
+                EnergyShare.top($0, query: selection.search, kept: model.kept, byName: model.sortsByName)
+            } ?? []
             VStack(alignment: .leading, spacing: 12) {
-                EnergyDiagram(power: power, flows: EnergyFlows(power, shares: shares),
-                              colors: AppPalette.colors(for: shares.compactMap(\.app), chosen: history.appColors),
-                              selected: selection.app, select: { selection.app = $0 })
+                EnergyDiagram(power: power, flows: EnergyFlows(power, shares: shares, expanded: model.expanded,
+                                                               processes: model.processes ?? []),
+                              colors: AppPalette.colors(for: shares.compactMap(\.app), chosen: history.appColors), model: model)
                     .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                     .overlay(alignment: .trailing) {
                         if shares.isEmpty {
                             Text(model.processes == nil ? "App shares not available" : "No app uses energy now").foregroundStyle(.secondary)
                         }
                     }
-                Text(Self.status(power))
+                HStack {
+                    Text(Self.status(power))
+                    Spacer()
+                    Picker("Sort", selection: Bindable(model).sortsByName) {
+                        Text("Watts").tag(false)
+                        Text("Name").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .help("Sort the apps by watts or by name")
+                }
                 PowerChart(points: model.points)
             }
             .padding()

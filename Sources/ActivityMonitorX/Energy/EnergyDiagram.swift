@@ -2,14 +2,17 @@ import AMXCore
 import SwiftUI
 
 /// The live energy flow: the adapter and the battery into the Mac, the Mac into its top apps and Other, each band as wide
-/// as its watts (`SankeyLayout`). Sources, the Mac and the battery are in the accent colour, apps in their chart colour.
-/// A click on an app's band or label selects the app.
+/// as its watts (`SankeyLayout`). Sources, the Mac and the battery are in the accent colour, apps and their processes in
+/// the app's chart colour. A click on an app's band or label selects the app and opens it into its processes, or folds
+/// it; a click on a process selects it. A right-click on an app or a process opens its actions.
 struct EnergyDiagram: View {
     let power: PowerReading
     let flows: EnergyFlows
     let colors: [AppKey: Color]
-    let selected: AppKey?
-    let select: (AppKey) -> Void
+    let model: EnergyModel
+    @Environment(Selection.self) private var selection
+    @Environment(HistoryModel.self) private var history
+    @Environment(LiveModel.self) private var live
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let nodeWidth = 10.0, gap = 14.0, leading = 150.0, trailing = 210.0, top = 22.0, bottom = 22.0
@@ -29,15 +32,16 @@ struct EnergyDiagram: View {
                                              size: size, nodeWidth: Self.nodeWidth, gap: Self.gap)
             ZStack(alignment: .topLeading) {
                 ForEach(Array(zip(flows.links, placed.bands)), id: \.0.id) { link, band in
-                    let app: AppKey? = if case .app(let app) = link.to { app } else { nil }
+                    let app = owner(link.to)
                     BandShape(x0: band.x0, y0: band.y0, x1: band.x1, y1: band.y1, thickness: band.thickness)
-                        .fill(link.to == .other ? AppPalette.other
-                              : color(link.from == .mac ? link.to : link.from).opacity(app != nil && app == selected ? 0.8 : 0.5))
-                        .onTapGesture { app.map(select) }
+                        .fill([.other, .otherProcesses].contains(link.to) ? AppPalette.other
+                              : color(link.from == .mac ? link.to : link.from).opacity(app != nil && app == selection.app ? 0.8 : 0.5))
+                        .onTapGesture { click(link.to) }
+                        .contextMenu { menu(link.to) }
                         .accessibilityElement()
-                        .accessibilityLabel("\(name(link.from)) to \(name(link.to)), \(value(link))")
-                        .accessibilityAddTraits(app == nil ? [] : app == selected ? [.isButton, .isSelected] : .isButton)
-                        .accessibilityAction { app.map(select) }
+                        .accessibilityLabel("\(spoken(link.from)) to \(spoken(link.to)), \(value(link))")
+                        .accessibilityAddTraits(app == nil ? [] : app == selection.app ? [.isButton, .isSelected] : .isButton)
+                        .accessibilityAction { click(link.to) }
                 }
                 ForEach(nodes.indices, id: \.self) { i in
                     let rect = placed.nodes[i]
@@ -46,7 +50,7 @@ struct EnergyDiagram: View {
                         .frame(width: rect.width, height: max(1, rect.height))
                         .position(x: rect.midX, y: rect.midY)
                         .accessibilityElement()
-                        .accessibilityLabel("\(name(nodes[i])), \(value(nodes[i]))")
+                        .accessibilityLabel("\(spoken(nodes[i])), \(value(nodes[i]))")
                 }
                 labels(nodes: nodes, column: column, rects: placed.nodes, size: size)
                     .accessibilityHidden(true)
@@ -59,12 +63,13 @@ struct EnergyDiagram: View {
         .accessibilityLabel(summary)
     }
 
-    /// Sources on the left of their nodes, the Mac above its node and a charging battery below its node, apps on the right.
+    /// Sources on the left of their nodes, the Mac above its node and a charging battery below its node, apps and processes
+    /// on the right; app labels are as wide as the space to the process column.
     @ViewBuilder private func labels(nodes: [EnergyNode], column: [Int], rects: [CGRect], size: CGSize) -> some View {
         let sources = nodes.indices.filter { column[$0] == 0 }
-        let apps = nodes.indices.filter { column[$0] == 2 }
+        let last = flows.columns.count - 1
+        let step = (size.width - Self.nodeWidth) / Double(last)
         let sourceY = SankeyLayout.spread(sources.map { rects[$0].midY }, spacing: 40, in: 20...max(20, size.height - 20))
-        let appY = SankeyLayout.spread(apps.map { rects[$0].midY }, spacing: 18, in: 9...max(9, size.height - 9))
         ForEach(Array(sources.enumerated()), id: \.element) { k, i in
             VStack(alignment: .trailing, spacing: 1) {
                 Text(name(nodes[i])).fontWeight(.semibold)
@@ -83,24 +88,84 @@ struct EnergyDiagram: View {
             .fixedSize()
             .position(x: rects[i].midX, y: nodes[i] == .mac ? rects[i].minY - 11 : rects[i].maxY + 11)
         }
-        ForEach(Array(apps.enumerated()), id: \.element) { k, i in
-            let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
-            HStack(spacing: 6) {
-                Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selected ? .semibold : nil)
-                Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
+        ForEach(2...max(2, last), id: \.self) { c in
+            let members = nodes.indices.filter { column[$0] == c }
+            let y = SankeyLayout.spread(members.map { rects[$0].midY }, spacing: 18, in: 9...max(9, size.height - 9))
+            let width = max(0, c == last ? Self.trailing - 8 : step - Self.nodeWidth - 8)
+            ForEach(Array(members.enumerated()), id: \.element) { k, i in
+                let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
+                HStack(spacing: 6) {
+                    Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selection.app ? .semibold : nil)
+                    Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
+                }
+                .lineLimit(1)
+                .frame(width: width, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { click(nodes[i]) }
+                .contextMenu { menu(nodes[i]) }
+                .position(x: rects[i].maxX + width / 2 + 4, y: y[k])
             }
-            .lineLimit(1)
-            .frame(width: Self.trailing - 8, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture { app.map(select) }
-            .position(x: rects[i].maxX + Self.trailing / 2 + 4, y: appY[k])
+        }
+    }
+
+    /// The app a node belongs to: an app, or the expanded app of a process.
+    private func owner(_ node: EnergyNode) -> AppKey? {
+        switch node {
+        case .app(let app): app
+        case .process, .otherProcesses: model.expanded
+        case .adapter, .battery, .mac, .other: nil
+        }
+    }
+
+    /// Selects the node's app; an app also opens into its processes or folds, and a process is selected too.
+    private func click(_ node: EnergyNode) {
+        guard let app = owner(node) else { return }
+        selection.app = app
+        switch node {
+        case .app: model.expanded = model.expanded == app ? nil : app
+        case .process(let pid, let startTime, _):
+            let rank = history.range == .live ? live.rank(of: app) : history.rank(of: app)
+            selection.process = rank?.processes.first { $0.pid == pid && $0.startTime == startTime }
+        default: break
+        }
+    }
+
+    /// The right-click actions of an app or a process.
+    @ViewBuilder private func menu(_ node: EnergyNode) -> some View {
+        if let app = owner(node), node != .otherProcesses {
+            Button("Show in Inspector", systemImage: "sidebar.trailing") {
+                if case .process = node { click(node) } else { selection.app = app }
+                selection.inspectorShown = true
+            }
+            .help("Show \(name(node)) in the inspector")
+        }
+        if case .app(let app) = node {
+            Button("Show in Apps", systemImage: "app.badge") {
+                selection.app = app
+                history.metric = .energy
+                history.range = .live
+                selection.showChart = true
+                selection.sidebar = .apps
+            }
+            .help("Show the live energy of \(app.name) in Apps")
+            let kept = model.kept.contains(app.key)
+            Button(kept ? "Remove from Flow" : "Keep in Flow", systemImage: kept ? "minus.circle" : "plus.circle") {
+                if kept { model.kept.remove(app.key) } else { model.kept.insert(app.key) }
+            }
+            .help(kept ? "Show \(app.name) only while it is in the top 5" : "Always show \(app.name) in the flow while it runs")
+            let pinned = selection.isPinned(app)
+            Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
+                .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+            Menu("Colour") { AppColorPicker(app: app, history: history) }
+                .help("Choose the colour that shows \(app.name)")
         }
     }
 
     private func color(_ node: EnergyNode) -> Color {
         switch node {
         case .app(let app): colors[app] ?? AppPalette.other
-        case .other: AppPalette.other
+        case .process: model.expanded.flatMap { colors[$0] } ?? AppPalette.other
+        case .other, .otherProcesses: AppPalette.other
         case .adapter, .battery, .mac: .accentColor
         }
     }
@@ -111,8 +176,14 @@ struct EnergyDiagram: View {
         case .battery: "Battery"
         case .mac: "Mac"
         case .app(let app): app.name
-        case .other: "Other"
+        case .process(_, _, let name): name
+        case .other, .otherProcesses: "Other"
         }
+    }
+
+    /// The name for VoiceOver: a process has its PID too.
+    private func spoken(_ node: EnergyNode) -> String {
+        if case .process(let pid, _, let name) = node { "\(name), PID \(pid)" } else { name(node) }
     }
 
     private func value(_ node: EnergyNode) -> String {
@@ -125,14 +196,14 @@ struct EnergyDiagram: View {
             let percent = power.battery?.percent.map { (Double($0) / 100).formatted(.percent) }
             return [watts ?? "Not available", percent].compactMap { $0 }.joined(separator: ", ")
         case .mac: return power.systemWatts.map { Self.watts($0) } ?? "Not available"
-        case .app, .other: return flows.links.first { $0.to == node }.map(value) ?? "Not available"
+        case .app, .other, .process, .otherProcesses: return flows.links.first { $0.to == node }.map(value) ?? "Not available"
         }
     }
 
-    /// A band into an app shows its share too.
+    /// A band into an app or a process shows its share too: of the Mac, or of the app.
     private func value(_ link: EnergyFlows.Link) -> String {
-        guard link.from == .mac else { return link.watts.map { Self.watts($0) } ?? "Not available" }
-        let total = flows.links.filter { $0.from == .mac }.reduce(0) { $0 + $1.weight }
+        guard link.from != .adapter, link.from != .battery else { return link.watts.map { Self.watts($0) } ?? "Not available" }
+        let total = flows.links.filter { $0.from == link.from }.reduce(0) { $0 + $1.weight }
         let share = (total > 0 ? link.weight / total : 0).formatted(.percent.precision(.fractionLength(0)))
         return link.watts.map { "\(Self.watts($0)), \(share)" } ?? share
     }

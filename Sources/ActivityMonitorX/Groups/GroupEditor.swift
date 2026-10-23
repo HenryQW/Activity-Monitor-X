@@ -85,7 +85,7 @@ struct GroupEditor: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button("Save") { save(draft.wrappedValue) }
+                Button("Save Group") { save(draft.wrappedValue) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(problem != nil)
             }

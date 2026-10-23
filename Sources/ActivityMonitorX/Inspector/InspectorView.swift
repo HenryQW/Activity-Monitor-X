@@ -3,8 +3,8 @@ import AppKit
 import Charts
 import SwiftUI
 
-/// The selected app for the range (or span): its series, peak process, alerts and processes, with Pin, Quit and
-/// Force Quit; with no app selected, a summary of the range. Both are a grouped `Form`, one section per topic, as in the
+/// The selected app for the range (or span): its series, peak process, alerts and processes, with a row of actions
+/// under its name (Pin, Show in Finder, Alert Rules, Quit); with no app selected, a summary of the range. Both are a grouped `Form`, one section per topic, as in the
 /// system's own panes. An app's inspector has three pills above its content: Overview shows the form, Processes the
 /// process list, Files the open files and sockets. The pill is kept per window, and selecting a process in the table
 /// switches it to Processes.
@@ -12,6 +12,7 @@ struct InspectorView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var selection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @SceneStorage("inspectorTab") private var tab = Tab.overview
     private enum Tab: String { case overview = "Overview", processes = "Processes", files = "Files" }
     /// The app whose full process list is shown; another app starts short again.
@@ -93,6 +94,7 @@ struct InspectorView: View {
         let running = rank.processes.filter { !$0.exited }
         let exited = rank.processes.filter(\.exited)
         let runningRows = AppRank.byName(running)
+        let usual = history.range == .live ? nil : history.usual(of: rank.app)
         // A long-gone helper never hides a running process: only the exited rows are cut, to the top 20 by average.
         let exitedRows = AppRank.byName(exited)
         let shownExited = exitedRows.prefix(_showAllOf.wrappedValue == rank.app.key ? .max : 20)
@@ -100,7 +102,7 @@ struct InspectorView: View {
             get: { selection.process.map(ProcKey.init) },
             set: { key in selection.process = rank.processes.first { ProcKey($0) == key } })
         // Overview and Files are grouped Forms; Processes is a List, so a click selects a process and the arrow keys
-        // move through the processes. The ZStack keeps the pills and the bottom bar when the pill changes.
+        // move through the processes. The ZStack keeps the pills when the pill changes.
         return ZStack {
             if tab == .overview {
                 Form {
@@ -116,14 +118,33 @@ struct InspectorView: View {
                                 }
                             }
                         }
-                        LabeledContent("Average", value: metric.format(rank.average))
-                            .monospacedDigit()
-                            .help("The app's average in the range, every process counted.")
-                        LabeledContent("Peak", value: metric.format(rank.peak))
-                            .monospacedDigit()
-                            .help("The app's highest value in the range.")
+                        actions(rank)
+                        LabeledContent {
+                            Text(metric.format(rank.average))
+                                .contentTransition(.numericText(value: rank.average))
+                                .animation(reduceMotion ? nil : .default, value: rank.average)
+                        } label: {
+                            Text("Average")
+                            if let usual { Text(Self.compare(rank.average, usual: usual, metric: metric)) }
+                        }
+                        .monospacedDigit()
+                        .help("The app's average in the range, every process counted.")
+                        LabeledContent {
+                            Text(metric.format(rank.peak))
+                                .contentTransition(.numericText(value: rank.peak))
+                                .animation(reduceMotion ? nil : .default, value: rank.peak)
+                        } label: {
+                            Text("Peak")
+                        }
+                        .monospacedDigit()
+                        .help("The app's highest value in the range.")
+                    } footer: {
+                        // Live has no usual value.
+                        if history.range != .live {
+                            Text(usual == nil ? "Usual needs 2 days of history in the 7 days before the range."
+                                 : "Usual: the same hours of day in the 7 days before the range.")
+                        }
                     }
-                    if history.range != .live { UsualCard(rank: rank) }
                     Section(metric.label) {
                         Chart {
                             // One vectorized plot, not a mark per point.
@@ -132,7 +153,7 @@ struct InspectorView: View {
                                 .foregroundStyle(color.opacity(0.6))
                         }
                         .chartXAxis {
-                            let (unit, count) = Self.xStride(series)
+                            let (unit, count) = Self.xStride(seconds: (series.last?.bucket ?? 0) - (series.first?.bucket ?? 0))
                             AxisMarks(values: .stride(by: unit, count: count))
                         }
                         .chartYAxis {
@@ -160,14 +181,12 @@ struct InspectorView: View {
                             LabeledContent("\(peak.name) (\(String(peak.pid)))", value: metric.format(peak.peak)).monospacedDigit()
                         }
                     }
-                    if history.range != .live { LaunchHistoryCard(app: rank.app) }
+                    if history.range != .live { LaunchHistoryCard(app: rank.app, processes: rank.processes, color: color) }
                     Section(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
                         if events.isEmpty {
                             Text("No alerts").foregroundStyle(.secondary)
                         }
                         ForEach(events.indices, id: \.self) { EventRow(event: events[$0]) }
-                        Button("Alert Rules…") { _rulesShown.wrappedValue = true }
-                            .help("Mute alerts for \(rank.app.name) or give it its own alert values")
                     }
                 }
                 .formStyle(.grouped)
@@ -188,7 +207,7 @@ struct InspectorView: View {
                             if shownExited.count < exitedRows.count {
                                 Button("Show All \(exited.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
                                     .buttonStyle(.link)
-                                    .help("Show all exited processes")
+                                    .help("Show the list of all exited processes")
                             }
                         }
                     }
@@ -210,49 +229,57 @@ struct InspectorView: View {
             .help("Show the overview, the processes or the open files")
             .padding(10)
         }
-        // A solid bar, apart from the sections, keeps the destructive buttons away from the app's name.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                HStack {
-                    let isPinned = selection.isPinned(rank.app)
-                    Button(isPinned ? "Unpin" : "Pin") { selection.togglePin(rank.app) }
-                        .help(isPinned ? "Unpin \(rank.app.name)" : "Pin \(rank.app.name) to the sidebar")
-                    if let process = selection.signallable {
-                        Button("Quit") { selection.signalRequest = SignalRequest(process: process, signal: SIGTERM) }
-                            .help("Ask \(process.name) to quit")
-                        Button("Force Quit") { selection.signalRequest = SignalRequest(process: process, signal: SIGKILL) }
-                            .help("Stop \(process.name) immediately. Unsaved changes are lost.")
-                    } else if let process = selection.process {
-                        disabledQuit(process.exited ? "Process has exited" : "Cannot quit this process")
-                    } else if case let apps = Self.running(rank.app), !apps.isEmpty {
-                        Button("Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGTERM) }
-                            .help("Ask \(rank.app.name) to quit")
-                        Button("Force Quit") { selection.signalRequest = SignalRequest(app: rank.app.name, running: apps, signal: SIGKILL) }
-                            .help("Stop \(rank.app.name) immediately. Unsaved changes are lost.")
-                    } else if rank.processes.allSatisfy(\.exited) {
-                        disabledQuit("No running processes")
-                    } else {
-                        // A bare executable name (zsh, node) can stand for other users' and unrelated processes.
-                        disabledQuit("Select a process to quit")
-                    }
-                }
-                .padding(10)
-            }
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-        }
     }
 
-    /// A Quit button that cannot act now; the help says why.
-    private func disabledQuit(_ reason: String) -> some View {
-        Button("Quit") {}.disabled(true).help(reason)
+    /// Pin, Show in Finder, Alert Rules and Quit: one width and one height, icon over title. Quit only asks; its
+    /// confirmation offers Force Quit, so no destructive action is one click from the app's name.
+    private func actions(_ rank: AppRank) -> some View {
+        let app = rank.app
+        let isPinned = selection.isPinned(app)
+        let quit = selection.quitRequest(of: app)
+        return HStack(spacing: 6) {
+            Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") { selection.togglePin(app) }
+                .help(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: app.key)])
+            } label: {
+                // "in Finder" does not fit a 240 pt pane, even on its own line (measured).
+                Label { ViewThatFits(in: .horizontal) { Text("Show\nin Finder"); EmptyView() } } icon: { Image(systemName: "folder") }
+            }
+            .accessibilityLabel("Show \(app.name) in Finder")
+            // A bare executable name has no path to show.
+            .disabled(!app.key.hasPrefix("/"))
+            .help(app.key.hasPrefix("/") ? "Show \(app.name) in the Finder" : "\(app.name) has no app bundle to show")
+            Button("Alert Rules…", systemImage: "bell") { _rulesShown.wrappedValue = true }
+                .help("Mute alerts for \(app.name) or give it its own alert values")
+            Button("Quit…", systemImage: "xmark.circle") { selection.signalRequest = quit }
+                .disabled(quit == nil)
+                .help(quitHelp(rank, quit))
+        }
+        .labelStyle(StackedLabelStyle())
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// What Quit does, or why it cannot act.
+    private func quitHelp(_ rank: AppRank, _ quit: SignalRequest?) -> String {
+        if let process = selection.signallable { return "Ask \(process.name) to quit, or force quit it" }
+        if let process = selection.process { return process.exited ? "Process has exited" : "Cannot quit this process" }
+        if quit != nil { return "Quit \(rank.app.name), or force quit it" }
+        if rank.processes.allSatisfy(\.exited) { return "No running processes" }
+        // A bare executable name (zsh, node) can stand for other users' and unrelated processes.
+        return "Select a process to quit"
+    }
+
+    /// "usual 21.0%, 4× usual" under a value; for an app usually idle, only how the value compares.
+    private static func compare(_ value: Double, usual: Double, metric: Metric) -> String {
+        let compared = UsualProfile.describe(value, usual: usual)
+        return usual > 0 ? "usual \(metric.format(usual)), \(compared.prefix(1).lowercased() + compared.dropFirst())" : compared
     }
 
     /// A whole-minute, hour or day stride for about three x labels: more truncate at the inspector's 240 pt, and
     /// `.automatic(desiredCount:)` does not lower the count of a date axis (measured).
-    private static func xStride(_ series: [SeriesPoint]) -> (Calendar.Component, Int) {
-        let step = ((series.last?.bucket ?? 0) - (series.first?.bucket ?? 0)) / 3
+    static func xStride(seconds: Double) -> (Calendar.Component, Int) {
+        let step = seconds / 3
         if step < 3600 { return (.minute, [1, 2, 5, 10, 15, 30].first { Double($0 * 60) >= step } ?? 60) }
         if step < 86_400 { return (.hour, [1, 2, 3, 6, 12].first { Double($0 * 3600) >= step } ?? 24) }
         return (.day, Int((step / 86_400).rounded(.up)))
@@ -286,22 +313,46 @@ struct InspectorView: View {
     }
 
     /// The running copies of an app bundle; none for a bare executable name.
-    private static func running(_ app: AppKey) -> [NSRunningApplication] {
+    static func running(_ app: AppKey) -> [NSRunningApplication] {
         guard app.key.hasSuffix(".app") else { return [] }
         return NSWorkspace.shared.runningApplications.filter { $0.bundleURL?.path == app.key }
     }
 }
 
-/// An event's message with its date and time below.
+/// The icon over the title, centred, filling the button: buttons in a row get one width and one height.
+private struct StackedLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(spacing: 3) {
+            configuration.icon.imageScale(.large)
+            configuration.title.font(.caption).multilineTextAlignment(.center).lineLimit(2)
+        }
+        // The bezel's own side margins leave too little for a title at 240 pt; the title may use part of them.
+        .padding(.horizontal, -5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// An event's message with its date and time below; a click selects its time on the chart.
 private struct EventRow: View {
+    @Environment(HistoryModel.self) private var history
+    @Environment(Selection.self) private var selection
     let event: EventMark
 
     var body: some View {
-        VStack(alignment: .leading) {
-            Text(event.message)
-            Text(Date(timeIntervalSince1970: event.ts).formatted(date: .abbreviated, time: .shortened))
-                .font(.caption).foregroundStyle(.secondary)
+        Button {
+            history.selectTime(around: event.ts)
+            selection.showChart = true
+        } label: {
+            VStack(alignment: .leading) {
+                Text(event.message)
+                Text(Date(timeIntervalSince1970: event.ts).formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help("Select this time on the chart")
     }
 }
 

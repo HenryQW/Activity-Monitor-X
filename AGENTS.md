@@ -9,6 +9,7 @@ Activity Monitor X: a root daemon (`amxd`) records per-process history in SQLite
 | What must be true now (wins over the spec) | `docs/requirements.md` |
 | What to build (original design) | `docs/specs/2026-10-21-activity-monitor-x-design.md` (§4 architecture, §5 sampling, §6 storage, §7 XPC, §8 UI, §9 alerts) |
 | Why it is built this way | `docs/adr/` (one decision per file) |
+| How the app should feel (design language and principles) | `DESIGN.md` |
 | Words and their meaning | `GLOSSARY.md` |
 | Full decision log (D1 and later, with options and evidence) | `docs/decisions/2026-10-22-overnight.md` |
 | Active plans (deleted when done; git keeps them) | `docs/plans/` |
@@ -39,11 +40,13 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 
 - Every change is committed. Work on a branch (or an agent worktree branch) and merge it into the integration branch only after review and acceptance; commit small, one concern per commit. No uncommitted work at the end of a task.
 - Smallest change that follows the existing code; match comment density and naming.
+- Read `DESIGN.md` before a UI change. Specific design rules are requirement lines; change `DESIGN.md` only when the design language changes.
 - Native SwiftUI and AppKit components with default styling first; no custom glass, fonts or backgrounds on popovers, tiles or cards (user call, D24, D25).
 - Colours: red and yellow mean warning and critical only; app colours never use them. App colours are stable per app (`appColorSlots`).
 - Every interactive control has an accessibility name; destructive actions have text buttons.
 - The window never resizes itself (no growth for the inspector or toolbar).
 - Docs, plans, reports and UI copy: ASD-STE100 Simplified Technical English, no em or en dashes.
+- Hover hints and action labels say the action and the result where space permits ("Quit Safari and close its windows", not "Quit").
 - A requirement that changes or is new: add or edit its line in `docs/requirements.md` in the same commit (rules at the top of that file).
 - New decision: add a `D<n>` entry to the decision log; add an ADR only if it is hard to reverse, surprising and a real trade-off.
 

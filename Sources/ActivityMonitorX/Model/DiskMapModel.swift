@@ -35,6 +35,8 @@ final class DiskMapModel {
     private(set) var tree: DiskTree?
     /// The scanned target's name, the path bar's first level.
     private(set) var title = ""
+    /// The path being scanned.
+    private var scanningPath = ""
     private(set) var progress: DiskScanProgress?
     /// Index path of the shown folder in `tree`.
     var focus: [Int] = []
@@ -64,6 +66,7 @@ final class DiskMapModel {
         let generation = generation, root = target.path, flag = StopFlag()
         stopFlag = flag
         title = target.name
+        scanningPath = root
         tree = nil
         focus = []
         // An index path of the old tree names another item in the new one.
@@ -92,6 +95,13 @@ final class DiskMapModel {
             }
             finish(result, generation: generation, root: root, elapsed: ContinuousClock.now - start)
         }
+    }
+
+    /// Disk's Show in Space: scans the target unless its map is shown or being made.
+    func open(_ target: Target) {
+        let shown = isScanning ? scanningPath == target.path : tree?.rootPath == target.path
+        self.target = target
+        if !shown { scan() }
     }
 
     /// Never waits for the scan thread, which a TCC prompt or one huge folder can hold in a syscall.

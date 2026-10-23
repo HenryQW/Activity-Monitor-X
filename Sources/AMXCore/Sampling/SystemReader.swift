@@ -176,7 +176,7 @@ public final class SystemSampler {
 
     // MARK: - Memory
 
-    private static let pageSize: UInt64 = {
+    static let pageSize: UInt64 = {
         var size: vm_size_t = 0
         return host_page_size(mach_host_self(), &size) == KERN_SUCCESS && size > 0
             ? UInt64(size) : UInt64(getpagesize())
@@ -187,7 +187,7 @@ public final class SystemSampler {
         return sysctl("hw.memsize", into: &v) ? v : 0
     }()
 
-    private static func vmStatistics() -> vm_statistics64_data_t? {
+    static func vmStatistics() -> vm_statistics64_data_t? {
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
         let kr = withUnsafeMutablePointer(to: &stats) {

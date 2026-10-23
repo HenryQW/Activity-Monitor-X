@@ -48,10 +48,12 @@ public struct LiveProcess: Codable, Sendable, Equatable {
     /// The attributed app's bundle ID and the executable's team ID; nil from an older daemon.
     public let bundleID: String?
     public let teamID: String?
+    /// The owner's uid; nil from an older daemon.
+    public let uid: UInt32?
 
     public init(pid: Int32, startTime: Double, name: String, appKey: String, appName: String, path: String?, cpu: Double,
                 mem: UInt64, diskR: Double, diskW: Double, netIn: Double, netOut: Double, gpu: Double,
-                energy: Double, bundleID: String? = nil, teamID: String? = nil) {
+                energy: Double, bundleID: String? = nil, teamID: String? = nil, uid: UInt32? = nil) {
         self.pid = pid
         self.startTime = startTime
         self.name = name
@@ -68,6 +70,7 @@ public struct LiveProcess: Codable, Sendable, Equatable {
         self.energy = energy
         self.bundleID = bundleID
         self.teamID = teamID
+        self.uid = uid
     }
 }
 

@@ -15,6 +15,13 @@ import Testing
                                       growthBytesPerSec: 100_000_000) == 100)
     }
 
+    @Test func cpuSplitAcrossWrap() {
+        let before = HostReader.CPUTicks(user: .max - 9, system: 0, idle: 0)
+        let split = HostReader.CPUSplit(HostReader.CPUTicks(user: 10, system: 20, idle: 60), since: before)
+        #expect(split.map { [$0.user, $0.system, $0.idle] } == [20, 20, 60])
+        #expect(HostReader.CPUSplit(before, since: before) == nil)
+    }
+
     @Test func diskLatencyZeroOps() {
         #expect(DiskMath.latencyMs(timeDeltaNanos: 2_000_000, opsDelta: 0) == 0)
     }

@@ -10,6 +10,9 @@ public struct PowerReading: Equatable, Sendable {
         public var charging: Bool
         /// Watts into the battery (positive, charging) or out of it (negative).
         public var watts: Double?
+        /// The Mac's estimates in minutes; nil while it calculates.
+        public var minutesToFull: Int? = nil
+        public var minutesToEmpty: Int? = nil
     }
 
     public var adapterConnected: Bool
@@ -47,8 +50,9 @@ public struct PowerReading: Equatable, Sendable {
         } ?? number(registry, "CurrentCapacity").map { Int($0) }
         let milliamps = number(registry, "InstantAmperage") ?? number(registry, "Amperage")
         let watts = number(registry, "Voltage").flatMap { mV in milliamps.map { Double(mV) * Double($0) / 1_000_000 } }
+        func minutes(_ key: String) -> Int? { number(source, key).flatMap { $0 >= 0 ? Int($0) : nil } }
         battery = Battery(percent: percent, charging: source?["Is Charging"] as? Bool ?? registry?["IsCharging"] as? Bool ?? false,
-                          watts: watts)
+                          watts: watts, minutesToFull: minutes("Time to Full Charge"), minutesToEmpty: minutes("Time to Empty"))
     }
 }
 

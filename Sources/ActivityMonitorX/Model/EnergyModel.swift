@@ -16,6 +16,16 @@ final class EnergyModel {
     private(set) var processes: [LiveProcess]?
     /// System power over the last 5 min of this visit.
     private(set) var points: [Point] = []
+    /// The app shown with its processes, for this visit.
+    var expanded: AppKey?
+    /// Apps that always have their own band while they run, by app key (`EnergyShare.top`).
+    var kept = Set(UserDefaults.standard.stringArray(forKey: "energyKeptApps") ?? []) {
+        didSet { UserDefaults.standard.set(kept.sorted(), forKey: "energyKeptApps") }
+    }
+    /// The app order: by name, else by watts.
+    var sortsByName = UserDefaults.standard.bool(forKey: "energySortsByName") {
+        didSet { UserDefaults.standard.set(sortsByName, forKey: "energySortsByName") }
+    }
 
     /// The screen's `.task`: ends, and so stops reading, when the screen goes. Per-app energy comes from amxd's live
     /// snapshot, which the Apps screen's poll does not fetch while a System screen shows.

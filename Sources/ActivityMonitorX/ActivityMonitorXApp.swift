@@ -101,6 +101,7 @@ struct ActivityMonitorXApp: App {
         } label: {
             MenuBarLabel()
                 .environment(readout)
+                .environment(alerts)
                 .environment(appDelegate.preferences)
                 .environment(selection)
         }

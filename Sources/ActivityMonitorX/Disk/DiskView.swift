@@ -1,27 +1,70 @@
 import AMXCore
 import SwiftUI
 
+/// Disk: pills at the top, as in the inspector, switch Activity and Space (the disk map, `DiskMapView`). The toolbar
+/// items, the range bar (Activity only), the search and the inspector follow the pill.
+struct DiskView: View {
+    @Environment(Selection.self) private var selection
+
+    var body: some View {
+        Group {
+            switch selection.diskPane {
+            case .activity: DiskActivityView()
+            case .space: DiskMapView()
+            }
+        }
+        // The pills stay at the top over a centred empty state.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("View", selection: Bindable(selection).diskPane) {
+                Text("Activity").tag(DiskPane.activity)
+                Text("Space").tag(DiskPane.space)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("View")
+            .help("Show the disk activity or the space that files use")
+            .padding(10)
+        }
+    }
+}
+
 /// All physical disks: history charts (Live from `DiskModel`, 1H to 90D from amxd's records), each disk with its SMART
 /// health, the mounted volumes and the APFS containers. The search filters disks and volumes by name; a click selects one
 /// for the inspector. Content layer: no glass.
-struct DiskView: View {
+private struct DiskActivityView: View {
     @Environment(DiskModel.self) private var disk
+    @Environment(DiskMapModel.self) private var diskMap
     @Environment(HistoryModel.self) private var history
     @Environment(Selection.self) private var selection
-    @SceneStorage("diskVolumeColumns") private var columns = TableColumnCustomization<VolumeInfo>()
+    /// Only the hidden columns are kept, as in the Apps table: a kept `TableColumnCustomization` also keeps each column's
+    /// width, so a table narrower than the last pushes columns out of view.
+    private let _columns = State(initialValue: DiskActivityView.customization())
+    private static let hiddenKey = "diskVolumeHiddenColumns"
+    private static let hideable = ["mountPoint"]
+
+    private static func customization() -> TableColumnCustomization<VolumeInfo> {
+        var columns = TableColumnCustomization<VolumeInfo>()
+        for id in UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [] { columns[visibility: id] = .hidden }
+        return columns
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                charts
-                section("Physical Disks") { disks }
-                section("Volumes") { volumes }
-                section("APFS Containers") { containers }
+        VStack(spacing: 0) {
+            RangeBar()
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    charts
+                    section("Physical Disks") { disks }
+                    section("Volumes") { volumes }
+                    section("APFS Containers") { containers }
+                }
+                .padding()
             }
-            .padding()
         }
         .navigationTitle("Disk")
-        .navigationSubtitle(["All physical disks", history.subtitle].filter { !$0.isEmpty }.joined(separator: " · "))
+        .navigationSubtitle("All physical disks")
         // Stops with the screen: no disk reads while Disk is not shown.
         .task { await disk.run() }
         .onChange(of: selection.refreshes) { Task { await disk.refresh() } }
@@ -167,19 +210,35 @@ struct DiskView: View {
         .accessibilityAction { disk.selected = .disk(d.bsdName) }
     }
 
+    /// Three groups side by side, Health, Temperature and Lifetime, from the disk name's leading edge.
     private func healthDetails(_ h: NVMeHealth) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
-            detail("Percentage used", Self.percent(h.percentageUsed))
-            detail("Available spare", "\(Self.percent(h.availableSpare)) (threshold \(Self.percent(h.spareThreshold)))")
-            detail("Temperature", h.temperatureCelsius.map { "\(Int($0.rounded())) °C" } ?? "Unknown")
-            detail("Data read", Metric.bytes(Double(h.dataReadBytes)))
-            detail("Data written", Metric.bytes(Double(h.dataWrittenBytes)))
-            detail("Power-on hours", h.powerOnHours.formatted())
-            detail("Power cycles", h.powerCycles.formatted())
-            detail("Unsafe shutdowns", h.unsafeShutdowns.formatted())
-            detail("Media errors", h.mediaErrors.formatted())
+        let groups = [
+            ("Health", [("Percentage used", Self.percent(h.percentageUsed)), ("Available spare", Self.percent(h.availableSpare)),
+                        ("Media errors", h.mediaErrors.formatted()), ("Unsafe shutdowns", h.unsafeShutdowns.formatted())]),
+            ("Temperature", [("Now", h.temperatureCelsius.map { "\(Int($0.rounded())) °C" } ?? "Unknown")]),
+            ("Lifetime", [("Data read", Metric.bytes(Double(h.dataReadBytes))), ("Data written", Metric.bytes(Double(h.dataWrittenBytes))),
+                          ("Power-on hours", h.powerOnHours.formatted()), ("Power cycles", h.powerCycles.formatted())]),
+        ]
+        return VStack(alignment: .leading, spacing: 6) {
+            Divider()
+            HStack(alignment: .top, spacing: 32) {
+                ForEach(groups, id: \.0) { title, rows in
+                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
+                        Text(title).fontWeight(.semibold)
+                        ForEach(rows, id: \.0) { label, value in
+                            GridRow {
+                                Text(label).foregroundStyle(.secondary)
+                                Text(value).monospacedDigit().gridColumnAlignment(.trailing)
+                            }
+                        }
+                    }
+                }
+            }
+            Text("Available spare threshold \(Self.percent(h.spareThreshold)).").foregroundStyle(.secondary)
         }
-        .padding(.leading, 4)
+        .font(.callout)
+        // The disclosure content starts under the chevron (measured); 16 pt puts it on the disk name.
+        .padding(.leading, 16)
         .padding(.vertical, 4)
     }
 
@@ -207,20 +266,46 @@ struct DiskView: View {
     }
 
     private func table(_ volumes: [VolumeInfo], selection: Binding<VolumeInfo.ID?>) -> some View {
-        Table(volumes, selection: selection, columnCustomization: $columns) {
+        Table(volumes, selection: selection, columnCustomization: _columns.projectedValue) {
             TableColumn("Name", value: \.name)
+            // Ideal widths near the content's, so the Show in Space column stays in view.
             TableColumn("Kind") { Text($0.role ?? $0.fileSystem.uppercased()) }
+                .width(ideal: 80)
             TableColumn("Capacity") { Text(Metric.bytes(Double($0.totalBytes))).monospacedDigit() }
+                .width(ideal: 90)
             TableColumn("Used") { UsedCell(volume: $0) }
-                .width(min: 140, ideal: 170)
+                .width(min: 140, ideal: 160)
             TableColumn("Available") { Text(Metric.bytes(Double($0.availableBytes ?? $0.freeBytes))).monospacedDigit() }
+                .width(ideal: 90)
             TableColumn("Encrypted") { Text($0.isEncrypted ? "Yes" : "No") }
+                .width(ideal: 70)
             TableColumn("Mount Point", value: \.mountPoint)
+                .width(ideal: 100)
                 .customizationID("mountPoint")
+            TableColumn("") { volume in
+                Button("Show in Space") { showInSpace(volume) }
+                    .controlSize(.small)
+                    .help("Show what takes the space on \(volume.name)")
+            }
+            .width(min: 110, ideal: 110)
+        }
+        .contextMenu(forSelectionType: VolumeInfo.ID.self) { ids in
+            if ids.count == 1, let volume = volumes.first(where: { $0.id == ids.first }) {
+                Button("Show in Space") { showInSpace(volume) }
+            }
         }
         // Inside the page's scroll view: as tall as its rows, scrolled with the page.
         .frame(height: CGFloat(volumes.count) * 24 + 32)
         .scrollDisabled(true)
+        .onChange(of: _columns.wrappedValue) { _, columns in
+            UserDefaults.standard.set(Self.hideable.filter { columns[visibility: $0] == .hidden }, forKey: Self.hiddenKey)
+        }
+    }
+
+    /// Opens the Space pill on the volume's map.
+    private func showInSpace(_ volume: VolumeInfo) {
+        diskMap.open(.volume(volume))
+        selection.diskPane = .space
     }
 
     // MARK: APFS containers
@@ -280,11 +365,11 @@ struct SmartStatus: View {
 extension VolumeInfo {
     var used: UInt64 { usedBytes ?? totalBytes - min(freeBytes, totalBytes) }
     var available: UInt64 { availableBytes ?? freeBytes }
-    /// Free space under 15 % of the capacity or under the Mac's memory: the bar is orange.
+    /// Free space under 15 % of the capacity or under the Mac's memory: the bar is yellow (warning).
     var lowSpace: Bool { Double(available) < Double(totalBytes) * 0.15 || available < ProcessInfo.processInfo.physicalMemory }
 }
 
-/// Used bytes with a bar, orange on low space.
+/// Used bytes with a bar, yellow on low space.
 private struct UsedCell: View {
     let volume: VolumeInfo
 
@@ -295,7 +380,7 @@ private struct UsedCell: View {
         HStack {
             if total > 0 {
                 ProgressView(value: Double(min(used, total)), total: Double(total))
-                    .tint(low ? .orange : nil)
+                    .tint(low ? .yellow : nil)
                     .frame(width: 60)
                     .accessibilityLabel(low ? "Low free space" : "Used")
             }

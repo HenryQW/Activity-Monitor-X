@@ -45,12 +45,14 @@ public struct ProcessTrack: Sendable {
     /// The attributed app's bundle ID and the executable's team ID, for group rules.
     public let bundleID: String?
     public let teamID: String?
+    /// The owner's uid; nil when unknown.
+    public let uid: UInt32?
 
     public init(processID: Int64, pid: Int32, startTime: Double, name: String, app: AppKey, path: String? = nil,
-                lastSeen: Double = 0, slices: [Slice], bundleID: String? = nil, teamID: String? = nil) {
+                lastSeen: Double = 0, slices: [Slice], bundleID: String? = nil, teamID: String? = nil, uid: UInt32? = nil) {
         (self.processID, self.pid, self.startTime, self.name, self.app, self.path, self.lastSeen, self.slices)
             = (processID, pid, startTime, name, app, path, lastSeen, slices)
-        (self.bundleID, self.teamID) = (bundleID, teamID)
+        (self.bundleID, self.teamID, self.uid) = (bundleID, teamID, uid)
     }
 
     public var candidate: GroupCandidate { GroupCandidate(name: name, path: path, bundleID: bundleID, teamID: teamID) }
@@ -93,7 +95,7 @@ public struct HistoryReader {
         let metaSQL = """
             SELECT id, pid, start_time, name, app_path, app_name, first_seen,
                    \(Schema.lastSeenSQL), path,
-                   bundle_id, team_id
+                   bundle_id, team_id, uid
             FROM processes WHERE last_seen > ? AND first_seen < ?
             """
         // In time order the key serves the order and each process folds its rows as they come:
@@ -129,7 +131,7 @@ public struct HistoryReader {
                 slot[id] = builders.count
                 let track = ProcessTrack(processID: id, pid: r[1], startTime: r[2], name: name,
                                          app: AppKey(key: appPath ?? name, name: appName ?? name), path: r[8],
-                                         lastSeen: r[7], slices: [], bundleID: r[9], teamID: r[10])
+                                         lastSeen: r[7], slices: [], bundleID: r[9], teamID: r[10], uid: r[11])
                 builders.append(Builder(track: track, firstSeen: r[6]))
             }
             let rows = try Row.fetchCursor(db, sql: sql, arguments: [start - tier.hold, end])
@@ -187,6 +189,16 @@ public struct SystemPoint: Sendable {
     public let diskUtil: Double
     /// Bytes free on the startup volume; nil when the bucket has no value.
     public let diskFree: Double?
+    public let load1: Double
+    public let memCompressed: Double
+    /// The pressure index, 0 to 100.
+    public let pressurePct: Double
+    public let gpu: Double
+    public let netIn: Double
+    public let netOut: Double
+    /// Degrees Celsius; nil when the Mac reports none.
+    public let tempCPU: Double?
+    public let tempGPU: Double?
 }
 
 /// Words for a stored memory pressure level (the kernel's 1, 2, 4) and thermal state (0 to 3).
@@ -238,7 +250,10 @@ extension HistoryReader {
                    AVG(\(cpu)) AS cpu, AVG(\(mem)) AS mem, MAX(\(swap)) AS swap, MAX(\(pressure)) AS pressure, MAX(\(thermal)) AS thermal,
                    AVG(disk_r\(suffix)) AS diskR, AVG(disk_w\(suffix)) AS diskW, AVG(disk_iops\(suffix)) AS diskIOPS,
                    AVG(disk_lat_ms\(suffix)) AS diskLatMs, AVG(disk_util\(suffix)) AS diskUtil,
-                   AVG(disk_free\(suffix)) AS diskFree
+                   AVG(disk_free\(suffix)) AS diskFree, AVG(load1\(suffix)) AS load1,
+                   AVG(mem_compressed\(suffix)) AS memCompressed, AVG(pressure_pct\(suffix)) AS pressurePct,
+                   AVG(gpu\(suffix)) AS gpu, AVG(net_in\(suffix)) AS netIn, AVG(net_out\(suffix)) AS netOut,
+                   AVG(temp_cpu\(suffix)) AS tempCPU, AVG(temp_gpu\(suffix)) AS tempGPU
             FROM \(table) WHERE \(time) >= ?1 AND \(time) < ?2
             GROUP BY b ORDER BY b
             """
@@ -248,7 +263,10 @@ extension HistoryReader {
                             cpu: $0["cpu"] ?? 0, memUsed: $0["mem"] ?? 0, swapUsed: $0["swap"] ?? 0,
                             pressureLevel: $0["pressure"] ?? 0, thermalState: $0["thermal"] ?? 0,
                             diskR: $0["diskR"] ?? 0, diskW: $0["diskW"] ?? 0, diskIOPS: $0["diskIOPS"] ?? 0,
-                            diskLatMs: $0["diskLatMs"] ?? 0, diskUtil: $0["diskUtil"] ?? 0, diskFree: $0["diskFree"])
+                            diskLatMs: $0["diskLatMs"] ?? 0, diskUtil: $0["diskUtil"] ?? 0, diskFree: $0["diskFree"],
+                            load1: $0["load1"] ?? 0, memCompressed: $0["memCompressed"] ?? 0, pressurePct: $0["pressurePct"] ?? 0,
+                            gpu: $0["gpu"] ?? 0, netIn: $0["netIn"] ?? 0, netOut: $0["netOut"] ?? 0,
+                            tempCPU: $0["tempCPU"], tempGPU: $0["tempGPU"])
             }
         }
     }

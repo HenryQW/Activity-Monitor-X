@@ -10,7 +10,12 @@ enum MenuBarStyle: String {
 
 /// The screen the main window opens at: Last Screen, or one of the fixed ones.
 enum StartScreen: String, CaseIterable {
-    case last, apps, calendar, alerts, energy, disk, diskMap, hardware
+    case last, apps, calendar, alerts, energy, disk, hardware
+
+    /// Disk Map was a screen before it became Disk's Space pill; stored, it reads as Disk (`Selection.diskPane`).
+    static let diskMap = "diskMap"
+
+    init?(stored: String?) { self.init(rawValue: stored == Self.diskMap ? "disk" : stored ?? "") }
 
     var label: String {
         switch self {
@@ -20,7 +25,6 @@ enum StartScreen: String, CaseIterable {
         case .alerts: "Alerts"
         case .energy: "Energy"
         case .disk: "Disk"
-        case .diskMap: "Disk Map"
         case .hardware: "Hardware"
         }
     }
@@ -32,7 +36,6 @@ enum StartScreen: String, CaseIterable {
         case .alerts: .alerts
         case .energy: .energy
         case .disk: .disk
-        case .diskMap: .diskMap
         case .hardware: .hardware
         }
     }
@@ -91,15 +94,19 @@ final class Preferences {
     }
 
     /// An unknown stored value reads as the default.
-    var openAt = StartScreen(rawValue: UserDefaults.standard.string(forKey: Preferences.openAtKey) ?? "") ?? .last {
+    var openAt = StartScreen(stored: UserDefaults.standard.string(forKey: Preferences.openAtKey)) ?? .last {
         didSet { UserDefaults.standard.set(openAt.rawValue, forKey: Self.openAtKey) }
     }
     var openRange = StartRange(rawValue: UserDefaults.standard.string(forKey: Preferences.openRangeKey) ?? "") ?? .last {
         didSet { UserDefaults.standard.set(openRange.rawValue, forKey: Self.openRangeKey) }
     }
     /// The screen and quick range of the last session: what Last Screen and Last Used open at.
-    var lastScreen = StartScreen(rawValue: UserDefaults.standard.string(forKey: Preferences.lastScreenKey) ?? "") ?? .apps {
+    var lastScreen = StartScreen(stored: UserDefaults.standard.string(forKey: Preferences.lastScreenKey)) ?? .apps {
         didSet { UserDefaults.standard.set(lastScreen.rawValue, forKey: Self.lastScreenKey) }
+    }
+    /// A stored screen is Disk Map: Disk opens with Space until a pill is chosen.
+    static var storedDiskMap: Bool {
+        [openAtKey, lastScreenKey].contains { UserDefaults.standard.string(forKey: $0) == StartScreen.diskMap }
     }
     var lastRange = StartRange(rawValue: UserDefaults.standard.string(forKey: Preferences.lastRangeKey) ?? "") ?? .day {
         didSet { UserDefaults.standard.set(lastRange.rawValue, forKey: Self.lastRangeKey) }

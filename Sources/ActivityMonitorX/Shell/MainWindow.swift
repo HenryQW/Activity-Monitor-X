@@ -23,9 +23,11 @@ struct MainWindow: View {
     /// The inspector pane's width, remembered; `InspectorPane` keeps it between 240 and 400 pt.
     @AppStorage("inspectorWidth") private var inspectorWidth = 280.0
 
-    /// Metric falls back to a menu where its segments no longer fit. Measured on Apps (the most items, with Show Chart) with the
-    /// 180 pt sidebar shown and the Live toggle: everything fits from 900 pt of detail (window 860 to 1300 checked).
-    private static let compactBelow: CGFloat = 900
+    /// Metric falls back to a pop-up where its segments no longer fit. Measured on Apps (the most items, with Show Chart) with
+    /// the sidebar shown, window 760 to 1500 pt: the segments fit from 830 pt of detail, and from 1040 pt while the search
+    /// field (242 pt) is open; each threshold has 10 pt more for the toolbar's own hysteresis.
+    private static let compactBelow: CGFloat = 840
+    private static let compactSearchingBelow: CGFloat = 1050
 
     @AppStorage("sidebarGroupsExpanded") private var groupsExpanded = true
     @AppStorage("sidebarPinnedExpanded") private var pinnedExpanded = true
@@ -33,7 +35,7 @@ struct MainWindow: View {
     private static let monitorKey = "sidebarOrderMonitor"
     private static let systemKey = "sidebarOrderSystem"
     private static let monitorDefaults = ["apps", "calendar", "alerts"]
-    private static let systemDefaults = ["disk", "diskMap", "hardware", "energy"]
+    private static let systemDefaults = ["disk", "hardware", "energy"]
     /// The saved order of the Monitor and System items; a drag stays inside its section.
     private let _monitorOrder = State(initialValue: MainWindow.load(monitorKey, monitorDefaults))
     private let _systemOrder = State(initialValue: MainWindow.load(systemKey, systemDefaults))
@@ -54,7 +56,6 @@ struct MainWindow: View {
         case "alerts": Label("Alerts", systemImage: "exclamationmark.triangle").badge(alerts.unread)
                 .badgeProminence(alerts.hasUnreadCritical ? .increased : .standard).tag(SidebarItem.alerts)
         case "disk": Label("Disk", systemImage: "internaldrive").tag(SidebarItem.disk)
-        case "diskMap": Label("Disk Map", systemImage: "square.grid.3x3.square").tag(SidebarItem.diskMap)
         case "energy": Label("Energy", systemImage: "bolt.fill").tag(SidebarItem.energy)
         default: Label("Hardware", systemImage: "cpu").tag(SidebarItem.hardware)
         }
@@ -110,7 +111,7 @@ struct MainWindow: View {
             .safeAreaInset(edge: .bottom, alignment: .leading) {
                 Button { appSelection.editingGroup = .new } label: { Label("Add Group", systemImage: "plus") }
                     .buttonStyle(.plain)
-                    .help("Add a group of apps")
+                    .help("Add a group of apps to the sidebar")
                     .disabled(groups.loadError != nil || appSelection.editingGroup != nil)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -130,12 +131,12 @@ struct MainWindow: View {
                     case .pinned(let app): TimelineView(focus: app)
                     case .group(let id): TimelineView(focus: nil, group: groups.groups.first { $0.id == id })
                     case .disk: DiskView()
-                    case .diskMap: DiskMapView()
                     case .hardware: HardwareView()
                     case .energy: EnergyView()
                     }
                 }
-                .onChange(of: proxy.size.width < Self.compactBelow, initial: true) { _, compact in _compact.wrappedValue = compact }
+                .onChange(of: proxy.size.width < (appSelection.searchPresented || !appSelection.query.isEmpty ? Self.compactSearchingBelow : Self.compactBelow),
+                          initial: true) { _, compact in _compact.wrappedValue = compact }
             }
             // A new id drops toolbar layouts saved before the system toggle went and the Sidebar button came.
             // A solid toolbar: content and the inspector pane do not show through it, so it keeps one colour across the window.
@@ -157,7 +158,7 @@ struct MainWindow: View {
         .confirmationDialog("Delete “\(_deleting.wrappedValue?.name ?? "")”?",
                             isPresented: Binding(get: { _deleting.wrappedValue != nil }, set: { if !$0 { _deleting.wrappedValue = nil } }),
                             presenting: _deleting.wrappedValue) { group in
-            Button("Delete", role: .destructive) {
+            Button("Delete Group", role: .destructive) {
                 do { try groups.delete(group.id) } catch { _deleteError.wrappedValue = error.localizedDescription }
             }
         }
@@ -227,15 +228,20 @@ private struct SidebarButton: ToolbarContent {
 }
 
 /// Search in the trailing toolbar on every screen, prompted with what the screen lists. The toolbar's magnifier until it
-/// is clicked (or ⌘F); then the system field, until it is cancelled while empty. macOS has no
-/// `searchToolbarBehavior(.minimize)`. A background view hosts it, so the swap never rebuilds the screen.
+/// is clicked (or ⌘F); then the system field, until it is empty and loses focus (Escape, a click elsewhere, or the clear
+/// button and then a click elsewhere). macOS has no `searchToolbarBehavior(.minimize)`. A background view hosts it, so
+/// the swap never rebuilds the screen.
 private struct ToolbarSearch: View {
     let selection: Selection
+    private let _focused = FocusState<Bool>()
 
     var body: some View {
         if selection.searchPresented || !selection.query.isEmpty {
             Color.clear.searchable(text: Bindable(selection).query, isPresented: Bindable(selection).searchPresented,
-                                   placement: .toolbar, prompt: (selection.sidebar ?? .apps).searchPrompt)
+                                   placement: .toolbar, prompt: selection.searchPrompt)
+                .searchFocused(_focused.projectedValue)
+                // A query keeps the field: it closes when the query is cleared later, outside the field.
+                .onChange(of: _focused.wrappedValue) { _, focused in if !focused { selection.searchPresented = false } }
         } else {
             Color.clear
         }
@@ -249,8 +255,8 @@ private struct ScreenInspector: View {
     var body: some View {
         switch selection.sidebar ?? .apps {
         case .calendar: CalendarInspector()
+        case .disk where selection.diskPane == .space: DiskMapInspector()
         case .disk: DiskInspector()
-        case .diskMap: DiskMapInspector()
         case .hardware: HardwareInspector()
         case .energy where selection.app == nil:
             ContentUnavailableView("No Selection", systemImage: "bolt", description: Text("Click an app in the energy flow."))
@@ -309,6 +315,9 @@ private struct InspectorPane<Content: View>: View {
                     // The grouped forms and lists hide their own opaque background, so the pane's material shows behind
                     // their sections, as behind the empty states: one surface for every inspector.
                     .scrollContentBackground(.hidden)
+                    // The pane starts below the solid toolbar, so the top scroll edge effect only drew a band in the
+                    // toolbar that did not line up with the divider.
+                    .scrollEdgeEffectHidden(true, for: .top)
                     .background(.regularMaterial, ignoresSafeAreaEdges: [])
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")

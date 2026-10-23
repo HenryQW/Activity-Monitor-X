@@ -4,8 +4,8 @@ import Testing
 @testable import AMXCore
 
 @Suite struct EnergyTests {
-    private static func process(_ app: String, energy: Double) -> LiveProcess {
-        LiveProcess(pid: 1, startTime: 0, name: app, appKey: app, appName: app, path: nil, cpu: 0, mem: 0, diskR: 0,
+    private static func process(_ app: String, energy: Double, pid: Int32 = 1) -> LiveProcess {
+        LiveProcess(pid: pid, startTime: 0, name: app, appKey: app, appName: app, path: nil, cpu: 0, mem: 0, diskR: 0,
                     diskW: 0, netIn: 0, netOut: 0, gpu: 0, energy: energy)
     }
 
@@ -30,9 +30,12 @@ import Testing
     }
 
     @Test func onBattery() {
-        let source: [String: Any] = ["Type": "InternalBattery", "Current Capacity": 64, "Max Capacity": 100]
+        let source: [String: Any] = ["Type": "InternalBattery", "Current Capacity": 64, "Max Capacity": 100,
+                                     "Time to Empty": 185, "Time to Full Charge": -1]
         let power = PowerReading(providing: "Battery Power", source: source, battery: ["Voltage": 12000, "Amperage": -1000])
         #expect(power.adapterWatts == 0 && power.systemWatts == 12)
+        // -1 is "calculating".
+        #expect(power.battery?.minutesToEmpty == 185 && power.battery?.minutesToFull == nil)
         #expect(EnergyFlows(power, shares: []).columns == [[.battery], [.mac], []])
     }
 
@@ -53,6 +56,33 @@ import Testing
         // A query keeps the apps it matches; the rest go into Other.
         #expect(EnergyShare.top(processes, query: "app2").map { $0.app?.key } == ["app2", nil])
         #expect(EnergyShare.top(processes, query: "zzz").map { $0.app?.key } == [nil])
+    }
+
+    @Test func keptAppsAndSortByName() {
+        let processes = (1...7).map { Self.process("app\($0)", energy: Double($0)) } + [Self.process("idle", energy: 0)]
+        // A kept app has its own band outside the top 5, also at 0 while it runs; a query still hides it.
+        let kept = EnergyShare.top(processes, kept: ["app1", "idle", "gone"])
+        #expect(kept.map { $0.app?.key } == ["app7", "app6", "app5", "app4", "app3", "app1", "idle", nil])
+        #expect(kept[6].share == 0 && abs(kept.reduce(0) { $0 + $1.share } - 1) < 1e-9)
+        #expect(EnergyShare.top(processes, query: "app7", kept: ["app1"]).map { $0.app?.key } == ["app7", nil])
+        #expect(EnergyShare.top(processes, count: 3, byName: true).map { $0.app?.key } == ["app5", "app6", "app7", nil])
+        #expect(EnergyShare.top([Self.process("idle", energy: 0)], kept: ["idle"]).isEmpty)
+    }
+
+    @Test func expandedAppSplitsIntoProcesses() {
+        let power = PowerReading(adapterConnected: true, adapterWatts: 40, battery: nil)
+        let processes = (1...7).map { Self.process("app", energy: Double($0), pid: Int32($0)) } + [Self.process("b", energy: 12)]
+        let shares = EnergyShare.top(processes)
+        let flows = EnergyFlows(power, shares: shares, expanded: AppKey(key: "app", name: "app"), processes: processes)
+        #expect(flows.columns.count == 4)
+        #expect(flows.columns[3] == (3...7).reversed().map { .process(pid: Int32($0), startTime: 0, name: "app") } + [.otherProcesses])
+        let app = flows.links.first { $0.to == .app(AppKey(key: "app", name: "app")) }!
+        let split = flows.links.filter { $0.from == app.to }
+        // Each process carries its share of the app's watts: 7 of 28, and 3 of 28 for the 2 smallest.
+        #expect(abs(split.reduce(0) { $0 + $1.weight } - app.weight) < 1e-9 && abs(app.weight - 28) < 1e-9)
+        #expect(abs(split[0].watts! - 7) < 1e-9 && abs(split[5].watts! - 3) < 1e-9)
+        // No column for an app that is not in the flow.
+        #expect(EnergyFlows(power, shares: shares, expanded: AppKey(key: "x", name: "x"), processes: processes).columns.count == 3)
     }
 
     @Test func layoutHeightsAndBandsSum() {

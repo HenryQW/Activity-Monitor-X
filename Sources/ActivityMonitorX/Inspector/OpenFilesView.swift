@@ -74,8 +74,8 @@ private struct ItemRow: View {
         case .file(let path):
             Text(path).lineLimit(1).truncationMode(.middle).help(path)
                 .contextMenu {
-                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
-                    Button("Copy") { copy(path) }
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+                    Button("Copy Path") { copy(path) }
                 }
         case .socket(let proto, let local, let remote, let state):
             let text = remote.isEmpty || remote == "*" ? local : "\(local) → \(remote)"

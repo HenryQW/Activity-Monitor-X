@@ -16,14 +16,12 @@ struct GoCommands: Commands {
                 .keyboardShortcut("2")
             Button("Disk") { selection.sidebar = .disk }
                 .keyboardShortcut("3")
-            Button("Disk Map") { selection.sidebar = .diskMap }
-                .keyboardShortcut("4")
             Button("Hardware") { selection.sidebar = .hardware }
-                .keyboardShortcut("5")
+                .keyboardShortcut("4")
             Button("Calendar") { selection.sidebar = .calendar }
-                .keyboardShortcut("6")
+                .keyboardShortcut("5")
             Button("Energy") { selection.sidebar = .energy }
-                .keyboardShortcut("7")
+                .keyboardShortcut("6")
             Divider()
         }
         CommandGroup(after: .sidebar) {
@@ -35,12 +33,14 @@ struct GoCommands: Commands {
                 .disabled((selection.sidebar ?? .apps) != .apps)
             Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
                 .disabled(selection.isSystem || selection.sidebar == .alerts)
-            Button(alerts.showDismissed ? "Hide Dismissed" : "Show Dismissed") { alerts.showDismissed.toggle() }
+            Button(alerts.showDismissed ? "Hide Dismissed Alerts" : "Show Dismissed Alerts") { alerts.showDismissed.toggle() }
                 .disabled(selection.sidebar != .alerts)
+            Button("Dismiss All Alerts") { alerts.dismiss(alerts.undismissed(search: selection.search)) }
+                .disabled(selection.sidebar != .alerts || alerts.undismissed(search: selection.search).isEmpty)
             Divider()
             Button("Refresh") { selection.refreshes += 1 }
                 .keyboardShortcut("r")
-                .disabled(!selection.isSystem || selection.sidebar == .energy || selection.sidebar == .diskMap && diskMap.target == nil)
+                .disabled(!selection.isSystem || selection.sidebar == .energy || selection.showsSpace && diskMap.target == nil)
         }
     }
 }
@@ -52,7 +52,7 @@ struct GroupCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Group…") { selection.editingGroup = .new }
+            Button("New App Group…") { selection.editingGroup = .new }
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 // While the sheet is open a new group would replace it and lose the draft.
                 .disabled(groups.loadError != nil || selection.editingGroup != nil)
@@ -60,17 +60,17 @@ struct GroupCommands: Commands {
     }
 }
 
-/// Range and Metric menus mirror the toolbar pickers: System screens have no Metric (Calendar has), and only Disk has a Range.
+/// Range and Metric menus mirror the range bar and the Metric picker: System screens have no Metric (Calendar has), and only Disk's Activity pill has a Range.
 struct DataCommands: Commands {
     let history: HistoryModel
     let selection: Selection
 
-    private var noRange: Bool { selection.isSystem && selection.sidebar != .disk || selection.sidebar == .alerts }
+    private var noRange: Bool { selection.isSystem && selection.sidebar != .disk || selection.sidebar == .alerts || selection.showsSpace }
 
     var body: some Commands {
         CommandMenu("Range") {
-            // One Live item, named like the toolbar button: it starts Live and pauses back to the range before it.
-            Button(history.range == .live ? "Pause Live" : "Start Live") { history.toggleLive() }
+            // One Live item: like the Live segment, it starts Live and pauses back to the range before it.
+            Button(history.range == .live ? "Pause Live Data" : "Start Live Data") { history.toggleLive() }
                 .keyboardShortcut("l")
                 .disabled(noRange)
             Divider()
@@ -100,7 +100,7 @@ struct ProcessCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Process") {
-            Button(selection.app.map(selection.isPinned) == true ? "Unpin App" : "Pin App") {
+            Button(selection.app.map(selection.isPinned) == true ? "Unpin App from Sidebar" : "Pin App to Sidebar") {
                 selection.app.map(selection.togglePin)
             }
             // The same shortcut as the File > Add to Sidebar action.

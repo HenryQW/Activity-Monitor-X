@@ -9,7 +9,7 @@ final class Daemon: @unchecked Sendable {
     private struct Live {
         let processes = ProcessSampler()
         let system = SystemSampler(liveOnly: true)
-        var apps: [ProcessIdentity: (name: String, path: String?, app: AppInfo)] = [:]
+        var apps: [ProcessIdentity: (name: String, path: String?, uid: UInt32, app: AppInfo)] = [:]
         var primed = false
         /// `uptime` is `systemUptime`, so a wall clock step does not make the snapshot stale or fresh.
         var latest: (uptime: Double, json: Data)?
@@ -242,7 +242,7 @@ final class Daemon: @unchecked Sendable {
         let sampled = live.processes.sample(gpuNanos: GPUReader.processNanos())
         let sys = live.system.sample()
         for raw in sampled.new {
-            live.apps[raw.identity] = (raw.name, raw.path, attribute(raw))
+            live.apps[raw.identity] = (raw.name, raw.path, raw.uid, attribute(raw))
         }
         let alive = Set(sampled.samples.map(\.identity))
         live.apps = live.apps.filter { alive.contains($0.key) }
@@ -253,13 +253,13 @@ final class Daemon: @unchecked Sendable {
         }
 
         let rows = sampled.samples.compactMap { s -> LiveProcess? in
-            guard let (name, path, app) = live.apps[s.identity] else { return nil }
+            guard let (name, path, uid, app) = live.apps[s.identity] else { return nil }
             let net = latestNet[s.identity]
             return LiveProcess(pid: s.identity.pid, startTime: s.identity.startTime, name: name,
                                appKey: app.appPath ?? name, appName: app.appName, path: path, cpu: s.cpu, mem: s.mem,
                                diskR: s.diskR, diskW: s.diskW, netIn: net?.inPerSec ?? 0,
                                netOut: net?.outPerSec ?? 0, gpu: s.gpu, energy: s.energy,
-                               bundleID: app.bundleID, teamID: path.flatMap { teamIDs[$0] ?? nil })
+                               bundleID: app.bundleID, teamID: path.flatMap { teamIDs[$0] ?? nil }, uid: uid)
         }
         let snapshot = LiveSnapshot(ts: now, system: LiveSystem(cpu: sys.cpu, memUsed: sys.memUsed,
                                                                 pressureLevel: sys.pressureLevel,

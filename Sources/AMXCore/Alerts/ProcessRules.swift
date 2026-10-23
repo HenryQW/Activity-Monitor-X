@@ -145,6 +145,13 @@ struct ProcessRules: Sendable {
         }.max { $0.1 < $1.1 }
     }
 
+    /// The app with the largest ring total for `rule`, its busiest process, and that total (per tick when `mean`).
+    func topApp(_ rule: String, mean: Bool) -> (name: String, identity: ProcessIdentity?, value: Double)? {
+        let totals = spells.filter { $0.key.rule == rule }.values.map { ($0, $0.sums.reduce(0, +)) }
+        guard let (spell, total) = totals.max(by: { $0.1 < $1.1 }) else { return nil }
+        return (spell.name, spell.busiest, mean ? total / Double(spell.sums.count) : total)
+    }
+
     /// The ring's value on the tick a spell alerts. A held rule needs a full ring whose mean and median reach the
     /// threshold (most of the window, not a short burst) and gives the mean; a total rule needs the total of its
     /// minutes (this one and the 59 before) to reach it and gives the total. The spell must not have alerted, and

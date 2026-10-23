@@ -1,7 +1,7 @@
 import Foundation
 
-/// Each app's typical value by hour of day over a past window (hour tier): what the inspector's "Compared to Usual"
-/// compares a range against.
+/// Each app's typical value by hour of day over a past window (hour tier): what the inspector's Average and Peak
+/// compare a range against.
 public struct UsualProfile: Sendable {
     /// Days from the first to the last recorded slice; under 2 the profile gives no usual value.
     public let days: Double

@@ -95,18 +95,26 @@ final class CalendarModel {
         }
     }
 
-    /// The apps of `cell` matching `query`, by their average over its time (up to now), from the hour tier; nil when the
-    /// read fails.
-    func apps(in cell: CalendarCell, metric: Metric, query: String) async -> [AppRank]? {
+    /// The apps matching `query`, by their average over [from, to) from the first record up to now, from the hour tier;
+    /// nil when the read fails.
+    func apps(from: Double, to: Double, metric: Metric, query: String) async -> [AppRank]? {
         guard let pool = try? history.openPool() else { return nil }
-        let (start, end) = (cell.start, min(cell.end, Date().timeIntervalSince1970))
+        let (start, end) = (from, min(to, Date().timeIntervalSince1970))
         guard end > start else { return [] }
         return await Task.detached {
             let tracks = try? HistoryReader(pool: pool).tracks(source: .hour, from: start, to: end, metric: metric)
             return tracks.map { tracks in
-                AppSeries.ranking(tracks.filter { query.isEmpty || AppSearch.matches($0.app, query) },
-                                  from: start, to: end, bucket: end - start)
+                // Recorded time only, as Apps ranks: a period's hours before recording began are not idle time.
+                let from = AppSeries.recordedStart(tracks, from: start)
+                return AppSeries.ranking(tracks.filter { query.isEmpty || AppSearch.matches($0.app, query) },
+                                         from: from, to: end, bucket: end - from)
             }
         }.value
+    }
+
+    /// The alerts (rows with a rule) in [from, to), dismissed ones too; nil when the read fails.
+    func alertCount(from: Double, to: Double) async -> Int? {
+        guard let pool = try? history.openPool() else { return nil }
+        return await Task.detached { try? HistoryReader(pool: pool).events(from: from, to: to).count { $0.rule != nil } }.value
     }
 }

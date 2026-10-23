@@ -11,8 +11,8 @@ private func raw(_ id: ProcessIdentity) -> (RawProcess, AppInfo) {
      AppInfo(appPath: nil, appName: "p\(id.pid)", bundleID: nil))
 }
 
-private func sample(_ id: ProcessIdentity, mem: UInt64) -> ProcessSample {
-    ProcessSample(identity: id, cpu: 0, mem: mem, diskR: 0, diskW: 0, energy: 0, gpu: 0, netIn: 0, netOut: 0)
+private func sample(_ id: ProcessIdentity, cpu: Double = 0, mem: UInt64 = 0, diskW: Double = 0) -> ProcessSample {
+    ProcessSample(identity: id, cpu: cpu, mem: mem, diskR: 0, diskW: diskW, energy: 0, gpu: 0, netIn: 0, netOut: 0)
 }
 
 private func system(pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil) -> SystemSample {
@@ -136,6 +136,25 @@ private struct Rig {
         alertsUntil(605, from: 605, thermal: 1)
         alertsUntil(910, from: 610, thermal: 2)
         #expect(alerts.map(\.ts) == [300, 910])
+    }
+
+    @Test func systemAlertsNameCause() {
+        var r = Rig()
+        let busy = [sample(idA, cpu: 400, mem: gib, diskW: 1_048_576), sample(idB, cpu: 100, mem: 3 * gib)]
+        _ = r.tick(0, processes: busy, new: [idA, idB])
+        let step = r.tick(5, thermal: 2, swap: 4 * gib, free: 10 * gib, processes: busy)
+        #expect(step.map(\.message) == ["Thermal state serious: p10 used 400 % CPU",
+                                        "Swap used 4.0 GB, 50 % of memory: p11 uses the most memory (3.0 GB)",
+                                        "Startup disk has 10.0 GB free, 10 %: p10 wrote 10 MB in 1 hour"])
+        #expect(step.map(\.identity) == [idA, idB, idA])
+        var alerts: [EventDraft] = []
+        for t in stride(from: 10.0, through: 305, by: 5) {
+            alerts += r.tick(t, thermal: 2, processes: busy).filter { $0.rule == RuleName.thermal }
+        }
+        #expect(alerts.map(\.message) == ["Thermal state serious for 5 min: p10 used 400 % CPU"])
+        // A falling step names no cause.
+        let down = r.tick(310, thermal: 1, processes: busy)
+        #expect(down.map(\.message) == ["Thermal state fair"] && down.first?.identity == nil)
     }
 
     @Test func byteText() {

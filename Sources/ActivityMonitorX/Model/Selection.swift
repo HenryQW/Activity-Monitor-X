@@ -2,6 +2,9 @@ import AMXCore
 import Foundation
 import Observation
 
+/// The Disk screen's pills: Activity (rates, disks, volumes) or Space (the disk map).
+enum DiskPane: String { case activity, space }
+
 @Observable @MainActor
 final class Selection {
     private static let pinnedKey = "pinnedApps", showChartKey = "showChart"
@@ -16,7 +19,7 @@ final class Selection {
     /// The group open in the editor sheet; a new one is not in `GroupsModel.groups` yet.
     var editingGroup: ProcessGroup?
     var inspectorShown = false
-    /// The Range popover: the toolbar button and Range > Custom Range open it.
+    /// The Custom Range popover: the range bar's Custom… button and Range > Custom Range open it.
     var rangeShown = false
     /// View > Refresh (⌘R) on a System screen: the shown screen re-reads what it otherwise reads once.
     var refreshes = 0
@@ -30,11 +33,6 @@ final class Selection {
     var searchPresented = false
     /// `query` without the spaces around it, for `AppSearch`.
     var search: String { query.trimmingCharacters(in: .whitespaces) }
-
-    /// While searching, the match count ahead of the range's own subtitle ("4 of 98 apps · Since 11:06 PM").
-    func subtitle(_ range: String, shown: Int, of all: Int) -> String {
-        search.isEmpty ? range : ["\(shown) of \(all) apps", range].filter { !$0.isEmpty }.joined(separator: " · ")
-    }
     var pinned: [AppKey] = UserDefaults.standard.data(forKey: Selection.pinnedKey)
         .flatMap { try? JSONDecoder().decode([AppKey].self, from: $0) } ?? [] {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(pinned), forKey: Self.pinnedKey) }
@@ -44,6 +42,14 @@ final class Selection {
     /// another user's process (D15), which `kill(pid, 0)` reports as EPERM. amxd still checks the start time.
     var signallable: ProcessRank? {
         process.flatMap { !$0.exited && $0.pid > 1 && kill($0.pid, 0) == 0 ? $0 : nil }
+    }
+
+    /// The Quit request: the selected process if it can be signalled, else, with no process selected, the app's running
+    /// copies; nil when there is nothing to quit.
+    func quitRequest(of app: AppKey) -> SignalRequest? {
+        if let process = signallable { return SignalRequest(process: process, signal: SIGTERM) }
+        guard process == nil, case let apps = InspectorView.running(app), !apps.isEmpty else { return nil }
+        return SignalRequest(app: app.name, running: apps, signal: SIGTERM)
     }
 
     /// Opens Apps on an alert: the smallest range that holds its spell, the span around it on the chart, its app selected
@@ -81,6 +87,20 @@ final class Selection {
     var showChart = UserDefaults.standard.object(forKey: Selection.showChartKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(showChart, forKey: Self.showChartKey) }
     }
+
+    /// Disk's pill, remembered. Before Space, Disk Map was a screen of its own: a start screen stored as it opens Space.
+    var diskPane = DiskPane(rawValue: UserDefaults.standard.string(forKey: Selection.diskPaneKey) ?? "")
+        ?? (Preferences.storedDiskMap ? .space : .activity) {
+        didSet {
+            UserDefaults.standard.set(diskPane.rawValue, forKey: Self.diskPaneKey)
+            // The search finds volumes and disks on Activity, files on Space.
+            if diskPane != oldValue { query = "" }
+        }
+    }
+    private static let diskPaneKey = "diskPane"
+    var showsSpace: Bool { sidebar == .disk && diskPane == .space }
+    /// What the toolbar search finds on the shown screen.
+    var searchPrompt: String { showsSpace ? "File or folder" : (sidebar ?? .apps).searchPrompt }
 
     func isPinned(_ app: AppKey) -> Bool { pinned.contains { $0.key == app.key } }
 

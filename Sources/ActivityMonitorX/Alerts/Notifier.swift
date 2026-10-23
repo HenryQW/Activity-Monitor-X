@@ -8,6 +8,8 @@ import UserNotifications
 @Observable @MainActor
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private static let category = "alert", showApps = "show-apps"
+    /// Settings > Alerts "Banners for": on (the default) only critical alerts show a banner.
+    static let criticalBannersOnlyKey = "criticalBannersOnly"
     nonisolated private static let log = Logger(subsystem: AMX.bundleID, category: "notifications")
 
     /// Settings says "Notifications are off" unless authorized; it reads denied while the Allow prompt waits.
@@ -52,6 +54,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = "\(new.count) New Alerts"
             content.body = newest.message
+            content.interruptionLevel = Self.level(new.map(\.severity).max() ?? 0)
             add(content, id: "alerts-\(newest.id)")
             return
         }
@@ -62,8 +65,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.threadIdentifier = event.rule ?? event.kind
             content.userInfo = ["eventID": event.id]
             content.categoryIdentifier = Self.category
+            content.interruptionLevel = Self.level(event.severity)
             add(content, id: "alert-\(event.id)")
         }
+    }
+
+    /// A warning goes to Notification Center only, without a banner, unless Banners for is All Alerts.
+    private static func level(_ severity: Int) -> UNNotificationInterruptionLevel {
+        let criticalOnly = UserDefaults.standard.object(forKey: criticalBannersOnlyKey) as? Bool ?? true
+        return severity >= 2 || !criticalOnly ? .active : .passive
     }
 
     private func add(_ content: UNMutableNotificationContent, id: String) {
@@ -77,7 +87,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification)
-        async -> UNNotificationPresentationOptions { [.banner, .list] }
+        async -> UNNotificationPresentationOptions {
+        notification.request.content.interruptionLevel == .passive ? [.list] : [.banner, .list]
+    }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let action = response.actionIdentifier

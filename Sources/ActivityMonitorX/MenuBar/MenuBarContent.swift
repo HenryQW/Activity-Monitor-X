@@ -19,16 +19,29 @@ struct MenuBarContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // The newest unread alert, one line; a click reads it, as opening Alerts does.
+            if let event = alerts.latestUnread {
+                Button {
+                    alerts.markAllRead()
+                    reveal(event)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        SeverityIcon(severity: event.severity)
+                        Text(event.message).lineLimit(1).truncationMode(.tail)
+                        Spacer(minLength: 6)
+                        Text(Date(timeIntervalSince1970: event.ts).formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .help("\(event.message). Show this alert in Apps.")
+                Divider()
+            }
             HStack(alignment: .top) {
-                VStack(alignment: .leading) {
-                    Text("CPU").font(.headline)
-                    Text(readout.percents.map { "\($0.cpu)%" } ?? "…").font(.title2)
+                ReadoutGauge(title: "CPU", percent: readout.percents?.cpu) {
                     SparklineShape(values: readout.cpuHistory).stroke(.tint, lineWidth: 1).frame(width: 120, height: 24)
                 }
-                Spacer()
-                VStack(alignment: .leading) {
-                    Text("Memory Pressure").font(.headline)
-                    Text(readout.percents.map { "\($0.pressure)%" } ?? "…").font(.title2)
+                ReadoutGauge(title: "Memory Pressure", percent: readout.percents?.pressure) {
                     Text(readout.percents?.levelWord ?? "").foregroundStyle(.secondary)
                 }
             }
@@ -47,11 +60,12 @@ struct MenuBarContent: View {
                 NSApp.activate()
                 openSettings()
             }
-            .help("Open the settings")
+            .help("Open the Activity Monitor X settings")
             Button("Quit Activity Monitor X", systemImage: "power") { NSApp.terminate(nil) }
                 .help("Quit Activity Monitor X. The helper continues to record history.")
         }
         .buttonStyle(.borderless)
+        .labelStyle(IconColumnLabelStyle())
         .padding(12)
         .frame(width: 320)
         .task(id: appearsActive) {
@@ -88,14 +102,16 @@ struct MenuBarContent: View {
         }
     }
 
+    /// The top line already shows the newest unread alert.
     @ViewBuilder private var recentAlerts: some View {
-        if alerts.alerts.isEmpty {
-            Text("No alerts").foregroundStyle(.secondary)
+        let unreadID = alerts.latestUnread?.id
+        let rows = Array(alerts.alerts.filter { $0.id != unreadID }.prefix(3))
+        if rows.isEmpty {
+            Text(alerts.alerts.isEmpty ? "No alerts" : "No other alerts").foregroundStyle(.secondary)
         } else {
-            ForEach(alerts.alerts.prefix(3), id: \.id) { event in
+            ForEach(rows, id: \.id) { event in
                 Button {
-                    open()
-                    selection.reveal(event, history: history, rules: alerts.rules)
+                    reveal(event)
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         SeverityIcon(severity: event.severity)
@@ -117,5 +133,47 @@ struct MenuBarContent: View {
     private func open() {
         selection.openMain?()
         dismiss()
+    }
+
+    private func reveal(_ event: EventMark) {
+        open()
+        selection.reveal(event, history: history, rules: alerts.rules)
+    }
+}
+
+/// A capacity ring with its percent inside, under its title. CPU is already a share of all cores, so 0 to 100 fits
+/// both. "…" until the first reading.
+private struct ReadoutGauge<Detail: View>: View {
+    let title: String
+    let percent: Int?
+    @ViewBuilder let detail: Detail
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title).font(.headline).accessibilityHidden(true)
+            Gauge(value: Double(percent ?? 0), in: 0...100) {
+                Text(title)
+            } currentValueLabel: {
+                Text(percent.map { "\($0)%" } ?? "…")
+                    .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(percent ?? 0)))
+                    .animation(reduceMotion ? nil : .default, value: percent)
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+            .accessibilityValue(percent.map { "\($0) percent" } ?? "No reading yet")
+            detail
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Symbols differ in width; a fixed icon column lines up the action titles, as in a menu.
+private struct IconColumnLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.icon.frame(width: 18)
+            configuration.title
+        }
     }
 }

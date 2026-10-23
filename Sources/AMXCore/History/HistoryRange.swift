@@ -39,21 +39,6 @@ public enum HistoryRange: CaseIterable, Sendable {
 }
 
 extension HistoryRange {
-    /// The subtitle when recording began inside the range, in the locale's formats: "Since 11:06 PM" today,
-    /// "Since Yesterday, 11:06 PM", and the day only from 7D up ("Since 21 Oct"). The Range button names the range.
-    public func since(_ start: Double, now: Double, calendar: Calendar = .current, locale: Locale = .current) -> String {
-        let date = Date(timeIntervalSince1970: start)
-        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date),
-                                           to: calendar.startOfDay(for: Date(timeIntervalSince1970: now))).day!
-        let daysOnly = seconds >= HistoryRange.week.seconds
-        // Up to 24H the start is today or yesterday.
-        var style = daysOnly ? Date.FormatStyle.dateTime.day().month(.abbreviated) : .dateTime.hour().minute()
-        (style.calendar, style.timeZone, style.locale) = (calendar, calendar.timeZone, locale)
-        return "Since \(!daysOnly && days > 0 ? "Yesterday, " : "")\(date.formatted(style))"
-    }
-}
-
-extension HistoryRange {
     /// The range whose source and chart bucket serve a custom window: the smallest that covers its length and whose
     /// tier still keeps its start. Quarter when none does. Live is not stored.
     public static func covering(from: Double, to: Double, now: Double) -> HistoryRange {

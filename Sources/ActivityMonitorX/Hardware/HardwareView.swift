@@ -46,40 +46,58 @@ struct HardwareView: View {
 
     // MARK: Overview
 
+    /// The details go beside the chip where both fit, else under it: beside the inspector the content can be 380 pt wide.
+    /// The details ask for 330 pt beside the chip (the Storage bar and its label) and wrap their text to the width they get.
     private var overview: some View {
-        HStack(alignment: .top, spacing: 24) {
-            if let chip = hardware.chip {
-                LiveChip(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) }, hardware: hardware)
-                    .frame(width: 300)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 24) {
+                chip
+                details.frame(minWidth: 330, idealWidth: 330, maxWidth: .infinity, alignment: .leading)
             }
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
-                GridRow {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(hardware.value("machine_name") ?? "Mac").font(.title2.weight(.semibold))
-                        if let model = hardware.value("machine_model") { Text(model).foregroundStyle(.secondary) }
-                    }
-                    .gridCellColumns(2)
-                    .padding(.bottom, 6)
-                }
-                if let volume = hardware.startup { storage(volume) }
-                let displays = hardware.values("_spdisplays_resolution")
-                if !displays.isEmpty {
-                    GridRow {
-                        Text("Displays").foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(displays.indices, id: \.self) { Text("\(displays[$0].name), \(displays[$0].value)") }
-                        }
-                    }
-                }
-                if let capacity = hardware.value("sppower_battery_health_maximum_capacity") {
-                    detail("Battery", ["Maximum capacity \(capacity)",
-                                       hardware.value("sppower_battery_cycle_count").map { "\($0) cycles" },
-                                       hardware.value("sppower_battery_health").map { "Condition \($0)" }]
-                        .compactMap { $0 }.joined(separator: " · "))
-                }
+            VStack(alignment: .leading, spacing: 16) {
+                chip
+                details
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var chip: some View {
+        if let chip = hardware.chip {
+            LiveChip(chip: chip, gpuCores: hardware.value("sppci_cores").flatMap { Int($0) }, hardware: hardware)
+                .frame(width: 300)
+        }
+    }
+
+    private var details: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 6) {
+            GridRow {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(hardware.value("machine_name") ?? "Mac").font(.title2.weight(.semibold))
+                    if let model = hardware.value("machine_model") { Text(model).foregroundStyle(.secondary) }
+                }
+                .gridCellColumns(2)
+                .padding(.bottom, 6)
+            }
+            if let volume = hardware.startup { storage(volume) }
+            let displays = hardware.values("_spdisplays_resolution")
+            if !displays.isEmpty {
+                GridRow {
+                    Text("Displays").foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(displays.indices, id: \.self) { Text("\(displays[$0].name), \(displays[$0].value)") }
+                    }
+                }
+            }
+            if let capacity = hardware.value("sppower_battery_health_maximum_capacity") {
+                detail("Battery", ["Maximum capacity \(capacity)",
+                                   hardware.value("sppower_battery_cycle_count").map { "\($0) cycles" },
+                                   hardware.value("sppower_battery_health").map { "Condition \($0)" }]
+                    .compactMap { $0 }.joined(separator: " · "))
+            }
+        }
+        // The full height: the text wraps instead of truncating.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private func detail(_ label: String, _ value: String) -> some View {
@@ -89,13 +107,13 @@ struct HardwareView: View {
         }
     }
 
-    /// The startup volume's used space; orange under the Disk screen's low-space rule.
+    /// The startup volume's used space; yellow under the Disk screen's low-space rule.
     private func storage(_ volume: VolumeInfo) -> some View {
         GridRow {
             Text("Storage").foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: Double(min(volume.used, volume.totalBytes)), total: Double(max(volume.totalBytes, 1)))
-                    .tint(volume.lowSpace ? .orange : nil)
+                    .tint(volume.lowSpace ? .yellow : nil)
                     .frame(width: 240)
                     .accessibilityLabel(volume.lowSpace ? "Low free space" : "Used")
                 Text("\(volume.name): \(Metric.bytes(Double(volume.freeBytes))) free of \(Metric.bytes(Double(volume.totalBytes))) (purgeable not included)")

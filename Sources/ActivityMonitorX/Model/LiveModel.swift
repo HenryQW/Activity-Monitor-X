@@ -9,6 +9,9 @@ final class LiveModel {
     private(set) var ranking: [AppRank] = []
     private(set) var sparklines: [AppKey: [Double]] = [:]
     private(set) var state: LoadState = .loading
+    /// While polls fail after Live had data: the time of the last snapshot, whose data stays on screen. Without data the
+    /// outage is `.failed`.
+    private(set) var lostAt: Double?
 
     private static let log = Logger(subsystem: AMX.bundleID, category: "live")
     private let history: HistoryModel
@@ -47,7 +50,7 @@ final class LiveModel {
                 await poll()
             } else {
                 live = LiveTracks(metric: history.metric)
-                state = .loading
+                (state, lostAt) = (.loading, nil)
             }
             // Off the screen, a short wait lets the return to it poll at once.
             try? await Task.sleep(for: polling ? .seconds(1) : .milliseconds(250))
@@ -56,7 +59,7 @@ final class LiveModel {
         // poll owns the data now.
         guard history.range != .live else { return }
         live = LiveTracks(metric: history.metric)
-        state = .loading
+        (state, lostAt) = (.loading, nil)
     }
 
     /// Hides data of the old metric or filter and rebuilds at once; a new metric first loads its backfill.
@@ -88,7 +91,7 @@ final class LiveModel {
         do {
             guard let snapshot = try await client.live() else { return }
             Self.log.debug("live poll: \(snapshot.processes.count) processes")
-            failures = 0
+            (failures, lostAt) = (0, nil)
             // The daemon repeats its latest snapshot for up to 3 s.
             guard snapshot.ts > (live.latest ?? -.infinity) else { return }
             let first = live.latest == nil
@@ -98,10 +101,12 @@ final class LiveModel {
             if first { await loadBackfill() }
             await rebuild()
         } catch {
-            // One missed poll keeps the last data; only a lasting outage shows the error.
+            // One missed poll keeps the last data; a lasting outage says so over the last data, or shows the error without it.
             failures += 1
             if failures == 3 { Self.log.error("live poll: \(error.localizedDescription, privacy: .public)") }
-            if failures >= 3 { state = .failed(error.localizedDescription) }
+            if failures >= 3 {
+                if live.latest == nil { state = .failed(error.localizedDescription) } else if lostAt == nil { lostAt = live.latest }
+            }
         }
     }
 
@@ -127,8 +132,7 @@ final class LiveModel {
         (self.end, start, tracks, hidden, stacked) = (end, built.start, built.tracks, built.hidden, built.stacked)
         otherCache = nil
         if withRanking { (rankedAt, ranking, sparklines) = (end, built.ranking, built.sparklines) }
-        // A rebuild during an outage must not hide the error.
-        if failures < 3 { state = .ready }
+        state = .ready
     }
 
     /// One app's rank for the last 5 min, unfiltered (see `HistoryModel.rank(of:)`).

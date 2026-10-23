@@ -21,7 +21,7 @@ struct AppRulesSheet: View {
                     Section {
                         Toggle("Mute alerts for this app", isOn: entry(\.muted))
                     } footer: {
-                        Text("\(app.name) gets no app or process alerts. Memory pressure alerts can still name it.")
+                        Text("\(app.name) gets no app or process alerts. System alerts (memory pressure, heat, swap, free space) can still name it.")
                     }
                     Group {
                         rule(RuleName.title(RuleName.sustainedCPU), \.sustainedCPU, \.sustainedCPU, enabled: \.enabled) {

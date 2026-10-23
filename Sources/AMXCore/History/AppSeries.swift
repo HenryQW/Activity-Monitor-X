@@ -15,6 +15,8 @@ public struct ProcessRank: Sendable, Identifiable, Equatable {
     public let lastSeen: Double
     /// Gone at the time of the load: see `AppSeries.ranking(exitedBefore:)`.
     public let exited: Bool
+    /// The owner's uid; nil when unknown.
+    public var uid: UInt32? = nil
 }
 
 public struct AppRank: Sendable, Identifiable, Equatable {
@@ -182,7 +184,7 @@ public enum AppSeries {
                 let track = tracks[i]
                 return ProcessRank(processID: track.processID, pid: track.pid, startTime: track.startTime, name: track.name,
                                    average: track.average(from: from, to: to), peak: perTrack[i]!.max()!,
-                                   lastSeen: track.lastSeen, exited: track.lastSeen < exitedBefore)
+                                   lastSeen: track.lastSeen, exited: track.lastSeen < exitedBefore, uid: track.uid)
             }
             // A reused pid ties on pid too: the start time keeps the order from depending on dictionary order.
             let sorted = procs.sorted { ($1.average, $0.pid, $0.startTime) < ($0.average, $1.pid, $1.startTime) }

@@ -39,7 +39,7 @@ enum AlertLimits {
     static let stillGrowingMinutes = 5
     static let jumpTicks = 10
     static let jumpQuiet = 1800.0
-    /// The pressure cause looks back this many minutes. Needs `memoryGrowth.minutes >= causeMinutes`
+    /// The memory cause (pressure, swap) looks back this many minutes. Needs `memoryGrowth.minutes >= causeMinutes`
     /// (validation keeps it), as the cause reads the growth ring.
     static let causeMinutes = 10
 }
@@ -83,24 +83,25 @@ public struct EventEngine: Sendable {
                                     rules: rules.pressure))
         }
         if let thermal, thermal != system.thermalState {
-            out.append(EventDraft(ts: now, kind: EventKind.thermal, severity: system.thermalState, identity: nil,
-                                  rule: nil, message: "Thermal state \(SystemState.thermal(system.thermalState))",
+            let cause = system.thermalState > thermal ? cpuCause() : nil
+            out.append(EventDraft(ts: now, kind: EventKind.thermal, severity: system.thermalState, identity: cause?.identity,
+                                  rule: nil,
+                                  message: Self.message("Thermal state \(SystemState.thermal(system.thermalState))", cause),
                                   value: Double(system.thermalState)))
         }
         if let alert = thermalAlert(now: now, state: system.thermalState, rule: rules.thermal) { out.append(alert) }
         let swapPct = Double(system.swapUsed) / Double(machine.memoryBytes) * 100
-        if let alert = systemAlert(RuleName.swap, over: rules.swap.enabled && swapPct >= Double(rules.swap.percentOfMemory),
-                                   now: now, rearm: AlertLimits.swapRearm, value: swapPct,
-                                   message: "Swap used \(Self.bytes(system.swapUsed)), \(Int(swapPct.rounded())) % of memory") {
-            out.append(alert)
+        if systemAlert(RuleName.swap, over: rules.swap.enabled && swapPct >= Double(rules.swap.percentOfMemory), now: now,
+                       rearm: AlertLimits.swapRearm) {
+            out.append(systemDraft(now, RuleName.swap, value: swapPct, cause: memoryCause(processes, now: now),
+                                   "Swap used \(Self.bytes(system.swapUsed)), \(Int(swapPct.rounded())) % of memory"))
         }
         if let free = system.diskFree {
             let freePct = Double(free) / Double(machine.bootVolumeBytes) * 100
-            if let alert = systemAlert(RuleName.freeSpace,
-                                       over: rules.freeSpace.enabled && freePct <= Double(rules.freeSpace.percentFree),
-                                       now: now, rearm: AlertLimits.freeSpaceRearm, value: freePct,
-                                       message: "Startup disk has \(Self.bytes(free)) free, \(Int(freePct.rounded())) %") {
-                out.append(alert)
+            if systemAlert(RuleName.freeSpace, over: rules.freeSpace.enabled && freePct <= Double(rules.freeSpace.percentFree),
+                           now: now, rearm: AlertLimits.freeSpaceRearm) {
+                out.append(systemDraft(now, RuleName.freeSpace, value: freePct, cause: writeCause(),
+                                       "Startup disk has \(Self.bytes(free)) free, \(Int(freePct.rounded())) %"))
             }
         }
         pressure = system.pressureLevel
@@ -115,14 +116,8 @@ public struct EventEngine: Sendable {
                                        rules: AlertRules.Pressure) -> EventDraft {
         let severity = Self.severity(pressure: system.pressureLevel)
         let rising = severity > Self.severity(pressure: old)
-        let grower = processRules.topGrower(processes, now: now)
-        let top = processes.max { $0.mem < $1.mem }
-        var message = "Memory pressure \(SystemState.pressure(system.pressureLevel))"
-        if rising, let grower, let who = who(grower.identity) {
-            message += ": \(who) grew \(Self.bytes(grower.growth)) in \(grower.minutes) min"
-        } else if rising, let top, let who = who(top.identity) {
-            message += ": \(who) uses the most memory (\(Self.bytes(top.mem)))"
-        }
+        let cause = memoryCause(processes, now: now)
+        let message = Self.message("Memory pressure \(SystemState.pressure(system.pressureLevel))", rising ? cause : nil)
         var rule: String?
         if rules.enabled, severity >= rules.level.severity, rising,
            lastPressureAlert.map({ now - $0 >= AlertLimits.pressureCooldown }) ?? true {
@@ -130,7 +125,7 @@ public struct EventEngine: Sendable {
             lastPressureAlert = now
         }
         return EventDraft(ts: now, kind: EventKind.pressure, severity: severity,
-                          identity: grower?.identity ?? top?.identity, rule: rule, message: message,
+                          identity: cause?.identity, rule: rule, message: message,
                           value: system.pressurePct)
     }
 
@@ -144,22 +139,56 @@ public struct EventEngine: Sendable {
         hot = spell
         guard !spell.alerted, now - spell.since >= Double(rule.minutes * 60) else { return nil }
         hot?.alerted = true
-        return EventDraft(ts: now, kind: EventKind.alert, severity: state == 3 ? 2 : 1, identity: nil, rule: RuleName.thermal,
-                          message: "Thermal state \(SystemState.thermal(state)) for \(rule.minutes) min",
+        let cause = cpuCause()
+        return EventDraft(ts: now, kind: EventKind.alert, severity: state == 3 ? 2 : 1, identity: cause?.identity,
+                          rule: RuleName.thermal,
+                          message: Self.message("Thermal state \(SystemState.thermal(state)) for \(rule.minutes) min", cause),
                           value: Double(state))
     }
 
     /// One alert per spell over the threshold, and at most one per `rearm`; leaving the spell re-arms the rule.
-    private mutating func systemAlert(_ rule: String, over: Bool, now: Double, rearm: Double, value: Double,
-                                      message: @autoclosure () -> String) -> EventDraft? {
+    private mutating func systemAlert(_ rule: String, over: Bool, now: Double, rearm: Double) -> Bool {
         guard over else {
             systemAlerted.remove(rule)
-            return nil
+            return false
         }
-        guard !systemAlerted.contains(rule), lastSystemAlert[rule].map({ now - $0 >= rearm }) ?? true else { return nil }
+        guard !systemAlerted.contains(rule), lastSystemAlert[rule].map({ now - $0 >= rearm }) ?? true else { return false }
         systemAlerted.insert(rule)
         lastSystemAlert[rule] = now
-        return EventDraft(ts: now, kind: EventKind.alert, severity: 1, identity: nil, rule: rule, message: message(), value: value)
+        return true
+    }
+
+    private func systemDraft(_ now: Double, _ rule: String, value: Double, cause: Cause?, _ text: String) -> EventDraft {
+        EventDraft(ts: now, kind: EventKind.alert, severity: 1, identity: cause?.identity, rule: rule,
+                   message: Self.message(text, cause), value: value)
+    }
+
+    /// The process an alert names as its likely cause, and the text after the colon.
+    typealias Cause = (identity: ProcessIdentity?, text: String)
+
+    private static func message(_ text: String, _ cause: Cause?) -> String { cause.map { "\(text): \($0.text)" } ?? text }
+
+    /// Memory: the process that grew most in the last `causeMinutes`, else the largest footprint.
+    private func memoryCause(_ processes: [ProcessSample], now: Double) -> Cause? {
+        if let grower = processRules.topGrower(processes, now: now), let who = who(grower.identity) {
+            return (grower.identity, "\(who) grew \(Self.bytes(grower.growth)) in \(grower.minutes) min")
+        }
+        guard let top = processes.max(by: { $0.mem < $1.mem }), let who = who(top.identity) else { return nil }
+        return (top.identity, "\(who) uses the most memory (\(Self.bytes(top.mem)))")
+    }
+
+    /// Heat: the app with the most CPU over the sustained CPU window, as its mean.
+    private func cpuCause() -> Cause? {
+        processRules.topApp(RuleName.sustainedCPU, mean: true).map {
+            ($0.identity, "\($0.name) used \(Int($0.value.rounded())) % CPU")
+        }
+    }
+
+    /// Free space: the app that wrote most in the last hour.
+    private func writeCause() -> Cause? {
+        processRules.topApp(RuleName.diskWrites, mean: false).map {
+            ($0.identity, "\($0.name) wrote \(Self.bytes(UInt64($0.value))) in 1 hour")
+        }
     }
 
     private func who(_ identity: ProcessIdentity) -> String? { known[identity].map(Self.who) }

@@ -14,7 +14,7 @@ struct DiskMapView: View {
 
     var body: some View {
         content
-            .navigationTitle("Disk Map")
+            .navigationTitle("Disk")
             .navigationSubtitle(model.tree == nil ? "" : model.title)
             .task { await model.loadVolumes() }
             .onChange(of: selection.refreshes) { if !model.isScanning { model.scan() } }
@@ -31,7 +31,7 @@ struct DiskMapView: View {
             ContentUnavailableView("Cannot Scan", systemImage: "exclamationmark.triangle", description: Text(error))
         } else {
             ContentUnavailableView {
-                Label("Disk Map", systemImage: "square.grid.3x3.square")
+                Label("Space", systemImage: "square.grid.3x3.square")
             } description: {
                 Text("Choose a volume or folder, then click Scan.")
             } actions: {
@@ -54,7 +54,7 @@ struct DiskMapView: View {
                 Text("Scanning…")
             }
             Button("Stop") { model.stop() }
-                .help("Stop the scan")
+                .help("Stop the scan. Sizes stay partial.")
         }
         .padding()
         .frame(maxWidth: 560)
@@ -71,10 +71,14 @@ struct DiskMapView: View {
             pathBar(tree, folder: folder)
             Divider()
             HSplitView {
-                TreemapCanvas(node: folder, base: focus, selected: model.selected,
-                              label: "Disk map of \(focus.isEmpty ? model.title : folder.name), \(Metric.bytes(Double(folder.size)))",
-                              open: { model.focus = $0 }, path: model.path)
-                    .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                VStack(alignment: .leading, spacing: 0) {
+                    TreemapCanvas(node: folder, base: focus, baseNames: focus.indices.map { tree[Array(focus.prefix($0 + 1))].name },
+                                  selected: model.selected,
+                                  label: "Disk map of \(focus.isEmpty ? model.title : folder.name), \(Metric.bytes(Double(folder.size)))",
+                                  open: { model.focus = $0 }, path: model.path)
+                    FileKindLegend().padding(8)
+                }
+                .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
                 let rows = folder.children.enumerated().map { Row(id: focus + [$0.offset], node: $0.element) }
                 table(NameSearch.filter(rows, query: selection.search) { [$0.node.name] }, total: folder.size)
                     .frame(minWidth: 340, idealWidth: 420, maxHeight: .infinity)
@@ -202,7 +206,7 @@ struct DiskItemMenu: View {
 
     var body: some View {
         if let path {
-            Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
                 .help("Show the item in Finder")
             Button("Copy Path") {
                 NSPasteboard.general.clearContents()
@@ -229,7 +233,7 @@ struct DiskMapTargetMenu: View {
             Label(model.target?.name ?? "Volume or Folder", systemImage: "internaldrive")
         }
         .labelStyle(.titleOnly)
-        .help("Volume or folder to scan")
+        .help("Choose the volume or folder to scan")
     }
 
     private func choose() { Self.choose(model) }
@@ -253,11 +257,11 @@ struct DiskMapScanButton: View {
     var body: some View {
         if model.isScanning {
             Button("Stop") { model.stop() }
-                .help("Stop the scan")
+                .help("Stop the scan. Sizes stay partial.")
         } else {
             Button("Scan") { model.scan() }
                 .buttonStyle(.borderedProminent)
-                .help("Scan the volume or folder")
+                .help("Scan \(model.target?.name ?? "the volume or folder") and show what takes the space")
                 .disabled(model.target == nil)
         }
     }

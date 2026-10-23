@@ -2,7 +2,7 @@ import AMXCore
 import SwiftUI
 
 /// The Disk Map item selected in the table, or else the shown folder: its size, kind, modified date and path, with
-/// Reveal in Finder.
+/// Show in Finder; the shown folder also lists its largest items, and at the top the folders the scan could not read.
 struct DiskMapInspector: View {
     @Environment(DiskMapModel.self) private var model
 
@@ -17,11 +17,35 @@ struct DiskMapInspector: View {
                     LabeledContent("Kind", value: Self.kind(node.kind))
                     LabeledContent("Size", value: node.kind == .refused ? "Not readable" : Metric.bytes(Double(node.size)))
                     LabeledContent("Items", value: node.items.formatted())
+                    if model.selected == nil && indexPath.isEmpty && tree.refusedCount > 0 {
+                        LabeledContent("Not readable", value: "\(tree.refusedCount.formatted()) folders")
+                    }
                     if let modified = path.flatMap(Self.modified) {
                         LabeledContent("Modified", value: modified.formatted(date: .abbreviated, time: .shortened))
                     }
                 }
                 .monospacedDigit()
+                // With no item selected, the shown folder's largest items; a click selects one.
+                if model.selected == nil {
+                    let largest = node.children.indices.filter { [.folder, .file].contains(node.children[$0].kind) }.prefix(5)
+                    if !largest.isEmpty {
+                        Section {
+                            ForEach(largest, id: \.self) { i in
+                                Button { model.selected = indexPath + [i] } label: {
+                                    LabeledContent(node.children[i].name, value: Metric.bytes(Double(node.children[i].size)))
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .help("Select \(node.children[i].name)")
+                            }
+                        } header: {
+                            Text("Largest Items")
+                        } footer: {
+                            Text("Click an item to see its details.")
+                        }
+                        .monospacedDigit()
+                    }
+                }
                 if let path {
                     Section("Path") {
                         Text(path).textSelection(.enabled)

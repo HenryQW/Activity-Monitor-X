@@ -19,12 +19,38 @@ struct AppTable: View {
 
     @Environment(Selection.self) private var selection
     @Environment(HistoryModel.self) private var history
+    @Environment(AlertsModel.self) private var alerts
     private let _expanded = State<Set<Row.ID>>(initialValue: [])
     private let _sortOrder = State(initialValue: [KeyPathComparator(\Row.average, order: .reverse)])
     /// Row positions (apps and processes) while the order holds; nil while the table sorts.
     private let _held = State<[Row.ID: Int]?>(initialValue: nil)
     private let _showIdle = State(initialValue: false)
-    @SceneStorage("appTableColumns") private var columns = TableColumnCustomization<Row>()
+    /// Only the hidden columns are kept between tables. A kept `TableColumnCustomization` also keeps each column's width,
+    /// so a new table narrower than the last (inspector shown) scrolled Peak, Trend and Pin out of view (measured).
+    private let _columns = State(initialValue: AppTable.customization())
+    private static let hiddenKey = "appTableHiddenColumns"
+    private static let hideable = ["average", "peak", "share", "trend", "pin"]
+    /// Columns hidden by default; only the ones turned on are kept.
+    private static let shownKey = "appTableShownColumns"
+    private static let optional = ["pid", "user"]
+
+    private static func customization() -> TableColumnCustomization<Row> {
+        var columns = TableColumnCustomization<Row>()
+        for id in UserDefaults.standard.stringArray(forKey: hiddenKey) ?? [] { columns[visibility: id] = .hidden }
+        for id in UserDefaults.standard.stringArray(forKey: shownKey) ?? [] { columns[visibility: id] = .visible }
+        return columns
+    }
+
+    /// User names by uid: `getpwuid` reads the directory service.
+    private static var userNames: [UInt32: String] = [:]
+
+    private static func userName(_ uid: UInt32?) -> String {
+        guard let uid else { return "" }
+        if let name = userNames[uid] { return name }
+        let name = getpwuid(uid).map { String(cString: $0.pointee.pw_name) } ?? String(uid)
+        userNames[uid] = name
+        return name
+    }
 
     var body: some View {
         // Once per body: each test formats three values.
@@ -57,7 +83,7 @@ struct AppTable: View {
             })
 
         ScrollViewReader { proxy in
-            Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue, columnCustomization: $columns) {
+            Table(of: Row.self, selection: selected, sortOrder: _sortOrder.projectedValue, columnCustomization: _columns.projectedValue) {
                 TableColumn("App", value: \.name) { row in
                     if row.id == Row.idleID {
                         idleToggle(idle.count)
@@ -69,6 +95,9 @@ struct AppTable: View {
                                 Text("Exited").font(.caption)
                             }
                         }
+                        // Under the app's name: past `AppLabel`'s dot (12), icon (16) and spacing (2 × 6), less the
+                        // 13 pt the table indents a child row (measured).
+                        .padding(.leading, 27)
                         .foregroundStyle(process.exited ? .tertiary : .secondary), row, .leading)
                     } else {
                         linked(AppLabel(app: row.app, color: colors[row.app], history: history, pinned: selection.isPinned(row.app), detail: details[row.app.key]),
@@ -103,11 +132,25 @@ struct AppTable: View {
                 }
                 TableColumn("Trend") { row in
                     if row.process == nil, row.id != Row.idleID, let values = sparklines[row.app] {
-                        linked(Sparkline(values: values, color: colors[row.app] ?? .secondary, top: top), row, .leading)
+                        linked(Sparkline(values: values, color: colors[row.app] ?? .secondary, top: top,
+                                         threshold: alerts.rules.forApp(row.app.key).level(of: metric)), row, .leading)
                     }
                 }
                 .width(min: 60, ideal: 80, max: 120)
                 .customizationID("trend")
+                TableColumn("PID", value: \.pidOrder) { row in
+                    if row.id != Row.idleID { shared(row.pid.map(String.init), row, .trailing) }
+                }
+                .width(min: 48, ideal: 60, max: 80)
+                .alignment(.trailing)
+                .customizationID("pid")
+                .defaultVisibility(.hidden)
+                TableColumn("User", value: \.userOrder) { row in
+                    if row.id != Row.idleID { shared(row.user, row, .leading) }
+                }
+                .width(min: 60, ideal: 90, max: 140)
+                .customizationID("user")
+                .defaultVisibility(.hidden)
                 TableColumn("Pin") { row in
                     if row.process == nil, row.id != Row.idleID {
                         linked(pinButton(row.app).labelStyle(.iconOnly).buttonStyle(.borderless)
@@ -136,7 +179,7 @@ struct AppTable: View {
                     if row.process == nil {
                         pinButton(row.app)
                         Menu("Colour") { AppColorPicker(app: row.app, history: history) }
-                            .help("Choose the app's colour")
+                            .help("Choose the colour that shows \(row.name)")
                     }
                 }
             } primaryAction: { ids in
@@ -148,6 +191,10 @@ struct AppTable: View {
             .onHover { inside in _held.wrappedValue = inside && live ? Self.positions(sorted) : nil }
             // Back in Live, an old order must not hold before the pointer comes back.
             .onChange(of: live) { _held.wrappedValue = nil }
+            .onChange(of: _columns.wrappedValue) { _, columns in
+                UserDefaults.standard.set(Self.hideable.filter { columns[visibility: $0] == .hidden }, forKey: Self.hiddenKey)
+                UserDefaults.standard.set(Self.optional.filter { columns[visibility: $0] == .visible }, forKey: Self.shownKey)
+            }
             // A sort picked while the order holds applies at once, and holds in turn.
             .onChange(of: _sortOrder.wrappedValue) { _, order in
                 if _held.wrappedValue != nil { _held.wrappedValue = Self.positions(self.rows(sortedBy: order, idle: idle)) }
@@ -174,8 +221,10 @@ struct AppTable: View {
     /// A collapsed app has no process rows: the table keeps state for each child row, and with it each reload's rows.
     private func rows(sortedBy order: [KeyPathComparator<Row>], idle: Set<AppKey>) -> [Row] {
         ranking.filter { _showIdle.wrappedValue || !idle.contains($0.app) || $0.app == selection.app }.map { app in
-            Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
-                processes: isExpanded(app.app) ? Self.processRows(app).sorted(using: order) : [])
+            let users = Set(app.processes.map { Self.userName($0.uid) })
+            return Row(id: app.app.key, name: app.app.name, app: app.app, process: nil, average: app.average, peak: app.peak,
+                       pid: app.processes.count == 1 ? app.processes[0].pid : nil, user: users.count == 1 ? users.first : nil,
+                       processes: isExpanded(app.app) ? Self.processRows(app).sorted(using: order) : [])
         }.sorted(using: order)
     }
 
@@ -197,8 +246,18 @@ struct AppTable: View {
 
     private func pinButton(_ app: AppKey) -> some View {
         let pinned = selection.isPinned(app)
-        return Button(pinned ? "Unpin" : "Pin", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
+        return Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
             .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+    }
+
+    /// A process's value, or an app's when all its processes share it; blank with a hint when they differ.
+    private func shared(_ value: String?, _ row: Row, _ alignment: Alignment) -> some View {
+        // One labelled element: a blank cell has no text element to carry the hint.
+        linked(Text(value ?? "").monospacedDigit(), row, alignment)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(value ?? "Several")
+            .accessibilityAddTraits(.isStaticText)
+            .help(value == nil ? "Several" : "")
     }
 
     /// A cell that reports its row's app under the pointer, over the cell's full width.
@@ -243,7 +302,7 @@ struct AppTable: View {
             let n = (seen[base] ?? 0) + 1
             seen[base] = n
             return Row(id: n == 1 ? base : "\(base)#\(n)", name: p.name, app: app.app, process: p,
-                       average: p.average, peak: p.peak, processes: [])
+                       average: p.average, peak: p.peak, pid: p.pid, user: userName(p.uid), processes: [])
         }
     }
 
@@ -255,11 +314,18 @@ struct AppTable: View {
         let process: ProcessRank?
         let average: Double
         let peak: Double
+        /// The process's, or the app's when all its processes share one; nil when they differ. A user is "" when unknown.
+        let pid: Int32?
+        let user: String?
         var processes: [Row]
+
+        var pidOrder: Int32 { pid ?? -1 }
+        var userOrder: String { user ?? "" }
 
         static let idleID = "\u{0}idle"
         /// The last row: shows or hides the idle apps.
-        static let idle = Row(id: idleID, name: "", app: AppKey(key: "", name: ""), process: nil, average: 0, peak: 0, processes: [])
+        static let idle = Row(id: idleID, name: "", app: AppKey(key: "", name: ""), process: nil, average: 0, peak: 0,
+                              pid: nil, user: "", processes: [])
     }
 }
 
@@ -268,19 +334,5 @@ extension AppTable: Equatable {
     nonisolated static func == (a: AppTable, b: AppTable) -> Bool {
         (a.ranking, a.colors, a.metric, a.sparklines, a.shareTotal, a.live)
             == (b.ranking, b.colors, b.metric, b.sparklines, b.shareTotal, b.live)
-    }
-}
-
-/// One line, no axes; the y scale is shared by every row (0 to `top`).
-private struct Sparkline: View {
-    let values: [Double]
-    let color: Color
-    let top: Double
-
-    var body: some View {
-        SparklineShape(values: values, top: top, slots: values.count)
-            .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-            .frame(height: 18)
-            .accessibilityHidden(true)
     }
 }

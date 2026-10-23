@@ -39,7 +39,6 @@ final class HistoryModel {
         let back = shown == .live && range == beforeLive.range && custom == beforeLive.custom
         (shown, self.custom) = (range, custom)
         span = nil
-        since = nil
         if range != .live && !back { state = .loading }
         reload()
     }
@@ -101,10 +100,6 @@ final class HistoryModel {
     var glossary: Glossary?
     /// Start of the loaded range: its nominal start, or later when recording began inside it.
     private(set) var start = 0.0
-    /// `start` when recording began more than one chart bucket into the range.
-    private var since: Double?
-    /// "Since …" when recording began inside the range, else empty: the Range button names the range. Live has none.
-    var subtitle: String { since.map { range.since($0, now: end) } ?? "" }
 
     /// `last_seen` reads as a minute's first tick, and amxd commits every few ticks, so a live process can
     /// look up to a minute plus one commit batch old.
@@ -205,7 +200,6 @@ final class HistoryModel {
             switch result {
             case .success(let loaded):
                 (end, start, loadedBucket) = (until, loaded.start, range.chartBucket)
-                since = start - begin > range.chartBucket ? start : nil
                 (tracks, hidden, otherCache) = (loaded.tracks, loaded.hidden, nil)
                 system = loaded.system
                 events = loaded.events
@@ -288,6 +282,11 @@ final class HistoryModel {
     func launches(of app: AppKey) -> [LaunchEvent] {
         LaunchEvent.list(tracks.filter { $0.app.key == app.key }, from: span?.lowerBound ?? start, to: span?.upperBound ?? end,
                          exitedBefore: end - Self.exitSlack)
+    }
+
+    /// Selects one chart bucket each side of `ts`, inside the range: a launch's or an alert's time on the chart.
+    func selectTime(around ts: Double) {
+        span = max(start, ts - loadedBucket)...min(end, ts + loadedBucket)
     }
 
     /// One app's rank for the span or range, from unfiltered tracks: the inspector and pinned views ignore the quiet filter.

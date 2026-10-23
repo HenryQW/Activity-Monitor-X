@@ -311,6 +311,18 @@ public struct AlertRules: Codable, Sendable, Equatable {
         return r
     }
 
+    /// The value of an app's `metric` that its rule alerts at, in the metric's unit; nil when the rule is off, and for
+    /// metrics whose rule is not a level (memory growth and jumps, disk writes per hour) or that have none.
+    public func level(of metric: Metric) -> Double? {
+        switch metric {
+        case .cpu: sustainedCPU.enabled ? sustainedCPU.percent : nil
+        case .network: network.enabled ? Double(network.bytesPerSecond) : nil
+        case .energy: energy.enabled ? Double(energy.impact) : nil
+        case .gpu: gpu.enabled ? Double(gpu.percent) : nil
+        case .memory, .disk, .score: nil
+        }
+    }
+
     /// The spec §9 values for `machine` over `base`, whose on/off switches are kept (a preset sets thresholds only;
     /// `AlertRules()` has every rule on). CPU is a share of all cores (stored of one core); memory a share of RAM.
     public static func make(_ preset: AlertPreset, for machine: Machine, keepingSwitchesOf base: AlertRules = AlertRules()) -> AlertRules {

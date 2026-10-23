@@ -27,7 +27,7 @@ struct AppColorDot: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Colour")
-        .help("Choose the app's colour")
+        .help("Choose the colour that shows \(app.name)")
         .overlay(alignment: .topTrailing) {
             if chosen && hover {
                 Button("Remove Colour", systemImage: "xmark.circle.fill") { history.appColors[app.key] = nil }
@@ -37,7 +37,7 @@ struct AppColorDot: View {
                     .foregroundStyle(.white, .gray)
                     .font(.system(size: 10))
                     .offset(x: 5, y: -5)
-                    .help("Remove the colour")
+                    .help("Remove the colour and use the automatic one")
             }
         }
         // The hover area takes in the cross, which sits past the dot's corner.

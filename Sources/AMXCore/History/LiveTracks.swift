@@ -140,6 +140,6 @@ public struct LiveTracks: Sendable {
     private static func track(_ p: LiveProcess, ts: Double, slices: [Slice]) -> ProcessTrack {
         ProcessTrack(processID: 0, pid: p.pid, startTime: p.startTime, name: p.name,
                      app: AppKey(key: p.appKey, name: p.appName), path: p.path, lastSeen: ts,
-                     slices: slices, bundleID: p.bundleID, teamID: p.teamID)
+                     slices: slices, bundleID: p.bundleID, teamID: p.teamID, uid: p.uid)
     }
 }

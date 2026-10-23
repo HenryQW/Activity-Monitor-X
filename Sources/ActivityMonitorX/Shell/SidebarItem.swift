@@ -8,7 +8,6 @@ enum SidebarItem: Hashable {
     case pinned(AppKey)
     case group(UUID)
     case disk
-    case diskMap
     case hardware
     case energy
 
@@ -16,27 +15,26 @@ enum SidebarItem: Hashable {
     /// Calendar. Search and the inspector apply on every screen, to what it lists.
     var isSystem: Bool {
         switch self {
-        case .calendar, .disk, .diskMap, .hardware, .energy: true
+        case .calendar, .disk, .hardware, .energy: true
         default: false
         }
     }
 
-    /// The screen's search finds apps; Disk, Disk Map and Hardware search their own items.
+    /// The screen's search finds apps; Disk and Hardware search their own items.
     var searchesApps: Bool {
         switch self {
-        case .disk, .diskMap, .hardware: false
+        case .disk, .hardware: false
         default: true
         }
     }
 
-    /// What the toolbar search finds on the screen.
+    /// What the toolbar search finds on the screen; Disk's Space pill finds files (`Selection.searchPrompt`).
     var searchPrompt: String {
         switch self {
         case .apps, .pinned, .group: "App, process or PID"
         case .alerts: "App or message"
         case .calendar, .energy: "App"
         case .disk: "Volume or disk"
-        case .diskMap: "File or folder"
         case .hardware: "Hardware"
         }
     }

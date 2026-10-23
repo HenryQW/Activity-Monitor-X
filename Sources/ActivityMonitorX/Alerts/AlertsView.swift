@@ -15,11 +15,7 @@ struct AlertsView: View {
 
     var body: some View {
         let search = selection.search
-        let found = search.isEmpty ? alerts.alerts : alerts.alerts.filter {
-            $0.subject.localizedStandardContains(search) || $0.message.localizedStandardContains(search)
-                || $0.app.map { AppSearch.matches($0, search) } == true
-        }
-        let rows = alerts.showDismissed ? found : found.filter { !alerts.dismissed.contains($0.id) }
+        let rows = alerts.listed(search: search)
         Group {
             if !rows.isEmpty {
                 list(rows)
@@ -65,12 +61,12 @@ struct AlertsView: View {
             }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
-            if ids.count == 1 { Button("Show in Apps", systemImage: "app.badge") { reveal(ids) } }
+            if ids.count == 1 { Button("Show App at Alert Time", systemImage: "app.badge") { reveal(ids) } }
             if !ids.isEmpty {
                 if ids.allSatisfy(alerts.dismissed.contains) {
-                    Button("Restore", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
+                    Button("Restore ^[\(ids.count) Alert](inflect: true)", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
                 } else {
-                    Button("Dismiss", systemImage: "xmark.circle") { alerts.dismiss(ids) }
+                    Button("Dismiss ^[\(ids.count) Alert](inflect: true)", systemImage: "xmark.circle") { alerts.dismiss(ids) }
                 }
             }
         } primaryAction: { reveal($0) }
@@ -90,9 +86,9 @@ struct AlertsView: View {
         .opacity(dismissed ? 0.5 : 1)
         .swipeActions(edge: .trailing) {
             if dismissed {
-                Button("Restore", systemImage: "arrow.uturn.backward") { alerts.restore([event.id]) }
+                Button("Restore Alert", systemImage: "arrow.uturn.backward") { alerts.restore([event.id]) }
             } else {
-                Button("Dismiss", systemImage: "xmark.circle") { alerts.dismiss([event.id]) }.tint(.gray)
+                Button("Dismiss Alert", systemImage: "xmark.circle") { alerts.dismiss([event.id]) }.tint(.gray)
             }
         }
     }

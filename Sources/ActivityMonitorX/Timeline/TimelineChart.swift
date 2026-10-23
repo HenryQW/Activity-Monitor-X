@@ -35,15 +35,15 @@ struct TimelineChart: View {
 
     /// `points` is non-empty and ordered by bucket; every bucket holds every series.
     /// `colors` holds every named app of `points`. With `highlighted` (search, or the hovered app key, "" for Other),
-    /// the other series are dimmed.
+    /// the other series are dimmed to the `dim` opacity.
     /// `line` is the series of a hovered app without a band: it is drawn over the dimmed stack in `AppPalette.hover`.
     init(points: [SeriesPoint], colors: [AppKey: Color], bucket: Double, live: Bool = false, metric: Metric, events: [EventMark],
-         highlighted: Set<String>? = nil, line: [SeriesPoint]? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
+         highlighted: Set<String>? = nil, dim: Double = 0.25, line: [SeriesPoint]? = nil, span: ClosedRange<Date>?, commitSpan: ((ClosedRange<Date>) -> Void)?,
          otherProcesses: @escaping (Double) -> [(name: String, value: Double)], hover: @escaping (String, Bool) -> Void) {
         (self.points, self.colors, self.bucket, self.live, self.metric, self.events, self.span, self.commitSpan, self.otherProcesses)
             = (points, colors, bucket, live, metric, events, span, commitSpan, otherProcesses)
         self.hover = hover
-        series = Self.series(points, colors: colors, highlighted: highlighted)
+        series = Self.series(points, colors: colors, highlighted: highlighted, dim: dim)
         let labels = Dictionary(uniqueKeysWithValues: series.map { ($0.app, $0.label) })
         self.labels = labels
         // Stacked here, in point order (the first series at the bottom), so Charts does not stack 1800 values again.
@@ -120,7 +120,7 @@ struct TimelineChart: View {
                 if series.count > 1 { Text("Top during peaks").fontWeight(.medium).lineLimit(1) }
                 ForEach(series.indices, id: \.self) { i in
                     HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 2).fill(series[i].color).frame(width: 8, height: 8)
+                        Circle().fill(series[i].color).frame(width: 8, height: 8)
                         Text(series[i].label).lineLimit(1)
                     }
                     .onHover { hover(series[i].app?.key ?? "", $0) }
@@ -236,12 +236,12 @@ struct TimelineChart: View {
     }
 
     /// Legend labels are display names, made unique so two apps sharing a name stay two series.
-    private static func series(_ points: [SeriesPoint], colors: [AppKey: Color], highlighted: Set<String>?) -> [Series] {
+    private static func series(_ points: [SeriesPoint], colors: [AppKey: Color], highlighted: Set<String>?, dim: Double) -> [Series] {
         let first = points.prefix { $0.bucket == points[0].bucket }
         return zip(first, AppSeries.labels(first.map { $0.app?.name })).map { point, label in
             let color = point.app.map { colors[$0]! } ?? AppPalette.other
             // Other never matches a search; it matches a hover on its legend item ("").
-            let shown = highlighted.map { $0.contains(point.app?.key ?? "") } ?? true ? color : color.opacity(0.25)
+            let shown = highlighted.map { $0.contains(point.app?.key ?? "") } ?? true ? color : color.opacity(dim)
             return Series(app: point.app, label: label, color: shown)
         }
     }
@@ -268,9 +268,9 @@ extension HistoryRange {
 }
 
 extension View {
-    /// The look of a chart's hover bubble.
+    /// The look of a chart's hover bubble: a material, not glass, so the bands behind it do not refract through the text.
     func hoverBubble() -> some View {
-        font(.caption).fixedSize().padding(8).glassEffect(.regular, in: .rect(cornerRadius: 10))
+        font(.caption).fixedSize().padding(8).background(.regularMaterial, in: .rect(cornerRadius: 10))
     }
 }
 
