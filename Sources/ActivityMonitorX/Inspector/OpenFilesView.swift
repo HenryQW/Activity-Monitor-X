@@ -43,12 +43,13 @@ struct OpenFilesRows: View {
             LabeledContent {
                 HStack {
                     if model.loading { ProgressView().controlSize(.small) }
-                    Button("Refresh") { Task { await model.load(processes, client: client) } }
+                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await model.load(processes, client: client) } }
                         .disabled(model.loading)
                         .help("Read the open files and network connections again")
                 }
             } label: {
                 Text(model.error ?? (processes.isEmpty ? "No running processes" : "Open files and network connections"))
+                    .overlayScrollers()
             }
         }
         ForEach(model.processes, id: \.pid) { p in
@@ -74,8 +75,11 @@ private struct ItemRow: View {
         case .file(let path):
             Text(path).lineLimit(1).truncationMode(.middle).help(path)
                 .contextMenu {
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
-                    Button("Copy Path") { copy(path) }
+                    Group {
+                        Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+                        Button("Copy Path", systemImage: "doc.on.doc") { copy(path) }
+                    }
+                        .labelStyle(.titleAndIcon)
                 }
         case .socket(let proto, let local, let remote, let state):
             let text = remote.isEmpty || remote == "*" ? local : "\(local) → \(remote)"
@@ -84,7 +88,7 @@ private struct ItemRow: View {
                 Text([proto, state].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
             }
             .help(text)
-            .contextMenu { Button("Copy") { copy(text) } }
+            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) }.labelStyle(.titleAndIcon) }
         }
     }
 

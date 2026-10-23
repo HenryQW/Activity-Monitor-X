@@ -80,7 +80,13 @@ struct DiskChart: View {
                     }
                 }
                 .chartXScale(domain: xDomain)
-                .chartXAxis { AxisMarks(preset: .aligned) }
+                .chartXAxis {
+                    AxisMarks(preset: .aligned) { _ in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel(format: AppTime.axisFormat(seconds: xDomain.upperBound.timeIntervalSince(xDomain.lowerBound)))
+                    }
+                }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine()
@@ -108,18 +114,8 @@ struct DiskChart: View {
 
     private func bubble(at date: Date) -> some View {
         let rows = values(at: date)
-        return VStack(alignment: .leading, spacing: 3) {
-            Text(date.formatted(.hover(bucket: bucket))).fontWeight(.semibold)
-            ForEach(rows.indices, id: \.self) { i in
-                let p = rows[i]
-                HStack {
-                    Text(p.series)
-                    Spacer(minLength: 8)
-                    Text(format(p.value)).monospacedDigit()
-                }
-            }
-        }
-        .hoverBubble()
+        return PreviewCard(size: .compact, title: date.formatted(.hover(bucket: bucket)),
+                           sections: [.init(rows: rows.map { .init(label: $0.series, value: format($0.value)) })])
     }
 }
 

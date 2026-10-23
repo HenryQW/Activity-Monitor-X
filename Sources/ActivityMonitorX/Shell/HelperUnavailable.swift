@@ -18,6 +18,9 @@ struct HelperUnavailable: View {
                 NSApp.activate()
                 openSettings()
             }
+            // The screen's one action: prominent.
+            .buttonStyle(.borderedProminent)
+            .help("Open the helper settings")
         }
     }
 }

@@ -422,3 +422,33 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Copy rule (user):** hints and labels say the action and the result where space permits (AGENTS.md).
 - **R6 time zone (user pick):** a forced time zone applies to the whole app, not one view.
 - **Not built:** desktop widget (user: no); R6 Calendar grid (approved in round 6 with the shared PreviewCard; being built); popover sparkline colour (needs a system CPU rule, user call); Threads and Ports columns (cost daemon reads, user call); Space right-click menu (user call).
+
+## D63: R6 Calendar, shared preview card, app-wide time zone, system CPU rule (user picks)
+
+- **R6 (user approved round 6):** gapless grid with hairlines, one outline for a drag span, zoom Month to Hour, large hover preview, weekend and today fills, first day of week setting, busiest app per Metric. The inspector day header lost its subheading: the toolbar and the strip already show metric, zone and Show (user).
+- **Shared preview (user):** one `PreviewCard` for every hover readout, compact and large, instead of a Calendar-only preview. Used by the chart bubble, Disk charts, event list, Disk Map, Trend sparkline, Energy nodes, Launch History, Calendar.
+- **Time zone (user pick: app-wide, not per view):** the app sets `NSTimeZone.default` and formats dates through an app overload of `Date.formatted` and the interval style, as no native global setting covers `FormatStyle`. Cost: a new `formatted` call outside these overloads shows system time; a zone change rebuilds the window (view state resets).
+- **Status levels (user pick: system rules):** the first build invented CPU 50/80 % and Memory 80/90 % levels for cell colour, against DESIGN.md (status only over a rule). Options: a system CPU rule; colour by recorded alerts only; no colour. User chose a system CPU rule (defaults 70 % and 90 % of all cores for 5 min; presets Relaxed 80/95/10, Balanced 70/90/5, Strict 60/80/3) that also colours the popover sparkline; Memory uses the recorded pressure level.
+- **Review:** Opus review of R6 found no High defects; 6 Medium and 6 Low fixed (interval formats, weekday reload, minute tier fallback, system zone change, DST span units, stale usual read, a11y for the drag).
+
+## D64: Space acts on files (user asks)
+
+- **Goal (user):** choosing a folder should scan without a second click; a scan shows progress; the item menu should offer what a file browser offers (the user asked for delete, rename, open in terminal and "as many options as possible").
+- **Call:** a focused Finder-like set (Open, Open With, Quick Look, Show in Finder, Get Info, Open in Terminal, Copy Path, Copy Name, Rename…, Move to Trash), not every Finder item. Move to Trash, not delete: the Trash restores, so no confirmation, as in Finder. This ends the earlier code-only rule "a monitor does not delete files"; the app now moves user files to the Trash on an explicit menu choice only.
+- **Terminal:** a Settings > General pop-up of installed terminal apps (default Terminal).
+- **Not built:** the treemap does not fill in during a scan (the scanner reports counts only).
+
+## D65: Popovers and previews are Liquid Glass (user pick)
+
+- **Goal (user):** the hover preview looked too grey in light mode on `.regularMaterial` (D60 P1 had chosen a material so coloured bands would not refract through the text).
+- **Options (real captures):** regular, thick and ultra-thick material (all grey), Liquid Glass (near-white, cells blur faintly), window colour with a shadow (best contrast).
+- **Call (user):** Liquid Glass, for every popover and hover preview regardless of size. Native popovers are glass already; `PreviewCard` now uses `.glassEffect(.regular)` in both sizes. Supersedes the material part of D60 P1.
+- **Cost if wrong:** secondary text over a busy, coloured area is a little weaker; one line to change in `PreviewCard`.
+
+## D66: Floating design on every screen (user picks, board rounds 7 and 8)
+
+- **Goal (user):** everything floats, as in a reference chat app; one window background; side panels float over it; a title pill with an icon; two floating levels plus data; the main action prominent; thin scroll bars in the inspector.
+- **Built:** inspector as a floating glass panel on an 8/12/16 pt grid; toolbar with no background and a glass title pill; level 2 glass capsules (range bar, footer, span capsule, Calendar bar, Space capsules); Live as one prominent button (Live left the range bar segments); overlay scrollers in the inspector only.
+- **System limits:** the sidebar stays the system's (no inset API); the inspector starts below the toolbar row (a full-height panel puts toolbar items glass on glass); level 2 uses regular glass (clear glass made footer figures unreadable); Space capsules sit above the split view (AppKit panes take no safe area bar).
+- **Costs:** Metric becomes a pop-up below 1050 pt (was 840) to leave room for a 240 pt title; inspector scroll bars ignore the system "Always" setting; supersedes DESIGN.md "panes use a standard material".
+- **Reviews:** Opus review found 2 High (docs not updated; scroller token missed rebuilt views) and 5 more; all fixed.

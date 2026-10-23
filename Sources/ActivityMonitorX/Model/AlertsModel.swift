@@ -135,12 +135,13 @@ final class AlertsModel {
 }
 
 extension EventMark {
-    /// Who an alert is about: the system for pressure, thermal, swap and free space rows, else the app. Notification
+    /// Who an alert is about: the system for pressure, thermal, CPU, swap and free space rows, else the app. Notification
     /// titles and the Alerts App column.
     var subject: String {
         switch rule {
         case RuleName.pressure: "Memory Pressure"
         case RuleName.thermal: "Thermal"
+        case RuleName.systemCPU: "CPU"
         case RuleName.swap: "Swap"
         case RuleName.freeSpace: "Startup Disk"
         default: app?.name ?? "Alert"

@@ -38,11 +38,19 @@ final class DiskMapModel {
     /// The path being scanned.
     private var scanningPath = ""
     private(set) var progress: DiskScanProgress?
+    /// The bytes a volume scan will find, about: the volume's used space. Nil for a folder, which has no known total.
+    private(set) var progressTotal: UInt64?
     /// Index path of the shown folder in `tree`.
     var focus: [Int] = []
     /// Index path of the table's selected item in `tree`, which the inspector shows.
     var selected: [Int]?
     private(set) var error: String?
+    /// The item the Rename sheet is for, an index path in `tree`.
+    var renaming: [Int]?
+    /// A file to show in Quick Look.
+    var quickLook: URL?
+    /// What a file action that failed says: the alert's title and message.
+    var actionFailure: (title: String, message: String)?
     private(set) var isScanning = false
     /// Stop was clicked; the scan's partial result shows when it arrives, unless a newer scan started.
     private(set) var stopped = false
@@ -67,6 +75,7 @@ final class DiskMapModel {
         stopFlag = flag
         title = target.name
         scanningPath = root
+        if case .volume(let volume) = target { progressTotal = volume.usedBytes ?? volume.totalBytes - volume.freeBytes } else { progressTotal = nil }
         tree = nil
         focus = []
         // An index path of the old tree names another item in the new one.
@@ -97,11 +106,48 @@ final class DiskMapModel {
         }
     }
 
-    /// Disk's Show in Space: scans the target unless its map is shown or being made.
+    /// Choosing a target, and Disk's Show in Space: scans it unless its map is shown or being made.
     func open(_ target: Target) {
         let shown = isScanning ? scanningPath == target.path : tree?.rootPath == target.path
         self.target = target
         if !shown { scan() }
+    }
+
+    /// Moves the item to the Trash; the treemap drops it.
+    func trash(_ indexPath: [Int]) {
+        guard let path = path(indexPath) else { return }
+        do {
+            try FileManager.default.trashItem(at: URL(filePath: path), resultingItemURL: nil)
+        } catch {
+            actionFailure = ("Cannot Move to Trash", "\(URL(filePath: path).lastPathComponent): \(error.localizedDescription)")
+            return
+        }
+        tree?.remove(at: indexPath)
+        // Index paths after the dropped item shift by one; paths inside it are gone.
+        selected = selected.flatMap { Self.shifted($0, removing: indexPath) }
+        focus = Self.shifted(focus, removing: indexPath) ?? Array(indexPath.dropLast())
+    }
+
+    func rename(_ indexPath: [Int], to name: String) {
+        guard let path = path(indexPath) else { return }
+        let url = URL(filePath: path)
+        do {
+            try FileManager.default.moveItem(at: url, to: url.deletingLastPathComponent().appending(path: name))
+        } catch {
+            actionFailure = ("Cannot Rename", "\(url.lastPathComponent): \(error.localizedDescription)")
+            return
+        }
+        tree?.rename(at: indexPath, to: name)
+    }
+
+    /// The index path once `removed` is gone; nil when it was inside the removed item.
+    private static func shifted(_ path: [Int], removing removed: [Int]) -> [Int]? {
+        let depth = removed.count - 1
+        guard path.count > depth, path.prefix(depth) == removed.prefix(depth), path[depth] >= removed[depth] else { return path }
+        if path[depth] == removed[depth] { return nil }
+        var path = path
+        path[depth] -= 1
+        return path
     }
 
     /// Never waits for the scan thread, which a TCC prompt or one huge folder can hold in a syscall.

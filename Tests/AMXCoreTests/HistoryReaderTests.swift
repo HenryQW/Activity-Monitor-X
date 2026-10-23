@@ -79,12 +79,13 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         try r.tier("process_hour", 0, cpu: 10)
         try r.tier("process_hour", 7200, cpu: 30)
         let reader = HistoryReader(pool: r.pool)
-        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600, 7200, 10_800, 14_400]) == [10, 10, 30, nil])
+        func totals(_ bounds: [Double]) throws -> [Double?] {
+            let tracks = try reader.tracks(source: .hour, from: bounds[0], to: bounds[bounds.count - 1], metric: .cpu)
+            return CalendarBucket.read(tracks, bounds: bounds).map(\.total)
+        }
+        #expect(try totals([0, 3600, 7200, 10_800, 14_400]) == [10, 10, 30, nil])
         // Half of the interval has data, and a gap counts as 0; an interval of no width has none.
-        #expect(try reader.totals(metric: .cpu, bounds: [9000, 12_600, 12_600]) == [15, nil])
-        // A query keeps the apps it matches: the one process is app "p".
-        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600], query: "p") == [10])
-        #expect(try reader.totals(metric: .cpu, bounds: [0, 3600], query: "zzz") == [nil])
+        #expect(try totals([9000, 12_600, 12_600]) == [15, nil])
     }
 
     @Test func rawRowsHoldUntilNextRow() throws {

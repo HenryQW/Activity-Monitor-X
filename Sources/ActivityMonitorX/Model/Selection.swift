@@ -58,7 +58,7 @@ final class Selection {
         let focus = EventFocus.window(for: event.ts, lookback: rules.lookback(rule: event.rule ?? ""), now: Date().timeIntervalSince1970)
         switch event.rule {
         case RuleName.memoryGrowth, RuleName.memoryJump: history.metric = .memory
-        case RuleName.sustainedCPU: history.metric = .cpu
+        case RuleName.sustainedCPU, RuleName.systemCPU: history.metric = .cpu
         case RuleName.diskWrites: history.metric = .disk
         case RuleName.network: history.metric = .network
         case RuleName.energy: history.metric = .energy
@@ -99,6 +99,14 @@ final class Selection {
     }
     private static let diskPaneKey = "diskPane"
     var showsSpace: Bool { sidebar == .disk && diskPane == .space }
+    /// The screens that have the range bar and Live: Apps, pinned apps, groups and Disk's activity.
+    var hasRange: Bool {
+        switch sidebar ?? .apps {
+        case .apps, .pinned, .group: true
+        case .disk: !showsSpace
+        default: false
+        }
+    }
     /// What the toolbar search finds on the shown screen.
     var searchPrompt: String { showsSpace ? "File or folder" : (sidebar ?? .apps).searchPrompt }
 

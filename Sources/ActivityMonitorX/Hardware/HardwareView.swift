@@ -9,8 +9,7 @@ struct HardwareView: View {
 
     var body: some View {
         content
-            .navigationTitle("Hardware")
-            .navigationSubtitle(subtitle)
+            .screenTitle("Hardware", subtitle: Text(subtitle), icon: .symbol("cpu"))
             .task { await hardware.loadOnce() }
             .task { await hardware.sampleLive() }
             .onChange(of: selection.refreshes) { Task { await hardware.refresh() } }

@@ -102,7 +102,7 @@ struct TimelineChart: View {
             AxisMarks(preset: .aligned) { _ in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                 AxisTick()
-                AxisValueLabel()
+                AxisValueLabel(format: AppTime.axisFormat(seconds: Double(points.last!.bucket + bucket - points.first!.bucket)))
             }
         }
         .chartYAxis {
@@ -172,33 +172,13 @@ struct TimelineChart: View {
         let zero = metric.format(0)
         let b = points.first!.bucket
         let rows = AppSeries.bubbleRows(Array(points)) { metric.format($0) == zero }
-        return VStack(alignment: .leading, spacing: 3) {
-            Text("\(Self.date(b).formatted(.hover(bucket: bucket))) · \(metric.format(points.reduce(0) { $0 + $1.value }))")
-                .fontWeight(.semibold)
-            ForEach(rows.indices, id: \.self) { i in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(rows[i].app.map { colors[$0]! } ?? AppPalette.other)
-                        .frame(width: 8, height: 8)
-                    Text(labels[rows[i].app]!)
-                    Spacer(minLength: 8)
-                    Text(metric.format(rows[i].value)).monospacedDigit()
-                }
-            }
-            // Other's largest processes, under its row.
-            if rows.last?.app == nil {
-                let inOther = otherProcesses(b).filter { metric.format($0.value) != zero }
-                ForEach(inOther.indices, id: \.self) { i in
-                    HStack(spacing: 5) {
-                        Text(inOther[i].name).padding(.leading, 13)
-                        Spacer(minLength: 8)
-                        Text(metric.format(inOther[i].value)).monospacedDigit()
-                    }
-                    .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .hoverBubble()
+        // Other's largest processes, under its row.
+        let inOther = rows.last?.app == nil ? otherProcesses(b).filter { metric.format($0.value) != zero } : []
+        return PreviewCard(size: .compact, title: Self.date(b).formatted(.hover(bucket: bucket)),
+                           top: metric.format(points.reduce(0) { $0 + $1.value }),
+                           sections: [.init(rows: rows.map { .init(swatch: $0.app.map { colors[$0]! } ?? AppPalette.other,
+                                                                  label: labels[$0.app]!, value: metric.format($0.value)) }
+                                            + inOther.map { .init(label: $0.name, value: metric.format($0.value), detail: true) })])
     }
 
     /// The hover line's key in the colour scale; never a legend label (the legend lists `series` only).
@@ -264,13 +244,6 @@ extension HistoryRange {
     /// Two times in the range, with the day as in `timeFormat`.
     var intervalFormat: Date.IntervalFormatStyle {
         seconds >= Self.day.seconds ? .interval.month(.abbreviated).day().hour().minute() : .interval.hour().minute()
-    }
-}
-
-extension View {
-    /// The look of a chart's hover bubble: a material, not glass, so the bands behind it do not refract through the text.
-    func hoverBubble() -> some View {
-        font(.caption).fixedSize().padding(8).background(.regularMaterial, in: .rect(cornerRadius: 10))
     }
 }
 

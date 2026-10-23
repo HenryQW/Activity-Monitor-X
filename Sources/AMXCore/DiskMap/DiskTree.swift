@@ -2,7 +2,7 @@
 public struct DiskTree: Sendable {
     public struct Node: Sendable, Identifiable {
         public enum Kind: Sendable { case folder, file, smaller, refused }
-        public let name: String
+        public var name: String
         public let kind: Kind
         /// Allocated bytes; a folder's size is the sum of its children.
         public var size: UInt64
@@ -27,6 +27,28 @@ public struct DiskTree: Sendable {
     public var simplified: Bool
 
     public subscript(path: [Int]) -> Node { path.reduce(root) { $0.children[$1] } }
+
+    /// Drops the item and takes its size, items and nodes off every folder above it. A non-empty path.
+    public mutating func remove(at path: [Int]) { _ = Self.remove(&root, path[...]) }
+
+    /// Renames the item; the order stays, as it depends on size only. A non-empty path.
+    public mutating func rename(at path: [Int], to name: String) {
+        var node = self[path]
+        node.name = name
+        Self.replace(&root, path[...], node)
+    }
+
+    private static func remove(_ node: inout Node, _ path: ArraySlice<Int>) -> Node {
+        let gone = path.count == 1 ? node.children.remove(at: path.first!) : remove(&node.children[path.first!], path.dropFirst())
+        node.size -= gone.size
+        node.items -= gone.items
+        node.count -= gone.count
+        return gone
+    }
+
+    private static func replace(_ node: inout Node, _ path: ArraySlice<Int>, _ new: Node) {
+        if path.count == 1 { node.children[path.first!] = new } else { replace(&node.children[path.first!], path.dropFirst(), new) }
+    }
 }
 
 public struct DiskScanLimits: Sendable {

@@ -31,6 +31,31 @@ struct AppLabel: View {
     }
 }
 
+/// The name a pinned app shows. A process outside an app bundle (an XPC service) is named by its executable, which can be
+/// a truncated bundle ID; its bundle's display name says more. The executable name stays when no bundle names it.
+@MainActor
+enum AppName {
+    private static var cache: [String: String] = [:]
+    private static let suffixes = [".app", ".xpc", ".appex"]
+
+    static func display(_ app: AppKey, history: HistoryModel) -> String {
+        guard !app.key.hasPrefix("/") else { return app.name }
+        if let hit = cache[app.key] { return hit }
+        let name = bundleName(app, history: history) ?? app.name
+        cache[app.key] = name
+        return name
+    }
+
+    private static func bundleName(_ app: AppKey, history: HistoryModel) -> String? {
+        guard let pool = try? history.openPool(), let path = try? HistoryReader(pool: pool).executablePath(ofBare: app.key) else { return nil }
+        let parts = path.split(separator: "/")
+        let bundle = parts.lastIndex { part in suffixes.contains { part.hasSuffix($0) } }
+            .flatMap { Bundle(path: "/" + parts[...$0].joined(separator: "/")) }
+        return bundle?.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+            ?? bundle?.object(forInfoDictionaryKey: "CFBundleName") as? String
+    }
+}
+
 /// Icons are looked up once per app: tables redraw every second in Live.
 @MainActor
 enum AppIcon {

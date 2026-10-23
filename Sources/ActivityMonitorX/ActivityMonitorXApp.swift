@@ -22,6 +22,8 @@ struct ActivityMonitorXApp: App {
     private let notifier: Notifier?
 
     init() {
+        // Hover hints show after 1 s of rest: this app's defaults only, never a system setting.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 1000])
         let history = HistoryModel()
         self.history = history
         live = LiveModel(history: history, selection: selection)
@@ -62,6 +64,10 @@ struct ActivityMonitorXApp: App {
     var body: some Scene {
         Window("Activity Monitor X", id: "main") {
             MainWindow()
+                // Dates and day boundaries read the forced zone as they draw: a new zone draws the window again.
+                .id(appDelegate.preferences.zoneKey)
+                .environment(\.timeZone, AppTime.zone)
+                .environment(\.calendar, AppTime.calendar)
                 .environment(history)
                 .environment(live)
                 .environment(selection)
@@ -82,12 +88,15 @@ struct ActivityMonitorXApp: App {
         .commands {
             SidebarCommands()
             CommandGroup(after: .pasteboard) {
-                Divider()
-                Button("Find…") { selection.searchPresented = true }
-                    .keyboardShortcut("f")
+                Group {
+                    Divider()
+                    Button("Find…", systemImage: "magnifyingglass") { selection.searchPresented = true }
+                        .keyboardShortcut("f")
+                }
+                    .labelStyle(.titleAndIcon)
             }
             GroupCommands(selection: selection, groups: groups)
-            GoCommands(selection: selection, history: history, diskMap: diskMap, alerts: alerts)
+            GoCommands(selection: selection, history: history, diskMap: diskMap, alerts: alerts, calendar: calendar)
             DataCommands(history: history, selection: selection)
             ProcessCommands(selection: selection)
         }

@@ -78,6 +78,6 @@ struct DiskInspector: View {
     }
 
     private func title(_ text: String) -> some View {
-        Section { Text(text).font(.title3.bold()) }
+        Section { Text(text).font(.title3.bold()).overlayScrollers() }
     }
 }

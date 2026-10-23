@@ -39,7 +39,10 @@ struct MenuBarContent: View {
             }
             HStack(alignment: .top) {
                 ReadoutGauge(title: "CPU", percent: readout.percents?.cpu) {
-                    SparklineShape(values: readout.cpuHistory).stroke(.tint, lineWidth: 1).frame(width: 120, height: 24)
+                    let rule = alerts.rules.systemCPU
+                    Sparkline(values: readout.cpuHistory, color: .accentColor, top: 100, threshold: rule.enabled ? Double(rule.warning) : nil,
+                              height: 24, slots: MenuBarReadout.historyLength)
+                        .frame(width: 120)
                 }
                 ReadoutGauge(title: "Memory Pressure", percent: readout.percents?.pressure) {
                     Text(readout.percents?.levelWord ?? "").foregroundStyle(.secondary)
@@ -56,12 +59,12 @@ struct MenuBarContent: View {
             Button("Open Activity Monitor X", systemImage: "macwindow") { open() }
                 .help("Open the main window")
             // `SettingsLink` does not activate the app, so the window would open behind the frontmost app (Task 0).
-            Button("Settings…", systemImage: "gearshape") {
+            Button("Settings…", systemImage: "gear") {
                 NSApp.activate()
                 openSettings()
             }
             .help("Open the Activity Monitor X settings")
-            Button("Quit Activity Monitor X", systemImage: "power") { NSApp.terminate(nil) }
+            Button("Quit Activity Monitor X", systemImage: "xmark.circle") { NSApp.terminate(nil) }
                 .help("Quit Activity Monitor X. The helper continues to record history.")
         }
         .buttonStyle(.borderless)

@@ -13,8 +13,10 @@ struct LaunchHistoryCard: View {
     let color: Color
     /// The app whose list is shown; another app starts with the bars only.
     private let _showAllOf = State<String?>(initialValue: nil)
+    /// The run under the pointer, and the pointer's place in the chart.
+    private let _hover = State<(run: Run, point: CGPoint)?>(initialValue: nil)
 
-    private struct Run {
+    private struct Run: Equatable {
         let name: String
         let start: Double
         let end: Double
@@ -42,27 +44,33 @@ struct LaunchHistoryCard: View {
                             y: .value("Process", runs[i].name), height: .fixed(8))
                         .foregroundStyle(color)
                         .accessibilityLabel(runs[i].name)
-                        .accessibilityValue("\(Self.date(runs[i].start).formatted(format)) to \(Self.date(runs[i].end).formatted(format))")
+                        .accessibilityValue(span(runs[i], format))
                 }
             }
             .chartXScale(domain: Self.date(from)...Self.date(to))
             .chartYScale(domain: lanes)
             .chartXAxis {
                 let (unit, count) = InspectorView.xStride(seconds: to - from)
-                AxisMarks(values: .stride(by: unit, count: count))
+                AxisMarks(values: .stride(by: unit, count: count)) { _ in
+                    AxisGridLine()
+                    AxisTick()
+                    AxisValueLabel(format: AppTime.axisFormat(seconds: to - from))
+                }
             }
             .chartYAxis(.hidden)
             .chartOverlay { proxy in
                 GeometryReader { geo in
                     Rectangle().fill(.clear).contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            guard case .active(let location) = phase, let run = run(at: location, in: proxy, geo: geo, runs: runs) else {
+                                _hover.wrappedValue = nil
+                                return
+                            }
+                            // Set once per run: a rebuild per mouse move is not needed.
+                            if _hover.wrappedValue?.run != run { _hover.wrappedValue = (run, location) }
+                        }
                         .onTapGesture { location in
-                            guard let plot = proxy.plotFrame.map({ geo[$0] }),
-                                  let date = proxy.value(atX: location.x - plot.minX, as: Date.self),
-                                  let name = proxy.value(atY: location.y - plot.minY, as: String.self) else { return }
-                            let t = date.timeIntervalSince1970
-                            // The newest run under the pointer.
-                            guard let run = runs.last(where: { $0.name == name && $0.start <= t && t <= $0.end }) else { return }
-                            select(run)
+                            if let run = run(at: location, in: proxy, geo: geo, runs: runs) { select(run) }
                         }
                     // One accessibility button per bar: a click is not the only way to select a run.
                     if let plot = proxy.plotFrame.map({ geo[$0] }) {
@@ -74,7 +82,7 @@ struct LaunchHistoryCard: View {
                                     .position(x: plot.minX + (x0 + x1) / 2, y: plot.minY + y)
                                     .accessibilityElement()
                                     .accessibilityLabel("Select \(run.name) run")
-                                    .accessibilityValue("\(Self.date(run.start).formatted(format)) to \(Self.date(run.end).formatted(format))")
+                                    .accessibilityValue(span(run, format))
                                     .accessibilityAddTraits(.isButton)
                                     .accessibilityAction { select(run) }
                             }
@@ -83,6 +91,9 @@ struct LaunchHistoryCard: View {
                 }
             }
             .frame(height: CGFloat(lanes.count) * 36 + 24)
+            .previewBeside(_hover.wrappedValue?.point) {
+                if let run = _hover.wrappedValue?.run { card(run, format) }
+            }
             .help("Each bar is one run of a process. Click a bar to select its time on the chart.")
             if launches.isEmpty {
                 Text("No process started or quit in this range").foregroundStyle(.secondary)
@@ -115,6 +126,29 @@ struct LaunchHistoryCard: View {
             let end = max(p.exited ? min(p.lastSeen, to) : to, start)
             return Run(name: p.name, start: start, end: min(to, max(end, start + history.loadedBucket)))
         }
+    }
+
+    /// The newest run under the point.
+    private func run(at location: CGPoint, in proxy: ChartProxy, geo: GeometryProxy, runs: [Run]) -> Run? {
+        guard let plot = proxy.plotFrame.map({ geo[$0] }),
+              let date = proxy.value(atX: location.x - plot.minX, as: Date.self),
+              let name = proxy.value(atY: location.y - plot.minY, as: String.self) else { return nil }
+        let t = date.timeIntervalSince1970
+        return runs.last { $0.name == name && $0.start <= t && t <= $0.end }
+    }
+
+    private func span(_ run: Run, _ format: Date.FormatStyle) -> String {
+        "\(Self.date(run.start).formatted(format)) to \(Self.date(run.end).formatted(format)), \(Self.length(run))"
+    }
+
+    private static func length(_ run: Run) -> String {
+        Duration.seconds(run.end - run.start).formatted(.units(allowed: [.days, .hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2))
+    }
+
+    private func card(_ run: Run, _ format: Date.FormatStyle) -> some View {
+        PreviewCard(size: .compact, title: run.name, top: Self.length(run),
+                    sections: [.init(rows: [.init(label: "Start", value: Self.date(run.start).formatted(format)),
+                                            .init(label: "End", value: Self.date(run.end).formatted(format))])])
     }
 
     private func select(_ run: Run) {

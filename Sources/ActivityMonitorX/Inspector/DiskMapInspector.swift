@@ -1,4 +1,5 @@
 import AMXCore
+import AppKit
 import SwiftUI
 
 /// The Disk Map item selected in the table, or else the shown folder: its size, kind, modified date and path, with
@@ -12,7 +13,7 @@ struct DiskMapInspector: View {
             let node = tree[indexPath]
             let path = model.path(indexPath)
             Form {
-                Section { Text(indexPath.isEmpty ? model.title : node.name).font(.title3.bold()) }
+                Section { Text(indexPath.isEmpty ? model.title : node.name).font(.title3.bold()).overlayScrollers() }
                 Section(model.selected == nil ? "Shown Folder" : "Item") {
                     LabeledContent("Kind", value: Self.kind(node.kind))
                     LabeledContent("Size", value: node.kind == .refused ? "Not readable" : Metric.bytes(Double(node.size)))
@@ -49,14 +50,19 @@ struct DiskMapInspector: View {
                 if let path {
                     Section("Path") {
                         Text(path).textSelection(.enabled)
-                        HStack { DiskItemMenu(path: path) }
+                        HStack {
+                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+                                .help("Show the item in Finder")
+                            Button("Copy Path") { DiskItemMenu.copy(path) }
+                                .help("Copy the path of the item")
+                        }
                     }
                 }
             }
             .formStyle(.grouped)
         } else {
             ContentUnavailableView("No Selection", systemImage: "square.grid.3x3.square",
-                                   description: Text("Scan a volume or folder, then click an item."))
+                                   description: Text("Choose a volume or folder, then click an item."))
         }
     }
 

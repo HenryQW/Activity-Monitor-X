@@ -8,6 +8,8 @@ struct MainWindow: View {
     /// The group waiting for the Delete confirmation.
     private let _deleting = State<ProcessGroup?>(initialValue: nil)
     private let _deleteError = State<String?>(initialValue: nil)
+    /// The pinned app whose Alert Rules sheet is open.
+    private let _rulesApp = State<AppKey?>(initialValue: nil)
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var appSelection
@@ -16,18 +18,18 @@ struct MainWindow: View {
     @Environment(DiskMapModel.self) private var diskMap
     @Environment(Preferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
-    /// Whether the detail area is too narrow for the Metric segments: toolbar items cannot read the room they have. Only a
-    /// crossing of the threshold changes it, so a live resize does not rebuild the window at each point. The inspector pane
-    /// lives inside the detail area, so it does not change the room the toolbar has.
+    /// Whether the detail area is too narrow for the Metric segments: toolbar items cannot read the room they have, so
+    /// `ToolbarFit` compares the detail width with the measured widths of the toolbar's parts. Only a crossing changes it,
+    /// so a live resize does not rebuild the window at each point. The inspector pane lives inside the detail area, so it
+    /// does not change the room the toolbar has.
     private let _compact = State(initialValue: false)
+    private let _fit = State(initialValue: ToolbarFit())
+    /// Whether the detail area is too narrow for the title pill's text: the pill shows its icon only.
+    private let _narrow = State(initialValue: false)
     /// The inspector pane's width, remembered; `InspectorPane` keeps it between 240 and 400 pt.
     @AppStorage("inspectorWidth") private var inspectorWidth = 280.0
 
-    /// Metric falls back to a pop-up where its segments no longer fit. Measured on Apps (the most items, with Show Chart) with
-    /// the sidebar shown, window 760 to 1500 pt: the segments fit from 830 pt of detail, and from 1040 pt while the search
-    /// field (242 pt) is open; each threshold has 10 pt more for the toolbar's own hysteresis.
-    private static let compactBelow: CGFloat = 840
-    private static let compactSearchingBelow: CGFloat = 1050
+    private static let narrowBelow: CGFloat = 700
 
     @AppStorage("sidebarGroupsExpanded") private var groupsExpanded = true
     @AppStorage("sidebarPinnedExpanded") private var pinnedExpanded = true
@@ -82,11 +84,15 @@ struct MainWindow: View {
                             } icon: {
                                 Image(systemName: group.symbol).foregroundStyle(group.color.color)
                             }
+                            .help(group.name)
                             .badge(groups.scores[group.id].map { Text(Metric.score.format($0)) })
                             .tag(SidebarItem.group(group.id))
                             .contextMenu {
-                                Button("Edit Group…") { appSelection.editingGroup = group }
-                                Button("Delete Group…") { _deleting.wrappedValue = group }
+                                Group {
+                                    Button("Edit Group…", systemImage: "pencil") { appSelection.editingGroup = group }
+                                    Button("Delete Group…", systemImage: "trash") { _deleting.wrappedValue = group }
+                                }
+                                    .labelStyle(.titleAndIcon)
                             }
                         }
                     }
@@ -101,8 +107,7 @@ struct MainWindow: View {
                             appSelection.search.isEmpty || appSelection.sidebar?.searchesApps == false || AppSearch.matches($0, appSelection.search)
                         },
                                 id: \.key) { app in
-                            Label(app.name, systemImage: "pin")
-                                .help(app.key)
+                            PinnedRow(app: app, history: history, selection: appSelection, rulesApp: _rulesApp.projectedValue)
                                 .tag(SidebarItem.pinned(app))
                         }
                     }
@@ -135,14 +140,28 @@ struct MainWindow: View {
                     case .energy: EnergyView()
                     }
                 }
-                .onChange(of: proxy.size.width < (appSelection.searchPresented || !appSelection.query.isEmpty ? Self.compactSearchingBelow : Self.compactBelow),
-                          initial: true) { _, compact in _compact.wrappedValue = compact }
+                .environment(\.narrowDetail, _narrow.wrappedValue)
+                .environment(_fit.wrappedValue)
+                .onChange(of: proxy.size.width < Self.narrowBelow, initial: true) { _, narrow in _narrow.wrappedValue = narrow }
+                .onChange(of: _fit.wrappedValue.compact(width: proxy.size.width, searching: appSelection.searchPresented || !appSelection.query.isEmpty,
+                                                        was: _compact.wrappedValue), initial: true) { _, compact in
+                    // Next turn: the flip removes the segments, which the toolbar may be laying out right now.
+                    Task { @MainActor in _compact.wrappedValue = compact }
+                }
             }
+            // No toolbar background: the content runs under the toolbar row with the scroll edge effect, and the items
+            // float as glass capsules. Each screen's title pill (`screenTitle`) replaces the system title.
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+            .toolbar(removing: .title)
             // A new id drops toolbar layouts saved before the system toggle went and the Sidebar button came.
-            // A solid toolbar: content and the inspector pane do not show through it, so it keeps one colour across the window.
-            .toolbarBackgroundVisibility(.visible, for: .windowToolbar)
-            .toolbar(id: "window3") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: _compact.wrappedValue) }
+            .toolbar(id: "window3") { MainToolbar(history: history, selection: appSelection, diskMap: diskMap, compact: _compact.wrappedValue, fit: _fit.wrappedValue) }
             .background { ToolbarSearch(selection: appSelection) }
+            // The segments laid out off screen, for their ideal width: the pop-up shows instead of them while the room is short.
+            .background {
+                MetricPicker(history: history).pickerStyle(.segmented).fixedSize().opacity(0).allowsHitTesting(false).disabled(true).accessibilityHidden(true)
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { _fit.wrappedValue.ideal = $0 }
+                    .onChange(of: history.metrics.count, initial: true) { _, count in _fit.wrappedValue.count = count }
+            }
             .frame(minHeight: 480)
             .navigationSplitViewColumnWidth(min: 620, ideal: 980)
         }
@@ -155,6 +174,9 @@ struct MainWindow: View {
         }
         .modifier(SignalConfirmation())
         .sheet(item: Bindable(appSelection).editingGroup) { GroupEditor(group: $0) }
+        .sheet(isPresented: Binding(get: { _rulesApp.wrappedValue != nil }, set: { if !$0 { _rulesApp.wrappedValue = nil } })) {
+            if let app = _rulesApp.wrappedValue { AppRulesSheet(app: app) }
+        }
         .confirmationDialog("Delete “\(_deleting.wrappedValue?.name ?? "")”?",
                             isPresented: Binding(get: { _deleting.wrappedValue != nil }, set: { if !$0 { _deleting.wrappedValue = nil } }),
                             presenting: _deleting.wrappedValue) { group in
@@ -168,6 +190,8 @@ struct MainWindow: View {
         .onChange(of: appSelection.sidebar) { old, item in
             if case .pinned(let app) = item { appSelection.app = app }
             scope(item)
+            // Only the app charts draw the span, and Zoom In would use a span the screen does not show.
+            if item == .disk || !appSelection.hasRange { history.span = nil }
             // One query for all screens: it stays between screens that search apps, and is cleared where it would name
             // another kind of item (a volume, a file, a hardware row).
             if old?.searchesApps != true || item?.searchesApps != true { appSelection.query = "" }
@@ -253,14 +277,16 @@ private struct ScreenInspector: View {
     @Environment(Selection.self) private var selection
 
     var body: some View {
-        switch selection.sidebar ?? .apps {
-        case .calendar: CalendarInspector()
-        case .disk where selection.diskPane == .space: DiskMapInspector()
-        case .disk: DiskInspector()
-        case .hardware: HardwareInspector()
-        case .energy where selection.app == nil:
-            ContentUnavailableView("No Selection", systemImage: "bolt", description: Text("Click an app in the energy flow."))
-        default: InspectorView()
+        Group {
+            switch selection.sidebar ?? .apps {
+            case .calendar: CalendarInspector()
+            case .disk where selection.diskPane == .space: DiskMapInspector()
+            case .disk: DiskInspector()
+            case .hardware: HardwareInspector()
+            case .energy where selection.app == nil:
+                ContentUnavailableView("No Selection", systemImage: "bolt", description: Text("Click an app in the energy flow."))
+            default: InspectorView()
+            }
         }
     }
 }
@@ -268,8 +294,10 @@ private struct ScreenInspector: View {
 /// The least width the content keeps beside the inspector pane.
 private let contentMin = 380.0
 
-/// The content with the inspector as a trailing pane inside it: opening it shrinks the content, never the window.
-/// A divider drags its width (240 to 400 pt, remembered); the content keeps `contentMin` (380 pt) beside it.
+/// The content with the inspector as a trailing floating panel inside it: opening it shrinks the content, never the window.
+/// The 8 pt gap before the panel drags its width (240 to 400 pt, remembered); the content keeps `contentMin` (380 pt)
+/// beside it. The panel starts 8 pt below the toolbar row: a full-height panel would put the window's trailing toolbar
+/// items over it, because those items always end at the window edge.
 private struct InspectorPane<Content: View>: View {
     let shown: Bool
     @Binding var width: Double
@@ -277,7 +305,7 @@ private struct InspectorPane<Content: View>: View {
     @ViewBuilder let content: Content
     private let _dragStart = State<Double?>(initialValue: nil)
 
-    private var maxWidth: Double { max(200, min(400, Double(available) - contentMin - 1)) }
+    private var maxWidth: Double { max(200, min(400, Double(available) - contentMin - 2 * Layout.inset)) }
     /// 240 to 400 pt, less where the window leaves the content under `contentMin`; the stored width stays inside this too.
     private func clamp(_ value: Double) -> Double { min(max(value, min(240, maxWidth)), maxWidth) }
     private var paneWidth: Double { clamp(width) }
@@ -286,39 +314,36 @@ private struct InspectorPane<Content: View>: View {
         HStack(spacing: 0) {
             content.frame(minWidth: contentMin, maxWidth: .infinity)
             if shown {
-                Divider()
-                    .overlay {
-                        Color.clear.frame(width: 8).contentShape(Rectangle())
-                            .pointerStyle(.columnResize)
-                            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                                .onChanged { drag in
-                                    let start = _dragStart.wrappedValue ?? paneWidth
-                                    _dragStart.wrappedValue = start
-                                    width = clamp(start - drag.translation.width)
-                                }
-                                .onEnded { _ in _dragStart.wrappedValue = nil })
-                            .accessibilityElement()
-                            .help("Drag to change the inspector width")
-                            .accessibilityLabel("Inspector width")
-                            .accessibilityValue("\(Int(paneWidth)) points")
-                            .accessibilityAdjustableAction { direction in
-                                switch direction {
-                                case .increment: width = clamp(paneWidth + 20)
-                                case .decrement: width = clamp(paneWidth - 20)
-                                @unknown default: break
-                                }
-                            }
+                Color.clear.frame(width: Layout.inset).contentShape(Rectangle())
+                    .pointerStyle(.columnResize)
+                    .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                        .onChanged { drag in
+                            let start = _dragStart.wrappedValue ?? paneWidth
+                            _dragStart.wrappedValue = start
+                            width = clamp(start - drag.translation.width)
+                        }
+                        .onEnded { _ in _dragStart.wrappedValue = nil })
+                    .accessibilityElement()
+                    .help("Drag to change the inspector width")
+                    .accessibilityLabel("Inspector width")
+                    .accessibilityValue("\(Int(paneWidth)) points")
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: width = clamp(paneWidth + 20)
+                        case .decrement: width = clamp(paneWidth - 20)
+                        @unknown default: break
+                        }
                     }
                 ScreenInspector()
                     .frame(width: paneWidth)
                     .frame(maxHeight: .infinity)
-                    // The grouped forms and lists hide their own opaque background, so the pane's material shows behind
+                    // The grouped forms and lists hide their own opaque background, so the panel's glass shows behind
                     // their sections, as behind the empty states: one surface for every inspector.
                     .scrollContentBackground(.hidden)
-                    // The pane starts below the solid toolbar, so the top scroll edge effect only drew a band in the
-                    // toolbar that did not line up with the divider.
+                    // The panel starts below the toolbar row, so it needs no edge effect at its top.
                     .scrollEdgeEffectHidden(true, for: .top)
-                    .background(.regularMaterial, ignoresSafeAreaEdges: [])
+                    .floatingPanel()
+                    .padding([.vertical, .trailing], Layout.inset)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")
                     .transition(.move(edge: .trailing))

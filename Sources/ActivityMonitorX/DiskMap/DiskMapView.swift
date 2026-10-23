@@ -1,11 +1,11 @@
 import AMXCore
 import AppKit
+import QuickLook
 import SwiftUI
 
 /// The largest items under a volume or folder: a treemap beside a table of the same items, which is the accessible
 /// path. The search filters the table by name; its selection is the inspector's. Content layer: no glass. The system asks
-/// for protected folders on first access (M5-D9); the app does not pre-check them. No Move to Trash: a monitor does not
-/// delete files.
+/// for protected folders on first access (M5-D9); the app does not pre-check them. Choosing a target scans it at once.
 struct DiskMapView: View {
     @Environment(DiskMapModel.self) private var model
     @Environment(Selection.self) private var selection
@@ -14,10 +14,22 @@ struct DiskMapView: View {
 
     var body: some View {
         content
-            .navigationTitle("Disk")
-            .navigationSubtitle(model.tree == nil ? "" : model.title)
+            .screenTitle("Disk", subtitle: Text(model.tree == nil ? "Space" : model.title), icon: .symbol("internaldrive"))
             .task { await model.loadVolumes() }
             .onChange(of: selection.refreshes) { if !model.isScanning { model.scan() } }
+            .quickLookPreview(Bindable(model).quickLook)
+            .sheet(item: Binding(get: { model.renaming.map(RenameTarget.init) }, set: { model.renaming = $0?.id })) {
+                DiskRenameSheet(model: model, id: $0.id)
+            }
+            .alert(model.actionFailure?.title ?? "", isPresented: Binding(get: { model.actionFailure != nil }, set: { if !$0 { model.actionFailure = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(model.actionFailure?.message ?? "")
+            }
+    }
+
+    private struct RenameTarget: Identifiable {
+        let id: [Int]
     }
 
     @ViewBuilder private var content: some View {
@@ -26,35 +38,45 @@ struct DiskMapView: View {
         } else if let tree = model.tree {
             result(tree)
         } else if model.stopped {
-            ContentUnavailableView("Stopped", systemImage: "stop.circle", description: Text("Click Scan to start again."))
+            ContentUnavailableView("Stopped", systemImage: "stop.circle", description: Text("Click Rescan to start again."))
         } else if let error = model.error {
             ContentUnavailableView("Cannot Scan", systemImage: "exclamationmark.triangle", description: Text(error))
         } else {
             ContentUnavailableView {
                 Label("Space", systemImage: "square.grid.3x3.square")
             } description: {
-                Text("Choose a volume or folder, then click Scan.")
+                Text("Choose a volume or folder to see what takes the space.")
             } actions: {
+                // The screen's one action: prominent.
                 Button("Choose Folder…") { DiskMapTargetMenu.choose(model) }
+                    .buttonStyle(.borderedProminent)
                     .help("Choose a folder to scan")
             }
         }
     }
 
+    /// Determinate for a volume (scanned bytes of the used space), else indeterminate.
     private var scanning: some View {
         VStack(spacing: 12) {
-            ProgressView()
-            if let progress = model.progress {
-                Text("\(progress.items.formatted()) items · \(Metric.bytes(Double(progress.bytes)))").monospacedDigit()
+            let progress = model.progress
+            if let total = model.progressTotal, total > 0 {
+                ProgressView(value: Double(min(progress?.bytes ?? 0, total)), total: Double(total))
+                    .accessibilityLabel("Scanning \(model.title)")
+            } else {
+                ProgressView().accessibilityLabel("Scanning \(model.title)")
+            }
+            HStack {
+                Text(progress.map { "Scanning \(model.title)… \($0.items.formatted()) items, \(Metric.bytes(Double($0.bytes)))" } ?? "Scanning \(model.title)…")
+                    .monospacedDigit()
+                Button("Stop") { model.stop() }
+                    .help("Stop the scan. Sizes stay partial.")
+            }
+            if let progress {
                 Text(progress.folder)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(.secondary)
-            } else {
-                Text("Scanning…")
             }
-            Button("Stop") { model.stop() }
-                .help("Stop the scan. Sizes stay partial.")
         }
         .padding()
         .frame(maxWidth: 560)
@@ -68,14 +90,20 @@ struct DiskMapView: View {
         let folder = tree[focus]
         return VStack(spacing: 0) {
             banners(tree)
-            pathBar(tree, folder: folder)
-            Divider()
+            // Above the split view, not a safe area bar: its treemap and table sit in AppKit panes that take no safe
+            // area, so a bar would put the treemap labels and the table header under the capsules.
+            HStack(spacing: Layout.inset) {
+                pathBar(tree, folder: folder)
+                Spacer(minLength: 0)
+                actions(focus: focus)
+            }
+            .padding(Layout.inset)
             HSplitView {
                 VStack(alignment: .leading, spacing: 0) {
                     TreemapCanvas(node: folder, base: focus, baseNames: focus.indices.map { tree[Array(focus.prefix($0 + 1))].name },
                                   selected: model.selected,
                                   label: "Disk map of \(focus.isEmpty ? model.title : folder.name), \(Metric.bytes(Double(folder.size)))",
-                                  open: { model.focus = $0 }, path: model.path)
+                                  open: { model.focus = $0 })
                     FileKindLegend().padding(8)
                 }
                 .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
@@ -123,35 +151,55 @@ struct DiskMapView: View {
         }
     }
 
-    /// One button per level from the scanned root to the focus.
+    /// One button per level from the scanned root to the focus, then the folder's size: a level 2 capsule that fits its
+    /// content; a path too long for the column scrolls inside it.
     private func pathBar(_ tree: DiskTree, folder: DiskTree.Node) -> some View {
         let focus = model.focus
-        return HStack {
-            ScrollView(.horizontal) {
-                HStack(spacing: 4) {
-                    ForEach(0...focus.count, id: \.self) { level in
-                        if level > 0 {
-                            Image(systemName: "chevron.right")
-                                .imageScale(.small)
-                                .foregroundStyle(.tertiary)
-                                .accessibilityHidden(true)
-                        }
-                        Button(level == 0 ? model.title : tree[Array(focus.prefix(level))].name) {
-                            model.focus = Array(focus.prefix(level))
-                        }
-                        .buttonStyle(.borderless)
-                        .fontWeight(level == focus.count ? .semibold : nil)
-                        .help("Show this folder")
-                    }
+        let path = HStack(spacing: Layout.inset) {
+            ForEach(0...focus.count, id: \.self) { level in
+                if level > 0 {
+                    Image(systemName: "chevron.right")
+                        .imageScale(.small)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
+                Button(level == 0 ? model.title : tree[Array(focus.prefix(level))].name) {
+                    model.focus = Array(focus.prefix(level))
+                }
+                .buttonStyle(.borderless)
+                .fontWeight(level == focus.count ? .semibold : nil)
+                .help("Show this folder")
             }
-            .scrollIndicators(.never)
+        }
+        return HStack(spacing: Layout.padding) {
+            ViewThatFits(in: .horizontal) {
+                path.fixedSize()
+                ScrollView(.horizontal) { path }.scrollIndicators(.never)
+            }
             Text("\(folder.items.formatted()) items · \(Metric.bytes(Double(folder.size)))")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
+                .fixedSize()
         }
-        .padding(.horizontal)
-        .padding(.vertical, 6)
+        .floatingCapsule(padding: Layout.padding)
+    }
+
+    /// Show the selected item, else the shown folder, in Finder; open the inspector with its details.
+    private func actions(focus: [Int]) -> some View {
+        // Grouped small items have no one path: their folder shows.
+        return HStack(spacing: Layout.inset) {
+            if let path = model.selected.flatMap(model.path) ?? model.path(focus) {
+                let url = URL(filePath: path)
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    .help("Show \(url.lastPathComponent) in Finder")
+            }
+            if !selection.inspectorShown {
+                Button("Show in Inspector") { selection.inspectorShown = true }
+                    .help("Show the details of the selection in the inspector")
+            }
+        }
+        .fixedSize()
+        .floatingCapsule()
     }
 
     // MARK: Table
@@ -184,7 +232,7 @@ struct DiskMapView: View {
             .alignment(.trailing)
         }
         .contextMenu(forSelectionType: [Int].self) { ids in
-            if ids.count == 1, let id = ids.first { DiskItemMenu(path: model.path(id)) }
+            if ids.count == 1, let id = ids.first { DiskItemMenu(id: id) }
         } primaryAction: { ids in
             if ids.count == 1, let id = ids.first, model.tree?[id].kind == .folder { model.focus = id }
         }
@@ -200,23 +248,6 @@ struct DiskMapView: View {
     }
 }
 
-/// Shared by the table and the treemap; empty for grouped small items, which have no one path.
-struct DiskItemMenu: View {
-    let path: String?
-
-    var body: some View {
-        if let path {
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
-                .help("Show the item in Finder")
-            Button("Copy Path") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(path, forType: .string)
-            }
-            .help("Copy the path of the item")
-        }
-    }
-}
-
 /// Toolbar: what to scan.
 struct DiskMapTargetMenu: View {
     let model: DiskMapModel
@@ -224,10 +255,10 @@ struct DiskMapTargetMenu: View {
     var body: some View {
         Menu {
             ForEach(model.volumes) { volume in
-                Button(volume.name) { model.target = .volume(volume) }
+                Button(volume.name) { model.open(.volume(volume)) }
             }
             Divider()
-            Button("Home Folder") { model.target = .folder(.homeDirectory) }
+            Button("Home Folder") { model.open(.folder(.homeDirectory)) }
             Button("Choose Folder…", action: choose)
         } label: {
             Label(model.target?.name ?? "Volume or Folder", systemImage: "internaldrive")
@@ -244,25 +275,20 @@ struct DiskMapTargetMenu: View {
         panel.canChooseDirectories = true
         panel.prompt = "Choose"
         let done = { (response: NSApplication.ModalResponse) in
-            if response == .OK, let url = panel.url { model.target = .folder(url) }
+            if response == .OK, let url = panel.url { model.open(.folder(url)) }
         }
         if let window = MainWindowRef.window { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
     }
 }
 
-/// Toolbar: Scan, or Stop while a scan runs.
+/// Toolbar: Rescan once a target is chosen (a choice scans at once); while a scan runs, Stop is beside its progress.
 struct DiskMapScanButton: View {
     let model: DiskMapModel
 
     var body: some View {
-        if model.isScanning {
-            Button("Stop") { model.stop() }
-                .help("Stop the scan. Sizes stay partial.")
-        } else {
-            Button("Scan") { model.scan() }
-                .buttonStyle(.borderedProminent)
-                .help("Scan \(model.target?.name ?? "the volume or folder") and show what takes the space")
-                .disabled(model.target == nil)
+        if !model.isScanning, let target = model.target {
+            Button("Rescan") { model.scan() }
+                .help("Scan \(target.name) again")
         }
     }
 }

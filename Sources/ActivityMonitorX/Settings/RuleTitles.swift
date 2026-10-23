@@ -13,6 +13,7 @@ extension RuleName {
         case network: "Network"
         case energy: "Energy Impact"
         case gpu: "GPU"
+        case systemCPU: "System CPU"
         case swap: "Swap Used"
         case freeSpace: "Free Disk Space"
         default: rule

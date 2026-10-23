@@ -56,7 +56,7 @@ struct InspectorView: View {
         let span = isLive ? nil : history.span
         let events = history.events.filter { event in (event.level ?? 0) >= 1 && span.map { $0.contains(event.ts) } ?? true }
         return Form {
-            Section { Text(history.scope?.name ?? "All Apps").font(.title3.bold()) }
+            Section { Text(history.scope?.name ?? "All Apps").font(.title3.bold()).overlayScrollers() }
             SystemHealthCard(isLive: isLive)
             Section("Top Apps") {
                 if top.isEmpty {
@@ -118,6 +118,7 @@ struct InspectorView: View {
                                 }
                             }
                         }
+                        .overlayScrollers()
                         actions(rank)
                         LabeledContent {
                             Text(metric.format(rank.average))
@@ -153,8 +154,13 @@ struct InspectorView: View {
                                 .foregroundStyle(color.opacity(0.6))
                         }
                         .chartXAxis {
-                            let (unit, count) = Self.xStride(seconds: (series.last?.bucket ?? 0) - (series.first?.bucket ?? 0))
-                            AxisMarks(values: .stride(by: unit, count: count))
+                            let seconds = (series.last?.bucket ?? 0) - (series.first?.bucket ?? 0)
+                            let (unit, count) = Self.xStride(seconds: seconds)
+                            AxisMarks(values: .stride(by: unit, count: count)) { _ in
+                                AxisGridLine()
+                                AxisTick()
+                                AxisValueLabel(format: AppTime.axisFormat(seconds: seconds))
+                            }
                         }
                         .chartYAxis {
                             AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
@@ -196,19 +202,23 @@ struct InspectorView: View {
             } else {
                 List(selection: selected) {
                     if !running.isEmpty {
-                        Section("Running (\(running.count.formatted()))") {
+                        Section {
                             // By name: the first process of a name changes as averages shift (each second in Live), which would close an open row.
                             ForEach(runningRows, id: \.[0].name) { processRows($0, of: rank.app) }
+                        } header: {
+                            Text("Running (\(running.count.formatted()))").overlayScrollers()
                         }
                     }
                     if !exited.isEmpty {
-                        Section("Exited (\(exited.count.formatted()))") {
+                        Section {
                             ForEach(shownExited, id: \.[0].name) { processRows($0, of: rank.app) }
                             if shownExited.count < exitedRows.count {
                                 Button("Show All \(exited.count.formatted())") { _showAllOf.wrappedValue = rank.app.key }
                                     .buttonStyle(.link)
                                     .help("Show the list of all exited processes")
                             }
+                        } header: {
+                            Text("Exited (\(exited.count.formatted()))").overlayScrollers()
                         }
                     }
                 }

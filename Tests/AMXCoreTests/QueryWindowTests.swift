@@ -33,3 +33,14 @@ private let now = 1_792_656_000.0
     // Raw keeps 1 day: an older hour reads the minute tier.
     #expect(HistoryRange.covering(from: now - 90_000, to: now - 86_400, now: now) == .day)
 }
+
+@Test func zoomStepsAroundTheShownWindow() {
+    #expect(HistoryRange.wider(than: 3600) == .day)
+    #expect(HistoryRange.wider(than: 7_776_000) == nil)
+    #expect(HistoryRange.narrower(than: 86_400) == .hour)
+    #expect(HistoryRange.narrower(than: 3600) == nil)
+    #expect(HistoryRange.narrower(than: 4000) == .hour)
+    // Around the middle, and never past now.
+    #expect(HistoryRange.hour.window(around: (now - 7200)...(now - 3600), now: now) == (now - 7200)...(now - 3600))
+    #expect(HistoryRange.day.window(around: (now - 1000)...now, now: now) == (now - 86_400)...now)
+}

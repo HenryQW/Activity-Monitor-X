@@ -190,6 +190,22 @@ public struct AlertRules: Codable, Sendable, Equatable {
         }
     }
 
+    /// Total CPU of all processes, held: a share of all cores, with a warning and a critical level.
+    public struct SystemCPU: Codable, Sendable, Equatable {
+        public var enabled = true
+        public var warning = 70
+        public var critical = 90
+        public var minutes = 5
+        public static let percentRange = 10...100, minutesRange = 1...60
+        public init() {}
+
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
+            (enabled, warning, critical, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.warning, or: d.warning),
+                                                         c.decode(.critical, or: d.critical), c.decode(.minutes, or: d.minutes))
+        }
+    }
+
     public struct Swap: Codable, Sendable, Equatable {
         public var enabled = true
         public var percentOfMemory = 50
@@ -257,6 +273,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
     public var network = Network()
     public var energy = Energy()
     public var gpu = GPU()
+    public var systemCPU = SystemCPU()
     public var swap = Swap()
     public var freeSpace = FreeSpace()
     /// By app key (the bundle path, else the process name), as the engine groups processes. Presets keep them.
@@ -265,10 +282,12 @@ public struct AlertRules: Codable, Sendable, Equatable {
 
     public init() {}
 
-    /// A file without a preset keeps its values as Custom; a missing rule takes the Balanced value for this Mac.
+    /// A file without a preset keeps its values as Custom; a missing rule takes the value of the file's preset (Balanced for
+    /// Custom) for this Mac.
     public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self), d = Self.make(.balanced, for: .current)
+        let c = try decoder.container(keyedBy: CodingKeys.self)
         preset = try c.decode(.preset, or: .custom)
+        let d = Self.make(preset == .custom ? .balanced : preset, for: .current)
         sustainedCPU = try c.decode(.sustainedCPU, or: d.sustainedCPU)
         memoryGrowth = try c.decode(.memoryGrowth, or: d.memoryGrowth)
         memoryJump = try c.decode(.memoryJump, or: d.memoryJump)
@@ -278,6 +297,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
         network = try c.decode(.network, or: d.network)
         energy = try c.decode(.energy, or: d.energy)
         gpu = try c.decode(.gpu, or: d.gpu)
+        systemCPU = try c.decode(.systemCPU, or: d.systemCPU)
         swap = try c.decode(.swap, or: d.swap)
         freeSpace = try c.decode(.freeSpace, or: d.freeSpace)
         apps = try c.decode(.apps, or: [:])
@@ -285,7 +305,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case preset, sustainedCPU = "sustained_cpu", memoryGrowth = "memory_growth", memoryJump = "memory_jump", pressure, thermal
-        case diskWrites = "disk_writes", network, energy, gpu, swap, freeSpace = "free_space", apps
+        case diskWrites = "disk_writes", network, energy, gpu, systemCPU = "system_cpu", swap, freeSpace = "free_space", apps
     }
 
     /// The rules for the app at `key`: its own process rules over the global ones, every process rule off when muted.
@@ -349,6 +369,9 @@ public struct AlertRules: Codable, Sendable, Equatable {
         r.energy.minutes = 10
         r.gpu.percent = pick(80, 50, 30)
         r.gpu.minutes = 5
+        r.systemCPU.warning = pick(80, 70, 60)
+        r.systemCPU.critical = pick(95, 90, 80)
+        r.systemCPU.minutes = pick(10, 5, 3)
         r.swap.percentOfMemory = pick(100, 50, 25)
         r.freeSpace.percentFree = pick(5, 10, 15)
         return r
@@ -460,6 +483,10 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
             (R.Energy.minutesRange.contains(rules.energy.minutes), "Energy time must be 1 to 60 min"),
             (R.GPU.percentRange.contains(rules.gpu.percent), "GPU must be 10 to 100 %"),
             (R.GPU.minutesRange.contains(rules.gpu.minutes), "GPU time must be 1 to 60 min"),
+            (R.SystemCPU.percentRange.contains(rules.systemCPU.warning) && R.SystemCPU.percentRange.contains(rules.systemCPU.critical),
+             "System CPU must be 10 to 100 %"),
+            (rules.systemCPU.warning < rules.systemCPU.critical, "System CPU warning must be below critical"),
+            (R.SystemCPU.minutesRange.contains(rules.systemCPU.minutes), "System CPU time must be 1 to 60 min"),
             (R.Swap.percentOfMemoryRange.contains(rules.swap.percentOfMemory), "Swap must be 10 to 200 % of memory"),
             (R.FreeSpace.percentFreeRange.contains(rules.freeSpace.percentFree), "Free space must be 1 to 50 %"),
         ]

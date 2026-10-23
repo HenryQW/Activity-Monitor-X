@@ -101,7 +101,7 @@ struct EventLane: View {
                     .popover(isPresented: Binding(get: { _open.wrappedValue?.ts == cluster.lead.ts },
                                                   set: { if !$0, _open.wrappedValue?.ts == cluster.lead.ts { _open.wrappedValue = nil } }),
                              arrowEdge: .bottom) {
-                        EventList(events: cluster.events)
+                        EventList(cluster: cluster, title: title(cluster), span: spanText(cluster), format: shownRange.timeFormat)
                     }
                     .accessibilityLabel(([label(cluster)] + cluster.events.prefix(Self.listed).map(detail)).joined(separator: "; "))
                     .position(x: plot.minX + cluster.x, y: plot.minY + 8)
@@ -146,6 +146,19 @@ struct EventLane: View {
         }
     }
 
+    /// "3 memory pressure events": the popover's title.
+    private func title(_ cluster: EventCluster) -> String {
+        let n = cluster.events.count
+        let kinds = Set(cluster.events.map(\.kind))
+        return "\(n) \(kinds.count == 1 ? Self.noun(cluster.lead.kind) + " " : "")event\(n == 1 ? "" : "s")"
+    }
+
+    /// The first to the last event, in the locale's interval format.
+    private func spanText(_ cluster: EventCluster) -> [String] {
+        let first = Date(timeIntervalSince1970: cluster.events[0].ts), last = Date(timeIntervalSince1970: cluster.events[cluster.events.count - 1].ts)
+        return [first == last ? first.formatted(shownRange.timeFormat) : (first..<last).formatted(shownRange.intervalFormat)]
+    }
+
     /// "3 memory pressure events, warning, 1:12 to 1:40 AM" (the lead event's level) in the locale's interval format;
     /// from 24H up with the day, as the span bar names it.
     private func label(_ cluster: EventCluster) -> String {
@@ -177,30 +190,19 @@ struct EventLane: View {
     }
 }
 
-/// "1:12 AM  Memory pressure warning": the day once on top when all events share it, else on each line.
+/// The cluster as a large preview card in its popover: one row per event, with its severity glyph and time; the day once
+/// in the span when all events share it. A long cluster (90D) scrolls instead of running off the screen.
 private struct EventList: View {
-    let events: [EventMark]
+    let cluster: EventCluster
+    let title: String
+    let span: [String]
+    let format: Date.FormatStyle
 
     var body: some View {
-        let dates = events.map { Date(timeIntervalSince1970: $0.ts) }
-        let oneDay = Set(dates.map { Calendar.current.startOfDay(for: $0) }).count == 1
-        // A long cluster (90D) scrolls instead of running off the screen.
-        ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
-                if oneDay {
-                    Text(dates[0].formatted(date: .abbreviated, time: .omitted)).font(.headline)
-                }
-                ForEach(events.indices, id: \.self) { i in
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(dates[i].formatted(oneDay ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day().hour().minute()))
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                        Text(events[i].message)
-                    }
-                }
-            }
-            .padding()
-        }
-        .frame(maxHeight: 360)
+        PreviewCard(size: .large, title: title, span: span,
+                    sections: [.init(rows: cluster.events.map { event in
+                        .init(severity: event.level.flatMap { $0 > 0 ? $0 : nil }, time: Date(timeIntervalSince1970: event.ts).formatted(format),
+                              label: event.message)
+                    })], inPopover: true)
     }
 }

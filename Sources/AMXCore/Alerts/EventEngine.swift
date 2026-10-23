@@ -9,9 +9,9 @@ public enum RuleName {
     public static let sustainedCPU = "sustained_cpu", memoryGrowth = "memory_growth", memoryJump = "memory_jump"
     public static let pressure = "pressure", thermal = "thermal"
     public static let diskWrites = "disk_writes", network = "network", energy = "energy", gpu = "gpu"
-    public static let swap = "swap", freeSpace = "free_space"
+    public static let systemCPU = "system_cpu", swap = "swap", freeSpace = "free_space"
     public static let all = [sustainedCPU, memoryGrowth, memoryJump, pressure, thermal, diskWrites, network, energy, gpu,
-                             swap, freeSpace]
+                             systemCPU, swap, freeSpace]
 }
 
 /// An `events` row before it has a `process_id`; the writer maps `identity` to it.
@@ -32,6 +32,7 @@ enum AlertLimits {
     static let pressureCooldown = 3600.0
     /// A new spell of a per-app rule alerts only this long after the app's last alert of that rule.
     static let appRearm = 3600.0
+    static let systemCPURearm = 3600.0
     static let swapRearm = 3600.0
     static let freeSpaceRearm = 86_400.0
     static let growthRSquared = 0.9
@@ -61,6 +62,11 @@ public struct EventEngine: Sendable {
     /// By system rule (swap, free space): the last alert, and whether the current spell over the threshold alerted.
     private var lastSystemAlert: [String: Double] = [:]
     private var systemAlerted: Set<String> = []
+    /// The machine CPU of the last ticks of the system CPU rule's window, the level (0 to 2) its current spell alerted at,
+    /// and the time of its last alert.
+    private var cpuRing: [Double] = []
+    private var cpuSeverity = 0
+    private var lastCPUAlert: Double?
 
     /// `machine` gives the RAM for swap and the boot volume size for free space.
     public init(machine: Machine = .current) { self.machine = machine }
@@ -73,6 +79,7 @@ public struct EventEngine: Sendable {
         if let lastTick, now - lastTick > AlertLimits.maxGap {
             processRules.restartSpells()
             hot = nil
+            (cpuRing, cpuSeverity) = ([], 0)
         }
         lastTick = now
 
@@ -90,6 +97,7 @@ public struct EventEngine: Sendable {
                                   value: Double(system.thermalState)))
         }
         if let alert = thermalAlert(now: now, state: system.thermalState, rule: rules.thermal) { out.append(alert) }
+        if let alert = systemCPUAlert(now: now, cpu: system.cpu, rule: rules.systemCPU) { out.append(alert) }
         let swapPct = Double(system.swapUsed) / Double(machine.memoryBytes) * 100
         if systemAlert(RuleName.swap, over: rules.swap.enabled && swapPct >= Double(rules.swap.percentOfMemory), now: now,
                        rearm: AlertLimits.swapRearm) {
@@ -146,6 +154,33 @@ public struct EventEngine: Sendable {
                           value: Double(state))
     }
 
+    /// A full window whose mean and median reach a level (as an app's held rule). One alert per spell, and another when
+    /// the spell rises to critical; a new spell alerts only `systemCPURearm` after the last alert.
+    private mutating func systemCPUAlert(now: Double, cpu: Double, rule: AlertRules.SystemCPU) -> EventDraft? {
+        guard rule.enabled else {
+            (cpuRing, cpuSeverity) = ([], 0)
+            return nil
+        }
+        let length = rule.minutes * 60 / Int(AMX.tick)
+        cpuRing.append(cpu, keepingLast: length)
+        guard cpuRing.count == length else { return nil }
+        let mean = cpuRing.reduce(0, +) / Double(length), median = cpuRing.sorted()[(length - 1) / 2]
+        func reaches(_ level: Int) -> Bool { min(mean, median) >= Double(level) }
+        let severity = reaches(rule.critical) ? 2 : reaches(rule.warning) ? 1 : 0
+        guard severity > 0 else {
+            cpuSeverity = 0
+            return nil
+        }
+        guard severity > cpuSeverity, cpuSeverity > 0 || lastCPUAlert.map({ now - $0 >= AlertLimits.systemCPURearm }) ?? true else {
+            return nil
+        }
+        (cpuSeverity, lastCPUAlert) = (severity, now)
+        let cause = cpuCause()
+        return EventDraft(ts: now, kind: EventKind.alert, severity: severity, identity: cause?.identity, rule: RuleName.systemCPU,
+                          message: Self.message("CPU at \(Int(mean.rounded())) % of all cores for \(rule.minutes) min", cause),
+                          value: mean)
+    }
+
     /// One alert per spell over the threshold, and at most one per `rearm`; leaving the spell re-arms the rule.
     private mutating func systemAlert(_ rule: String, over: Bool, now: Double, rearm: Double) -> Bool {
         guard over else {
@@ -177,10 +212,10 @@ public struct EventEngine: Sendable {
         return (top.identity, "\(who) uses the most memory (\(Self.bytes(top.mem)))")
     }
 
-    /// Heat: the app with the most CPU over the sustained CPU window, as its mean.
+    /// CPU and heat: the app with the most CPU over the sustained CPU window, as its mean share of all cores.
     private func cpuCause() -> Cause? {
         processRules.topApp(RuleName.sustainedCPU, mean: true).map {
-            ($0.identity, "\($0.name) used \(Int($0.value.rounded())) % CPU")
+            ($0.identity, "\($0.name) used \(Int(($0.value / Double(machine.cores)).rounded())) % of all cores")
         }
     }
 

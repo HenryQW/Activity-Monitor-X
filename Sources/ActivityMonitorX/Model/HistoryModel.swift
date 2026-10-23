@@ -24,13 +24,43 @@ final class HistoryModel {
         show(.covering(from: from, to: to, now: Date().timeIntervalSince1970), custom: from...to)
     }
     /// What Live was entered from, for `toggleLive()`; 24H until Live has been entered.
-    private var beforeLive: (range: HistoryRange, custom: ClosedRange<Double>?) = (.day, nil)
+    private(set) var beforeLive: (range: HistoryRange, custom: ClosedRange<Double>?) = (.day, nil)
     /// Live on, or back to the range (and custom window) it was entered from.
     func toggleLive() {
         guard shown == .live else { return range = .live }
         let back = beforeLive
         if let window = back.custom { show(from: window.lowerBound, to: window.upperBound) } else { range = back.range }
     }
+    /// The time shown: the custom window, else the range ending now.
+    var window: ClosedRange<Double> {
+        custom ?? { let now = Date().timeIntervalSince1970; return (now - range.seconds)...now }()
+    }
+    /// The range a zoom out opens and the one a zoom in opens with no span; nil in Live and at the ends.
+    var widerRange: HistoryRange? { range == .live ? nil : .wider(than: window.upperBound - window.lowerBound) }
+    var narrowerRange: HistoryRange? { range == .live ? nil : .narrower(than: window.upperBound - window.lowerBound) }
+    /// Zoom out: a range ends now, so it widens to the next range; a custom window widens around its middle, and the
+    /// range itself when that ends now.
+    func zoomOut() {
+        guard let wider = widerRange else { return }
+        let now = Date().timeIntervalSince1970
+        let to = wider.window(around: window, now: now)
+        if zoomsOutToRange(now: now) { return range = wider }
+        show(from: to.lowerBound, to: to.upperBound)
+    }
+    /// Zoom out ends now: it opens the quick range, which follows the clock.
+    func zoomsOutToRange(now: Double = Date().timeIntervalSince1970) -> Bool {
+        guard let wider = widerRange else { return false }
+        return custom == nil || wider.window(around: window, now: now).upperBound >= now
+    }
+    /// Zoom in: the span when one is selected, else the next narrower range around the middle of the window shown.
+    func zoomIn() {
+        if let span { return show(from: span.lowerBound, to: span.upperBound) }
+        guard let narrower = narrowerRange else { return }
+        let to = narrower.window(around: window, now: Date().timeIntervalSince1970)
+        show(from: to.lowerBound, to: to.upperBound)
+    }
+    /// Zoom in has a target: a span, or a narrower range.
+    var canZoomIn: Bool { range != .live && (span != nil || narrowerRange != nil) }
     private func show(_ range: HistoryRange, custom: ClosedRange<Double>?) {
         guard range != shown || custom != self.custom else { return }
         if range == .live && shown != .live { beforeLive = (shown, self.custom) }

@@ -75,6 +75,7 @@ final class Preferences {
     enum Appearance: String, CaseIterable { case system, light, dark }
 
     private static let menuBarKey = "menuBarShown", appearanceKey = "appearance", styleKey = "menuBarStyle"
+    private static let zoneKey = "timeZone", extraZonesKey = "extraZones", firstWeekdayKey = "firstWeekday"
     private static let openAtKey = "openAt", openRangeKey = "openRange", lastScreenKey = "lastScreen", lastRangeKey = "lastRange"
     private static let log = Logger(subsystem: AMX.bundleID, category: "preferences")
     /// Nil outside the app bundle (`swift run`): a login item needs the bundle.
@@ -90,6 +91,28 @@ final class Preferences {
         didSet {
             UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
             applyAppearance()
+        }
+    }
+
+    /// A time zone forced on every screen's dates and day boundaries, by identifier; nil follows system time.
+    var timeZoneID = UserDefaults.standard.string(forKey: Preferences.zoneKey) {
+        didSet {
+            UserDefaults.standard.set(timeZoneID, forKey: Self.zoneKey)
+            AppTime.apply(zoneID: timeZoneID, firstWeekday: firstWeekday)
+        }
+    }
+    /// Counts system zone changes, so a view keyed by `zoneKey` draws again under Follow System.
+    private var systemZoneChanges = 0
+    var zoneKey: String { "\(timeZoneID ?? "")/\(systemZoneChanges)" }
+    /// The zones whose hours the Calendar's Week and Day label next to the shown zone's.
+    var extraZoneIDs = UserDefaults.standard.stringArray(forKey: Preferences.extraZonesKey) ?? [] {
+        didSet { UserDefaults.standard.set(extraZoneIDs, forKey: Self.extraZonesKey) }
+    }
+    /// The day weeks start on, 1 (Sunday) to 7; nil follows the system setting.
+    var firstWeekday = UserDefaults.standard.object(forKey: Preferences.firstWeekdayKey) as? Int {
+        didSet {
+            UserDefaults.standard.set(firstWeekday, forKey: Self.firstWeekdayKey)
+            AppTime.apply(zoneID: timeZoneID, firstWeekday: firstWeekday)
         }
     }
 
@@ -150,6 +173,8 @@ final class Preferences {
 
     init() {
         if Self.service == nil { Self.log.notice("launch at login off: not running from the app bundle") }
+        AppTime.apply(zoneID: timeZoneID, firstWeekday: firstWeekday)
+        AppTime.followSystemChanges { [weak self] in self?.systemZoneChanges += 1 }
         refreshLogin()
     }
 

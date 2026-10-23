@@ -41,7 +41,7 @@ import Testing
         #expect(Set(body.keys) == ["rules", "size_cap_bytes", "terminal_bundle_ids"])
         let rules = try #require(body["rules"] as? [String: Any])
         #expect(Set(rules.keys) == ["disk_writes", "energy", "free_space", "gpu", "memory_growth", "memory_jump", "network",
-                                    "preset", "pressure", "sustained_cpu", "swap", "thermal", "apps"])
+                                    "preset", "pressure", "sustained_cpu", "swap", "system_cpu", "thermal", "apps"])
         #expect(rules["preset"] as? String == "balanced")
         let pressure = try #require(rules["pressure"] as? [String: Any])
         #expect(pressure["level"] as? String == "warning")
@@ -99,7 +99,9 @@ import Testing
         cpu.enabled = false
         cpu.percent = 150
         #expect(settings.rules.sustainedCPU == cpu)
-        #expect(settings.rules.gpu == DaemonSettings().rules.gpu)
+        // A rule the file lacks takes the preset's value.
+        #expect(settings.rules.gpu == AlertRules.make(.strict, for: .current).gpu)
+        #expect(settings.rules.systemCPU == AlertRules.make(.strict, for: .current).systemCPU)
         var gpu = AlertRules.GPU()
         gpu.percent = 30
         var a = AlertRules.AppOverride()
@@ -197,6 +199,9 @@ import Testing
             ("Energy time must be 1 to 60 min", { $0.rules.energy.minutes = 61 }),
             ("GPU must be 10 to 100 %", { $0.rules.gpu.percent = 101 }),
             ("GPU time must be 1 to 60 min", { $0.rules.gpu.minutes = 0 }),
+            ("System CPU must be 10 to 100 %", { $0.rules.systemCPU.critical = 101 }),
+            ("System CPU warning must be below critical", { $0.rules.systemCPU.warning = 90 }),
+            ("System CPU time must be 1 to 60 min", { $0.rules.systemCPU.minutes = 0 }),
             ("Swap must be 10 to 200 % of memory", { $0.rules.swap.percentOfMemory = 9 }),
             ("Free space must be 1 to 50 %", { $0.rules.freeSpace.percentFree = 51 }),
         ]

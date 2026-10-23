@@ -14,7 +14,7 @@ struct EnergyView: View {
     var body: some View {
         let model = _model.wrappedValue
         content(model)
-            .navigationTitle("Energy")
+            .screenTitle("Energy", icon: .symbol("bolt.fill"))
             .task { await model.run(client: live.client) }
     }
 
@@ -99,7 +99,13 @@ private struct PowerChart: View {
                         .foregroundStyle(Color.accentColor)
                 }
                 .chartXScale(domain: end.addingTimeInterval(-300)...end)
-                .chartXAxis { AxisMarks(preset: .aligned) }
+                .chartXAxis {
+                    AxisMarks(preset: .aligned) { _ in
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel(format: AppTime.axisFormat(seconds: 300))
+                    }
+                }
                 .chartYAxis {
                     AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { value in
                         AxisGridLine()

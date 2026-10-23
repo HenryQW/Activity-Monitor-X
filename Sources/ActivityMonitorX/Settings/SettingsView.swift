@@ -37,6 +37,9 @@ struct SettingsView: View {
 private struct GeneralSettings: View {
     @Environment(Preferences.self) private var preferences
     @Environment(Notifier.self) private var notifier: Notifier?
+    @AppStorage(TerminalApp.key) private var terminal = TerminalApp.defaultID
+
+    private static func weekday(_ number: Int) -> String { Calendar.autoupdatingCurrent.weekdaySymbols[number - 1] }
 
     var body: some View {
         let prefs = Bindable(preferences)
@@ -56,6 +59,16 @@ private struct GeneralSettings: View {
                     ForEach(StartRange.allCases, id: \.self) { Text($0.label).tag($0) }
                 }
                 .help("Choose the time range the main window opens at")
+                Picker("First day of week", selection: prefs.firstWeekday) {
+                    Text("Follow System (\(Self.weekday(Calendar.autoupdatingCurrent.firstWeekday)))").tag(Int?.none)
+                    Divider()
+                    ForEach(1...7, id: \.self) { Text(Self.weekday($0)).tag(Optional($0)) }
+                }
+                .help("Choose the day each week starts on in the Calendar. Follow System uses the Language and Region setting.")
+                Picker("Terminal", selection: $terminal) {
+                    ForEach(TerminalApp.installed, id: \.id) { Text($0.name).tag($0.id) }
+                }
+                .help("Choose the app that Open in Terminal uses in the Disk Space menu")
             }
             Section {
                 Toggle("Launch at Login", isOn: prefs.launchAtLogin)
@@ -205,6 +218,20 @@ private struct AlertSettings: View {
                         .disabled(!rules.gpu.enabled)
                 } footer: {
                     Text("An app stays above this GPU use for this long. Then that app is quiet for 60 min.")
+                }
+                Section {
+                    Toggle(RuleName.title(RuleName.systemCPU), isOn: model.binding(\.rules.systemCPU.enabled, custom: false))
+                    Group {
+                        NumberRow(title: "Warning at", value: model.binding(\.rules.systemCPU.warning),
+                                  range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
+                        NumberRow(title: "Critical at", value: model.binding(\.rules.systemCPU.critical),
+                                  range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
+                        NumberRow(title: "For", value: model.binding(\.rules.systemCPU.minutes),
+                                  range: R.SystemCPU.minutesRange, unit: "min")
+                    }
+                    .disabled(!rules.systemCPU.enabled)
+                } footer: {
+                    Text("The Mac's CPU stays above a level for this long. A new spell alerts at most once per 60 min; a rise to critical alerts again.")
                 }
                 Section {
                     Toggle(RuleName.title(RuleName.swap), isOn: model.binding(\.rules.swap.enabled, custom: false))

@@ -7,40 +7,62 @@ struct GoCommands: Commands {
     let history: HistoryModel
     let diskMap: DiskMapModel
     let alerts: AlertsModel
+    let calendar: CalendarModel
+
+    /// The screens with a zoom pill: Apps (with the chart shown), pinned apps and groups, and Disk's Activity.
+    private var chartZoom: Bool { selection.hasRange && ((selection.sidebar ?? .apps) != .apps || selection.showChart) }
 
     var body: some Commands {
         CommandGroup(before: .sidebar) {
-            Button("Apps") { selection.sidebar = .apps }
-                .keyboardShortcut("1")
-            Button("Alerts") { selection.sidebar = .alerts }
-                .keyboardShortcut("2")
-            Button("Disk") { selection.sidebar = .disk }
-                .keyboardShortcut("3")
-            Button("Hardware") { selection.sidebar = .hardware }
-                .keyboardShortcut("4")
-            Button("Calendar") { selection.sidebar = .calendar }
-                .keyboardShortcut("5")
-            Button("Energy") { selection.sidebar = .energy }
-                .keyboardShortcut("6")
-            Divider()
+            Group {
+                Button("Apps", systemImage: "square.grid.2x2") { selection.sidebar = .apps }
+                    .keyboardShortcut("1")
+                Button("Alerts", systemImage: "exclamationmark.triangle") { selection.sidebar = .alerts }
+                    .keyboardShortcut("2")
+                Button("Disk", systemImage: "internaldrive") { selection.sidebar = .disk }
+                    .keyboardShortcut("3")
+                Button("Hardware", systemImage: "cpu") { selection.sidebar = .hardware }
+                    .keyboardShortcut("4")
+                Button("Calendar", systemImage: "calendar") { selection.sidebar = .calendar }
+                    .keyboardShortcut("5")
+                Button("Energy", systemImage: "bolt.fill") { selection.sidebar = .energy }
+                    .keyboardShortcut("6")
+                Divider()
+            }
+                .labelStyle(.titleAndIcon)
         }
         CommandGroup(after: .sidebar) {
-            Button(selection.inspectorShown ? "Hide Inspector" : "Show Inspector") {
-                selection.inspectorShown.toggle()
+            Group {
+                Button(selection.inspectorShown ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing") {
+                    selection.inspectorShown.toggle()
+                }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
+                Button(selection.showChart ? "Hide Chart" : "Show Chart", systemImage: "chart.xyaxis.line") { selection.showChart.toggle() }
+                    .disabled((selection.sidebar ?? .apps) != .apps)
+                Toggle("Hide Quiet System Processes", systemImage: "eye.slash", isOn: Bindable(history).hideQuietSystem)
+                    .disabled(selection.isSystem || selection.sidebar == .alerts)
+                Button(alerts.showDismissed ? "Hide Dismissed Alerts" : "Show Dismissed Alerts", systemImage: alerts.showDismissed ? "eye.slash" : "eye") { alerts.showDismissed.toggle() }
+                    .disabled(selection.sidebar != .alerts)
+                Button("Dismiss All Alerts", systemImage: "xmark.circle") { alerts.dismiss(alerts.undismissed(search: selection.search)) }
+                    .disabled(selection.sidebar != .alerts || alerts.undismissed(search: selection.search).isEmpty)
+                // Calendar: the double-click and Escape of the cells; the charts: the zoom pill.
+                Button("Zoom In", systemImage: "plus.magnifyingglass") {
+                    if selection.sidebar == .calendar { calendar.selectedCell.map { calendar.zoomIn(at: $0.start) } } else { history.zoomIn() }
+                }
+                    .keyboardShortcut("]")
+                    .disabled(selection.sidebar == .calendar ? calendar.selectedCell == nil || calendar.period.zoomedIn == nil
+                              : !chartZoom || !history.canZoomIn)
+                Button("Zoom Out", systemImage: "minus.magnifyingglass") {
+                    if selection.sidebar == .calendar { calendar.zoomOut() } else { history.zoomOut() }
+                }
+                    .keyboardShortcut("[")
+                    .disabled(selection.sidebar == .calendar ? calendar.period.zoomedOut == nil : !chartZoom || history.widerRange == nil)
+                Divider()
+                Button("Refresh", systemImage: "arrow.clockwise") { selection.refreshes += 1 }
+                    .keyboardShortcut("r")
+                    .disabled(!selection.isSystem || selection.sidebar == .energy || selection.showsSpace && diskMap.target == nil)
             }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-            Button(selection.showChart ? "Hide Chart" : "Show Chart") { selection.showChart.toggle() }
-                .disabled((selection.sidebar ?? .apps) != .apps)
-            Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
-                .disabled(selection.isSystem || selection.sidebar == .alerts)
-            Button(alerts.showDismissed ? "Hide Dismissed Alerts" : "Show Dismissed Alerts") { alerts.showDismissed.toggle() }
-                .disabled(selection.sidebar != .alerts)
-            Button("Dismiss All Alerts") { alerts.dismiss(alerts.undismissed(search: selection.search)) }
-                .disabled(selection.sidebar != .alerts || alerts.undismissed(search: selection.search).isEmpty)
-            Divider()
-            Button("Refresh") { selection.refreshes += 1 }
-                .keyboardShortcut("r")
-                .disabled(!selection.isSystem || selection.sidebar == .energy || selection.showsSpace && diskMap.target == nil)
+                .labelStyle(.titleAndIcon)
         }
     }
 }
@@ -52,10 +74,13 @@ struct GroupCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New App Group…") { selection.editingGroup = .new }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-                // While the sheet is open a new group would replace it and lose the draft.
-                .disabled(groups.loadError != nil || selection.editingGroup != nil)
+            Group {
+                Button("New App Group…", systemImage: "plus") { selection.editingGroup = .new }
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+                    // While the sheet is open a new group would replace it and lose the draft.
+                    .disabled(groups.loadError != nil || selection.editingGroup != nil)
+            }
+                .labelStyle(.titleAndIcon)
         }
     }
 }
@@ -69,27 +94,33 @@ struct DataCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Range") {
-            // One Live item: like the Live segment, it starts Live and pauses back to the range before it.
-            Button(history.range == .live ? "Pause Live Data" : "Start Live Data") { history.toggleLive() }
-                .keyboardShortcut("l")
+            Group {
+                // One Live item: like the Live button, it starts Live and pauses back to the range before it.
+                Button(history.range == .live ? "Pause Live Data" : "Start Live Data", systemImage: history.range == .live ? "pause" : "play") { history.toggleLive() }
+                    .keyboardShortcut("l")
+                    .disabled(noRange)
+                Divider()
+                ForEach(Array(HistoryRange.allCases.filter { $0 != .live }.enumerated()), id: \.offset) { i, range in
+                    Toggle(range.label, isOn: Binding(get: { history.custom == nil && history.range == range }, set: { _ in history.range = range }))
+                        .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .option])
+                }
                 .disabled(noRange)
-            Divider()
-            ForEach(Array(HistoryRange.allCases.filter { $0 != .live }.enumerated()), id: \.offset) { i, range in
-                Toggle(range.label, isOn: Binding(get: { history.custom == nil && history.range == range }, set: { _ in history.range = range }))
-                    .keyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .option])
+                Divider()
+                Button("Custom Range…", systemImage: "calendar") { selection.rangeShown = true }
+                    .disabled(noRange)
             }
-            .disabled(noRange)
-            Divider()
-            Button("Custom Range…") { selection.rangeShown = true }
-                .disabled(noRange)
+                .labelStyle(.titleAndIcon)
         }
         CommandMenu("Metric") {
-            ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
-                Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
-                    // Digits 1 to 9 only: a 10th metric has no shortcut.
-                    .keyboardShortcut(i < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control]) : nil)
+            Group {
+                ForEach(Array(history.metrics.enumerated()), id: \.offset) { i, metric in
+                    Toggle(metric.label, isOn: Binding(get: { history.metric == metric }, set: { _ in history.metric = metric }))
+                        // Digits 1 to 9 only: a 10th metric has no shortcut.
+                        .keyboardShortcut(i < 9 ? KeyboardShortcut(KeyEquivalent(Character(String(i + 1))), modifiers: [.command, .control]) : nil)
+                }
+                .disabled(selection.isSystem && selection.sidebar != .calendar || selection.sidebar == .alerts)
             }
-            .disabled(selection.isSystem && selection.sidebar != .calendar || selection.sidebar == .alerts)
+                .labelStyle(.titleAndIcon)
         }
     }
 }
@@ -100,18 +131,22 @@ struct ProcessCommands: Commands {
 
     var body: some Commands {
         CommandMenu("Process") {
-            Button(selection.app.map(selection.isPinned) == true ? "Unpin App from Sidebar" : "Pin App to Sidebar") {
-                selection.app.map(selection.togglePin)
+            Group {
+                Button(selection.app.map(selection.isPinned) == true ? "Unpin App from Sidebar" : "Pin App to Sidebar",
+                       systemImage: selection.app.map(selection.isPinned) == true ? "pin.slash" : "pin") {
+                    selection.app.map(selection.togglePin)
+                }
+                // The same shortcut as the File > Add to Sidebar action.
+                .keyboardShortcut("t", modifiers: [.command, .control])
+                .disabled(selection.app == nil)
+                Divider()
+                Button("Quit Process…", systemImage: "xmark.circle") { request(SIGTERM) }
+                    .keyboardShortcut("q", modifiers: [.command, .option])
+                    .disabled(selection.signallable == nil)
+                Button("Force Quit Process…", systemImage: "xmark.octagon") { request(SIGKILL) }
+                    .disabled(selection.signallable == nil)
             }
-            // The same shortcut as the File > Add to Sidebar action.
-            .keyboardShortcut("t", modifiers: [.command, .control])
-            .disabled(selection.app == nil)
-            Divider()
-            Button("Quit Process…") { request(SIGTERM) }
-                .keyboardShortcut("q", modifiers: [.command, .option])
-                .disabled(selection.signallable == nil)
-            Button("Force Quit Process…") { request(SIGKILL) }
-                .disabled(selection.signallable == nil)
+                .labelStyle(.titleAndIcon)
         }
     }
 

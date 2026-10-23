@@ -149,29 +149,6 @@ public struct HistoryReader {
         }
         return result
     }
-
-    /// For each `bounds[i]..<bounds[i + 1]` (ascending), the metric summed over all processes and averaged over that time,
-    /// from the hour tier (a gap counts as 0); nil where no process has data, as in a time of no width. A query keeps only
-    /// the processes of apps it matches (`AppSearch`).
-    public func totals(metric: Metric, bounds: [Double], query: String = "") throws -> [Double?] {
-        guard let first = bounds.first, let last = bounds.last, bounds.count > 1 else { return [] }
-        var sums = [Double](repeating: 0, count: bounds.count - 1), seen = [Bool](repeating: false, count: bounds.count - 1)
-        for track in try tracks(source: .hour, from: first, to: last, metric: metric)
-        where query.isEmpty || AppSearch.matches(track.app, query) {
-            // Slices are in time order inside the bounds: each starts in the interval of the last or a later one.
-            var i = 0
-            for slice in track.slices {
-                while bounds[i + 1] <= slice.start { i += 1 }
-                var j = i
-                while j < sums.count, bounds[j] < slice.end {
-                    let overlap = min(slice.end, bounds[j + 1]) - max(slice.start, bounds[j])
-                    if overlap > 0 { (sums[j], seen[j]) = (sums[j] + slice.value * overlap, true) }
-                    j += 1
-                }
-            }
-        }
-        return sums.indices.map { seen[$0] ? sums[$0] / (bounds[$0 + 1] - bounds[$0]) : nil }
-    }
 }
 
 public struct SystemPoint: Sendable {
@@ -268,6 +245,14 @@ extension HistoryReader {
                             gpu: $0["gpu"] ?? 0, netIn: $0["netIn"] ?? 0, netOut: $0["netOut"] ?? 0,
                             tempCPU: $0["tempCPU"], tempGPU: $0["tempGPU"])
             }
+        }
+    }
+
+    /// The newest executable path of a process outside any `.app` (its app key is its name); nil with no record.
+    public func executablePath(ofBare name: String) throws -> String? {
+        try pool.read {
+            try String.fetchOne($0, sql: "SELECT path FROM processes WHERE app_path IS NULL AND name = ? AND path IS NOT NULL ORDER BY id DESC LIMIT 1",
+                                arguments: [name])
         }
     }
 

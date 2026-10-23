@@ -28,9 +28,12 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 
 ## Surfaces
 
-- The window has three parts: sidebar (where), content (the data), inspector pane (details of the selection, or a summary of the screen when nothing is selected).
+- The window has one background. On it float the sidebar (where) and the inspector panel (details of the selection, or a summary of the screen); the content column (the data) lies between them. Opening the inspector shrinks the content column, never the window.
+- Three levels. Level 1 is the window chrome: the toolbar row (a title pill with the screen's icon, title and subtitle, then the item capsules) and the panels. Level 2 is the content controls that belong to the data (range bar, span capsule, footer, Calendar bar, Space capsules): smaller glass capsules in the content column. Level 3 is the data: edge to edge, under levels 1 and 2 with a soft edge, never glass. Nothing important sits under a capsule at rest.
+- One layout grid: 8 pt insets and gaps, 12 pt inside capsules, 16 pt panel corners.
+- The one primary action of a screen is prominent; other buttons use the standard style.
 - The toolbar holds the view controls in grouped capsules. Content controls that belong to the data (range bar, period strip) sit above the content, not in the toolbar.
-- Glass is for controls that float over content (toolbar, the span capsule). Readouts and panes use a standard material, which keeps text readable over colour.
+- Glass is for everything that floats: toolbar items, the panels, level 2 capsules, every popover and hover preview. System glass only, so Reduce Transparency and Increase Contrast work.
 - Density is compact and aligned: grids are gapless with hairline separators, rows line up, no boxes for decoration.
 
 ## Type, numbers and motion

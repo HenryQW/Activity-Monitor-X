@@ -15,8 +15,9 @@ private func sample(_ id: ProcessIdentity, cpu: Double = 0, mem: UInt64 = 0, dis
     ProcessSample(identity: id, cpu: cpu, mem: mem, diskR: 0, diskW: diskW, energy: 0, gpu: 0, netIn: 0, netOut: 0)
 }
 
-private func system(pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil) -> SystemSample {
+private func system(pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil, cpu: Double = 0) -> SystemSample {
     var s = SystemSample()
+    s.cpu = cpu
     s.pressureLevel = pressure
     s.thermalState = thermal
     s.swapUsed = swap
@@ -28,10 +29,10 @@ private struct Rig {
     var engine = EventEngine(machine: Machine(cores: 8, memoryBytes: 8 * gib, bootVolumeBytes: 100 * gib))
     var rules = AlertRules()
 
-    mutating func tick(_ now: Double, pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil,
+    mutating func tick(_ now: Double, pressure: Int = 1, thermal: Int = 0, swap: UInt64 = 0, free: UInt64? = nil, cpu: Double = 0,
                        processes: [ProcessSample] = [], new: [ProcessIdentity] = []) -> [EventDraft] {
         engine.evaluate(now: now, processes: processes, new: new.map(raw),
-                        system: system(pressure: pressure, thermal: thermal, swap: swap, free: free), rules: rules)
+                        system: system(pressure: pressure, thermal: thermal, swap: swap, free: free, cpu: cpu), rules: rules)
     }
 }
 
@@ -110,6 +111,44 @@ private struct Rig {
         #expect(r.tick(86_405, free: gib).map(\.rule) == ["free_space"])
     }
 
+    /// 70 % warning and 90 % critical over 5 min (60 ticks).
+    @Test func systemCPUAlert() {
+        var r = Rig()
+        var alerts: [EventDraft] = []
+        func run(_ from: Double, _ ticks: Int, cpu: Double) {
+            for i in 0..<ticks {
+                let drafts = r.tick(from + Double(i) * 5, cpu: cpu, processes: [sample(idA, cpu: 800)], new: from == 0 && i == 0 ? [idA] : [])
+                alerts += drafts.filter { $0.rule == RuleName.systemCPU }
+            }
+        }
+        run(0, 59, cpu: 75)
+        #expect(alerts.isEmpty)
+        run(295, 1, cpu: 75)
+        #expect(alerts.map(\.severity) == [1] && alerts.first?.value == 75)
+        #expect(alerts.first?.message == "CPU at 75 % of all cores for 5 min: p10 used 100 % of all cores")
+        // A short burst does not move the window's mean to critical.
+        run(300, 5, cpu: 100)
+        #expect(alerts.count == 1)
+        // A rise to critical alerts again in the same spell.
+        run(325, 60, cpu: 95)
+        #expect(alerts.map(\.severity) == [1, 2])
+        // A new spell alerts only 60 min after the last alert.
+        run(625, 60, cpu: 10)
+        run(925, 60, cpu: 75)
+        #expect(alerts.count == 2)
+        run(1225, 720, cpu: 75)
+        #expect(alerts.count == 3)
+    }
+
+    @Test func systemCPUSpellEndsAfterSleep() {
+        var r = Rig()
+        var alerts: [EventDraft] = []
+        for t in stride(from: 0.0, to: 5_400, by: 5) where t < 300 || t >= 5_000 {
+            alerts += r.tick(t, cpu: 75).filter { $0.rule == RuleName.systemCPU }
+        }
+        #expect(alerts.map(\.ts) == [295, 5_295])
+    }
+
     @Test func thermalEventOnChange() {
         var r = Rig()
         _ = r.tick(0)
@@ -143,7 +182,7 @@ private struct Rig {
         let busy = [sample(idA, cpu: 400, mem: gib, diskW: 1_048_576), sample(idB, cpu: 100, mem: 3 * gib)]
         _ = r.tick(0, processes: busy, new: [idA, idB])
         let step = r.tick(5, thermal: 2, swap: 4 * gib, free: 10 * gib, processes: busy)
-        #expect(step.map(\.message) == ["Thermal state serious: p10 used 400 % CPU",
+        #expect(step.map(\.message) == ["Thermal state serious: p10 used 50 % of all cores",
                                         "Swap used 4.0 GB, 50 % of memory: p11 uses the most memory (3.0 GB)",
                                         "Startup disk has 10.0 GB free, 10 %: p10 wrote 10 MB in 1 hour"])
         #expect(step.map(\.identity) == [idA, idB, idA])
@@ -151,7 +190,7 @@ private struct Rig {
         for t in stride(from: 10.0, through: 305, by: 5) {
             alerts += r.tick(t, thermal: 2, processes: busy).filter { $0.rule == RuleName.thermal }
         }
-        #expect(alerts.map(\.message) == ["Thermal state serious for 5 min: p10 used 400 % CPU"])
+        #expect(alerts.map(\.message) == ["Thermal state serious for 5 min: p10 used 50 % of all cores"])
         // A falling step names no cause.
         let down = r.tick(310, thermal: 1, processes: busy)
         #expect(down.map(\.message) == ["Thermal state fair"] && down.first?.identity == nil)
@@ -168,13 +207,14 @@ private struct Rig {
         r.rules.memoryJump.enabled = false
         r.rules.pressure.enabled = false
         r.rules.thermal.enabled = false
+        r.rules.systemCPU.enabled = false
         r.rules.swap.enabled = false
         r.rules.freeSpace.enabled = false
         var system = r
         #expect(system.tick(0, swap: 16 * gib, free: 0).isEmpty)
         var drafts: [EventDraft] = []
         for (i, level) in [1, 2, 4, 1].enumerated() { drafts += r.tick(Double(i) * 5, pressure: level, thermal: 3) }
-        for t in stride(from: 20.0, through: 600, by: 5) { drafts += r.tick(t, thermal: t < 300 ? 3 : 2) }
+        for t in stride(from: 20.0, through: 600, by: 5) { drafts += r.tick(t, thermal: t < 300 ? 3 : 2, cpu: 100) }
         #expect(drafts.map(\.kind) == [EventKind.pressure, EventKind.pressure, EventKind.pressure, EventKind.thermal])
         #expect(drafts.allSatisfy { $0.rule == nil })
     }

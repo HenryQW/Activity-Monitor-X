@@ -28,7 +28,7 @@ struct AlertsView: View {
                                        description: Text("Rules run all the time, also while the app is closed."))
             }
         }
-        .navigationTitle("Alerts")
+        .screenTitle("Alerts", icon: .symbol("exclamationmark.triangle"))
         .onAppear { show(appearsActive) }
         .onChange(of: appearsActive) { _, active in show(active) }
         .onDisappear { alerts.shown = false }
@@ -44,7 +44,7 @@ struct AlertsView: View {
 
     private func list(_ rows: [EventMark]) -> some View {
         let unread = _unreadAtShow.wrappedValue
-        let calendar = Calendar.current
+        let calendar = AppTime.calendar
         let days = Dictionary(grouping: rows) { event -> Day in
             let date = Date(timeIntervalSince1970: event.ts)
             return calendar.isDateInToday(date) ? .today : calendar.isDateInYesterday(date) ? .yesterday : .earlier
@@ -61,14 +61,17 @@ struct AlertsView: View {
             }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
-            if ids.count == 1 { Button("Show App at Alert Time", systemImage: "app.badge") { reveal(ids) } }
-            if !ids.isEmpty {
-                if ids.allSatisfy(alerts.dismissed.contains) {
-                    Button("Restore ^[\(ids.count) Alert](inflect: true)", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
-                } else {
-                    Button("Dismiss ^[\(ids.count) Alert](inflect: true)", systemImage: "xmark.circle") { alerts.dismiss(ids) }
+            Group {
+                if ids.count == 1 { Button("Show App at Alert Time", systemImage: "app.badge") { reveal(ids) } }
+                if !ids.isEmpty {
+                    if ids.allSatisfy(alerts.dismissed.contains) {
+                        Button("Restore ^[\(ids.count) Alert](inflect: true)", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
+                    } else {
+                        Button("Dismiss ^[\(ids.count) Alert](inflect: true)", systemImage: "xmark.circle") { alerts.dismiss(ids) }
+                    }
                 }
             }
+                .labelStyle(.titleAndIcon)
         } primaryAction: { reveal($0) }
     }
 

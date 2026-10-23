@@ -6,6 +6,7 @@ extension AlertRules {
         switch rule {
         case RuleName.sustainedCPU: Double(sustainedCPU.minutes * 60)
         case RuleName.memoryGrowth: Double(memoryGrowth.minutes * 60)
+        case RuleName.systemCPU: Double(systemCPU.minutes * 60)
         case RuleName.thermal: Double(thermal.minutes * 60)
         case RuleName.memoryJump: 50
         case RuleName.diskWrites: 3600

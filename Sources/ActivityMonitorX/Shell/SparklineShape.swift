@@ -27,9 +27,12 @@ struct Sparkline: View {
     let color: Color
     let top: Double
     var threshold: Double?
+    var height: CGFloat = 18
+    /// The points the axis holds; a shorter history starts at the right. Default: as many as `values`.
+    var slots: Int?
 
     var body: some View {
-        let line = SparklineShape(values: values, top: top, slots: values.count)
+        let line = SparklineShape(values: values, top: top, slots: slots ?? values.count)
         let style = StrokeStyle(lineWidth: 1.5, lineJoin: .round)
         // A level at or over `top` has no value above it to draw.
         let level = threshold.flatMap { $0 < top ? $0 / top : nil }
@@ -41,7 +44,7 @@ struct Sparkline: View {
                     line.stroke(.yellow, style: style).mask(LevelShape(level: level))
                 }
             }
-            .frame(height: 18)
+            .frame(height: height)
             .accessibilityHidden(true)
             // Kept, hidden, under the level: every row with a rule has the same line width.
             if let threshold {

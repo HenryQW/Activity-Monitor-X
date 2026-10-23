@@ -10,10 +10,10 @@ struct HardwareInspector: View {
         let path = hardware.selected.map { HardwareRow.path(to: $0, in: hardware.rows) } ?? []
         if let row = path.last {
             Form {
-                Section { Text(row.name).font(.title3.bold()) }
+                Section { Text(row.name).font(.title3.bold()).overlayScrollers() }
                 Section("Value") {
                     Text(row.value.isEmpty ? "None" : row.value).textSelection(.enabled)
-                    Button("Copy") {
+                    Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString("\(row.name): \(row.value)", forType: .string)
                     }
@@ -36,7 +36,7 @@ struct HardwareInspector: View {
 
     private var summaryForm: some View {
         Form {
-            Section { Text(hardware.value("machine_name") ?? "Mac").font(.title3.bold()) }
+            Section { Text(hardware.value("machine_name") ?? "Mac").font(.title3.bold()).overlayScrollers() }
             Section {
                 if let chip = hardware.chip {
                     LabeledContent("Chip", value: chip.name)

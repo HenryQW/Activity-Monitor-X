@@ -14,7 +14,6 @@ struct TreemapCanvas: View {
     let selected: [Int]?
     let label: String
     let open: ([Int]) -> Void
-    let path: ([Int]) -> String?
 
     var body: some View {
         GeometryReader { geometry in
@@ -22,9 +21,9 @@ struct TreemapCanvas: View {
             let kinds = Self.kinds(cells, node: node, baseNames: baseNames)
             Canvas { context, _ in Self.draw(cells, kinds: kinds, in: &context) }
                 // Hover lives in its own view, so a pointer move does not lay out or redraw the cells.
-                .overlay { Hover(cells: cells, base: base, selected: selected, open: open, path: path) }
+                .overlay { Hover(cells: cells, total: node.size, base: base, selected: selected, open: open) }
         }
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(label)
     }
 
@@ -109,10 +108,11 @@ struct FileKindLegend: View {
 
 private struct Hover: View {
     let cells: [Treemap.Cell]
+    /// The focused folder's size, the share's whole for a top level cell.
+    let total: UInt64
     let base: [Int]
     let selected: [Int]?
     let open: ([Int]) -> Void
-    let path: ([Int]) -> String?
     private let _location = State<CGPoint?>(initialValue: nil)
     /// The last item under the pointer, kept after the pointer leaves for the context menu.
     private let _menuItem = State<[Int]?>(initialValue: nil)
@@ -137,19 +137,13 @@ private struct Hover: View {
                     ForEach(folders, id: \.path) { Path($0.rect.insetBy(dx: 1, dy: 1)).stroke(.tint, lineWidth: 1) }
                     Path(highlight.rect.insetBy(dx: 1, dy: 1)).stroke(.tint, lineWidth: 2)
                 }
-                if let hovered {
-                    Text("\(hovered.name) · \(Metric.bytes(Double(hovered.size)))")
-                        .font(.callout)
-                        .lineLimit(1)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.background, in: .rect(cornerRadius: 6))
-                        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.separator))
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
+                if let hovered { card(hovered).padding(8) }
             }
         }
+        // The treemap itself is not read item by item; the item under the pointer is its value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Item under the pointer")
+        .accessibilityValue(hovered.map { card($0).summary } ?? "None")
         .onContinuousHover { phase in
             switch phase {
             case .active(let point):
@@ -167,8 +161,23 @@ private struct Hover: View {
             if !folder.isEmpty { open(base + folder) }
         }
         .contextMenu {
-            if let item = _menuItem.wrappedValue { DiskItemMenu(path: path(item)) }
+            if let item = _menuItem.wrappedValue { DiskItemMenu(id: item) }
         }
+    }
+
+    /// Name and size on top; the kind and the share of the folder it is in.
+    private func card(_ cell: Treemap.Cell) -> PreviewCard<EmptyView> {
+        let parent = cells.first { $0.path == Array(cell.path.dropLast()) }?.size ?? total
+        let kind = switch cell.kind {
+        case .folder: "Folder"
+        case .file: "File"
+        case .smaller: "Smaller items"
+        case .refused: "No access"
+        }
+        return PreviewCard(size: .compact, title: cell.name, top: Metric.bytes(Double(cell.size)),
+                           sections: [.init(rows: [.init(label: "Kind", value: kind),
+                                                   .init(label: "Share of its folder",
+                                                         value: (parent > 0 ? Double(cell.size) / Double(parent) : 0).formatted(.percent.precision(.fractionLength(0))))])])
     }
 
     /// The deepest cell at the point: children come after their folder.

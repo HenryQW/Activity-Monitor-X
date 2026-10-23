@@ -14,6 +14,8 @@ struct EnergyDiagram: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The app or process under the pointer, and the pointer's place in the diagram.
+    private let _hover = State<(node: EnergyNode, point: CGPoint)?>(initialValue: nil)
 
     private static let nodeWidth = 10.0, gap = 14.0, leading = 150.0, trailing = 210.0, top = 22.0, bottom = 22.0
 
@@ -37,7 +39,8 @@ struct EnergyDiagram: View {
                         .fill([.other, .otherProcesses].contains(link.to) ? AppPalette.other
                               : color(link.from == .mac ? link.to : link.from).opacity(app != nil && app == selection.app ? 0.8 : 0.5))
                         .onTapGesture { click(link.to) }
-                        .contextMenu { menu(link.to) }
+                        .onContinuousHover(coordinateSpace: .named(Self.space)) { hover(link.to, $0) }
+                        .contextMenu { menu(link.to).labelStyle(.titleAndIcon) }
                         .accessibilityElement()
                         .accessibilityLabel("\(spoken(link.from)) to \(spoken(link.to)), \(value(link))")
                         .accessibilityAddTraits(app == nil ? [] : app == selection.app ? [.isButton, .isSelected] : .isButton)
@@ -56,6 +59,10 @@ struct EnergyDiagram: View {
                     .accessibilityHidden(true)
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .coordinateSpace(.named(Self.space))
+            .previewBeside(_hover.wrappedValue?.point) {
+                if let node = _hover.wrappedValue?.node { card(node) }
+            }
             .offset(x: Self.leading, y: Self.top)
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: flows)
@@ -102,10 +109,31 @@ struct EnergyDiagram: View {
                 .frame(width: width, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { click(nodes[i]) }
-                .contextMenu { menu(nodes[i]) }
+                .onContinuousHover(coordinateSpace: .named(Self.space)) { hover(nodes[i], $0) }
+                .contextMenu { menu(nodes[i]).labelStyle(.titleAndIcon) }
                 .position(x: rects[i].maxX + width / 2 + 4, y: y[k])
             }
         }
+    }
+
+    private static let space = "energy"
+
+    /// Set once per node, where the pointer entered: a rebuild per mouse move is not needed.
+    private func hover(_ node: EnergyNode, _ phase: HoverPhase) {
+        switch phase {
+        case .active(let point): if _hover.wrappedValue?.node != node { _hover.wrappedValue = (node, point) }
+        case .ended: if _hover.wrappedValue?.node == node { _hover.wrappedValue = nil }
+        }
+    }
+
+    /// An app, a process or Other: its watts now and its share of the Mac, or of the app for a process. The same words as
+    /// the band's accessibility label.
+    private func card(_ node: EnergyNode) -> some View {
+        let link = flows.links.first { $0.to == node }
+        let total = flows.links.filter { $0.from == link?.from }.reduce(0) { $0 + $1.weight }
+        let share = link.map { (total > 0 ? $0.weight / total : 0).formatted(.percent.precision(.fractionLength(0))) }
+        return PreviewCard(size: .compact, title: name(node), top: link?.watts.map { Self.watts($0) },
+                           sections: [.init(rows: share.map { [.init(label: link?.from == .mac ? "Share of the Mac" : "Share of \(name(link!.from))", value: $0)] } ?? [])])
     }
 
     /// The app a node belongs to: an app, or the expanded app of a process.
@@ -154,9 +182,9 @@ struct EnergyDiagram: View {
             }
             .help(kept ? "Show \(app.name) only while it is in the top 5" : "Always show \(app.name) in the flow while it runs")
             let pinned = selection.isPinned(app)
-            Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
+            Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.slash" : "pin") { selection.togglePin(app) }
                 .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
-            Menu("Colour") { AppColorPicker(app: app, history: history) }
+            Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: app, history: history) }
                 .help("Choose the colour that shows \(app.name)")
         }
     }

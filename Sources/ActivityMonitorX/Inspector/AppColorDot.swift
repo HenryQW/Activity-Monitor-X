@@ -63,5 +63,7 @@ struct AppColorPicker: View {
         }
         .pickerStyle(.inline)
         .labelsHidden()
+        // Without it a menu drops the swatches.
+        .labelStyle(.titleAndIcon)
     }
 }

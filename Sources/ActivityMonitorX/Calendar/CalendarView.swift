@@ -1,60 +1,104 @@
 import AMXCore
 import SwiftUI
 
-/// The Calendar screen: the metric summed over all apps (or the apps the search matches) for each hour of a day or a week
-/// (a month day is the mean of its hours), shaded from low to high in the tint. A click selects a cell with data for the
-/// inspector; a double-click opens Apps on its time. Range does not apply here.
+/// The Calendar screen: the metric summed over all apps (or the apps the search matches, or one group) as one line per hour
+/// in a cell for a day (Month), six hours (Week) or an hour (Day), and one line per minute for an hour. A click selects
+/// a cell for the inspector, a drag a span, a double-click opens the finer period. Range does not apply here.
 struct CalendarView: View {
     @Environment(CalendarModel.self) private var model
     @Environment(HistoryModel.self) private var history
     @Environment(Selection.self) private var selection
+    @Environment(GroupsModel.self) private var groups
+    @Environment(Preferences.self) private var preferences
+    @Environment(AlertsModel.self) private var alerts
 
     /// What a load reads; a new value starts the screen's task again. Each period has its own intervals.
     private struct Load: Equatable {
         let interval: DateInterval
         let metric: Metric
-        let query: String
+        let filter: CalendarFilter
+        /// The chosen zone (with the count of system zone changes) and weekday as the preferences hold them, so a change draws this view again; 0 follows the system.
+        let zone: String
+        let weekday: Int
+        /// The levels the cells colour by.
+        let cpuRule: AlertRules.SystemCPU
+    }
+
+    /// The shown group, if the stored one still exists.
+    private var group: ProcessGroup? {
+        if case .group(let id) = model.show { groups.groups.first { $0.id == id } } else { nil }
+    }
+
+    private var filter: CalendarFilter { CalendarFilter(query: selection.search, group: group) }
+
+    static func showName(_ show: CalendarShow, groups: [ProcessGroup]) -> String {
+        switch show {
+        case .busiest: "Busiest App"
+        case .all: "All Apps"
+        case .group(let id): groups.first { $0.id == id }?.name ?? "Busiest App"
+        }
+    }
+
+    private var footer: CalendarFooter {
+        switch model.show {
+        case .busiest: group == nil ? .busiest : .none
+        case .all: .none
+        case .group: group.map(CalendarFooter.group) ?? .busiest
+        }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header.padding()
-            content.frame(maxWidth: .infinity, maxHeight: .infinity)
+        let load = Load(interval: model.interval, metric: history.metric, filter: filter, zone: preferences.zoneKey,
+                        weekday: preferences.firstWeekday ?? 0, cpuRule: alerts.rules.systemCPU)
+        content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaBar(edge: .top, spacing: 0) {
+                CalendarHeader(title: title(model.period, model.interval), shortTitle: shortTitle(model.period, model.interval)).padding(Layout.inset)
+            }
+        .screenTitle("Calendar", subtitle: Text(subtitle), icon: .symbol("calendar"))
+        .task(id: load) {
+            await model.run(metric: load.metric, filter: load.filter, rules: alerts.rules)
         }
-        .navigationTitle("Calendar")
-        .navigationSubtitle(title(model.period, model.interval))
-        .task(id: Load(interval: model.interval, metric: history.metric, query: selection.search)) {
-            await model.run(metric: history.metric, query: selection.search)
+        .onChange(of: selection.refreshes) { Task { await model.load(metric: history.metric, filter: filter, rules: alerts.rules) } }
+        .onChange(of: model.interval) { model.selected = nil }
+        .focusable()
+        .focusEffectDisabled()
+        .onExitCommand { model.zoomOut() }
+        // Day and Hour: the arrow keys move the selected bar, with Shift they stretch the span.
+        .onMoveCommand { direction in
+            let extend = NSEvent.modifierFlags.contains(.shift)
+            switch direction {
+            case .left: model.moveBar(-1, extend: extend)
+            case .right: model.moveBar(1, extend: extend)
+            default: break
+            }
         }
-        .onChange(of: selection.refreshes) { Task { await model.load(metric: history.metric, query: selection.search) } }
+        .onAppear { _monitor.wrappedValue = backMonitor() }
+        .onDisappear { _monitor.wrappedValue.map(NSEvent.removeMonitor); _monitor.wrappedValue = nil }
     }
 
-    private var header: some View {
-        let name = model.period.label.lowercased()
-        return HStack {
-            Picker("Period", selection: Bindable(model).period) {
-                ForEach(CalendarPeriod.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .help("Choose the period")
-            Spacer()
-            ControlGroup {
-                Button("Previous \(model.period.label)", systemImage: "chevron.left") { model.step(-1) }
-                    .labelStyle(.iconOnly)
-                    .disabled(!model.canStep(-1))
-                    .help("Show the previous \(name)")
-                Button("Today") { model.anchor = Date() }
-                    .disabled(!model.canStep(1))
-                    .help("Show the \(name) that holds today")
-                Button("Next \(model.period.label)", systemImage: "chevron.right") { model.step(1) }
-                    .labelStyle(.iconOnly)
-                    .disabled(!model.canStep(1))
-                    .help("Show the next \(name)")
-            }
-            .fixedSize()
+    private let _monitor = State<Any?>(initialValue: nil)
+
+    /// The mouse back button and a swipe to the right in the main window zoom out, as Back does.
+    private func backMonitor() -> Any? {
+        NSEvent.addLocalMonitorForEvents(matching: [.otherMouseDown, .swipe]) { [model] event in
+            let back = event.type == .swipe ? event.deltaX < 0 : event.buttonNumber == 3
+            guard back, event.window === MainWindowRef.window else { return event }
+            MainActor.assumeIsolated { model.zoomOut() }
+            return nil
         }
+    }
+
+    /// What the cells name, and the zone when it is not system time or has extra labels.
+    private var subtitle: String {
+        var parts = [Self.showName(model.show, groups: groups.groups)]
+        let zone = AppTime.zone, at = Date()
+        if preferences.timeZoneID != nil {
+            parts.append("\(ZoneLabel.abbreviation(zone, at: at)) (forced)")
+        } else if model.period != .month, !preferences.extraZoneIDs.isEmpty {
+            let extras = preferences.extraZoneIDs.compactMap(TimeZone.init(identifier:)).map { ZoneLabel.abbreviation($0, at: at) }
+            parts.append(([ZoneLabel.abbreviation(zone, at: at)] + extras).joined(separator: ", "))
+        }
+        return parts.joined(separator: " · ")
     }
 
     @ViewBuilder private var content: some View {
@@ -67,134 +111,32 @@ struct CalendarView: View {
             ContentUnavailableView.search(text: selection.search)
         case .empty:
             ContentUnavailableView("No Data", systemImage: "calendar",
-                                   description: Text("No history was recorded in this \(model.period.label.lowercased())."))
+                                   description: Text("No history was recorded in this \(model.period.rawValue)."))
         case .ready:
-            if let page = model.page { grid(page) }
-        }
-    }
-
-    private func grid(_ page: CalendarPage) -> some View {
-        let top = page.grid.joined().compactMap { $0?.value }.max() ?? 0
-        let hourly = page.period != .month
-        return VStack(spacing: 8) {
-            Grid(horizontalSpacing: 2, verticalSpacing: 2) {
-                GridRow {
-                    if hourly { Color.clear.frame(width: Self.labelWidth, height: 0) }
-                    ForEach(Array(columnTitles(page).enumerated()), id: \.offset) { _, title in
-                        let today = page.period != .month && title == todayTitle
-                        Text(title).font(.caption).bold(today).foregroundStyle(today ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary)).lineLimit(1)
-                    }
-                }
-                ForEach(page.grid.indices, id: \.self) { row in
-                    GridRow {
-                        if hourly { hourLabel(row) }
-                        ForEach(page.grid[row].indices, id: \.self) { column in
-                            cell(page.grid[row][column], page: page, top: top)
-                        }
-                    }
+            if let page = model.page {
+                VStack(spacing: 8) {
+                    if page.period == .month { CalendarTiles(page: page).padding(.horizontal) }
+                    CalendarGrid(page: page, footer: footer)
                 }
             }
-            legend(page.metric, top: top)
-        }
-        .padding([.horizontal, .bottom])
-    }
-
-    private static let labelWidth = 44.0
-
-    /// Today as `columnTitles` writes a Day or Week column.
-    private var todayTitle: String { Date().formatted(.dateTime.weekday(.abbreviated).day()) }
-
-    /// Every third hour, as an overlay: a label never sets the height of a row.
-    private func hourLabel(_ hour: Int) -> some View {
-        Color.clear.frame(width: Self.labelWidth).overlay(alignment: .trailing) {
-            if hour % 3 == 0 {
-                // Gregorian: a year 2001 date can be nil in another calendar; the hour is the same.
-                Text(Calendar(identifier: .gregorian).date(from: DateComponents(year: 2001, month: 1, day: 1, hour: hour))!.formatted(.dateTime.hour()))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    /// Day and Week: each day; Month: the weekdays from the locale's first weekday.
-    private func columnTitles(_ page: CalendarPage) -> [String] {
-        let calendar = Calendar.current
-        if page.period == .month {
-            let symbols = calendar.shortWeekdaySymbols
-            return (0..<7).map { symbols[(calendar.firstWeekday - 1 + $0) % 7] }
-        }
-        return page.grid[0].indices.map {
-            calendar.date(byAdding: .day, value: $0, to: page.interval.start)!.formatted(.dateTime.weekday(.abbreviated).day())
         }
     }
 
-    @ViewBuilder private func cell(_ cell: CalendarCell?, page: CalendarPage, top: Double) -> some View {
-        if let cell {
-            let label = describe(cell, page)
-            let selected = model.selected == cell.start
-            Button { model.selected = cell.start } label: {
-                shape(cell.value, top: top, radius: 3)
-                    .overlay { if selected { RoundedRectangle(cornerRadius: 3).strokeBorder(.primary, lineWidth: 2) } }
-                    .overlay(alignment: .topLeading) {
-                        if page.period == .month {
-                            let day = Date(timeIntervalSince1970: cell.start)
-                            let today = Calendar.current.isDateInToday(day)
-                            Text(day.formatted(.dateTime.day())).font(.caption)
-                                .bold(today).foregroundStyle(today ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary)).padding(4)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .simultaneousGesture(TapGesture(count: 2).onEnded { selection.reveal(from: cell.start, to: cell.end, history: history) })
-            .disabled(cell.value == nil)
-            .help(label)
-            .accessibilityLabel(label)
-            .accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityAction(named: "Show in Apps") { selection.reveal(from: cell.start, to: cell.end, history: history) }
-        } else {
-            Color.clear
+    /// The title for a narrow bar: "Oct 2026", "20 to 26 Oct", "Thu 22 Oct", "22 Oct, 9 AM".
+    private func shortTitle(_ period: CalendarPeriod, _ interval: DateInterval) -> String {
+        switch period {
+        case .hour: return interval.start.formatted(.dateTime.day().month(.abbreviated).hour())
+        case .day: return interval.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        case .week:
+            let last = interval.end.addingTimeInterval(-1)
+            return "\(interval.start.formatted(.dateTime.day())) to \(last.formatted(.dateTime.day().month(.abbreviated)))"
+        case .month: return interval.start.formatted(.dateTime.month(.abbreviated).year())
         }
-    }
-
-    /// The tint from 25% opacity at 0 to full at the period's highest value; a time without data is an outline only.
-    @ViewBuilder private func shape(_ value: Double?, top: Double, radius: Double) -> some View {
-        if let value {
-            RoundedRectangle(cornerRadius: radius).fill(.tint.opacity(0.25 + 0.75 * (top > 0 ? value / top : 0)))
-        } else {
-            RoundedRectangle(cornerRadius: radius).strokeBorder(.separator)
-        }
-    }
-
-    private func legend(_ metric: Metric, top: Double) -> some View {
-        HStack(spacing: 4) {
-            swatch(nil, top: top)
-            Text("No data").padding(.trailing, 12)
-            Text(metric.format(0))
-            ForEach([0, 0.25, 0.5, 0.75, 1], id: \.self) { swatch(top * $0, top: top) }
-            Text(metric.format(top))
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .trailing)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Shade from \(metric.format(0)) to \(metric.format(top)); an outlined cell has no data")
-    }
-
-    private func swatch(_ value: Double?, top: Double) -> some View {
-        shape(value, top: top, radius: 2).frame(width: 12, height: 12)
-    }
-
-    /// The cell's time and value with units, for VoiceOver and the hover tooltip.
-    private func describe(_ cell: CalendarCell, _ page: CalendarPage) -> String {
-        "\(cell.time(page.period)): " + (cell.value.map { "\(page.metric.label) \(page.metric.format($0))" } ?? "no data")
     }
 
     private func title(_ period: CalendarPeriod, _ interval: DateInterval) -> String {
         switch period {
+        case .hour: return interval.start.formatted(.dateTime.weekday(.wide).day().month(.wide).hour())
         case .day: return interval.start.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
         case .week:
             let last = interval.end.addingTimeInterval(-1)
@@ -204,21 +146,37 @@ struct CalendarView: View {
     }
 }
 
-extension CalendarCell {
-    /// The day of a Month cell, or the hour of a Day or Week cell.
-    func time(_ period: CalendarPeriod) -> String {
-        let start = Date(timeIntervalSince1970: start)
-        return period == .month ? start.formatted(.dateTime.weekday(.wide).day().month(.wide))
-            : start.formatted(.dateTime.weekday(.wide).day().month(.wide).hour().minute())
-    }
-}
+/// The month at a glance: its mean, its busiest hour, its busiest app and its alerts.
+private struct CalendarTiles: View {
+    @Environment(HistoryModel.self) private var history
+    let page: CalendarPage
 
-private extension CalendarPeriod {
-    var label: String {
-        switch self {
-        case .day: "Day"
-        case .week: "Week"
-        case .month: "Month"
+    var body: some View {
+        let cells = page.cells
+        let values = cells.flatMap(\.lines).compactMap { $0 }
+        let peak = cells.compactMap { cell in cell.peak.map { (cell.lineStart($0), cell.lines[$0]!) } }.max { $0.1 < $1.1 }
+        let leader = CalendarPeriod.leader(of: cells)
+        let critical = page.alerts.count { $0.severity >= 2 }
+        HStack(alignment: .top, spacing: 12) {
+            tile("Average \(page.metric.label)", values.isEmpty ? "No data" : page.metric.format(values.reduce(0, +) / Double(values.count)),
+                 "this month")
+            tile("Busiest hour", peak.map { Date(timeIntervalSince1970: $0.0).formatted(.dateTime.weekday(.abbreviated).day().hour()) } ?? "No data",
+                 peak.map { page.metric.format($0.1) } ?? "")
+            tile("Top app", leader?.app.name ?? "No data", leader.map { "\(($0.share).formatted(.percent.precision(.fractionLength(0)))) of all \(page.metric.label)" } ?? "")
+            tile("Alerts", page.alerts.count.formatted(), critical > 0 ? "\(critical.formatted()) critical" : "none critical")
         }
+    }
+
+    private func tile(_ title: String, _ value: String, _ note: String) -> some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value).font(.title2.weight(.semibold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.7)
+                Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

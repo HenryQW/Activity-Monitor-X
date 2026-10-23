@@ -25,6 +25,10 @@ struct AppTable: View {
     /// Row positions (apps and processes) while the order holds; nil while the table sorts.
     private let _held = State<[Row.ID: Int]?>(initialValue: nil)
     private let _showIdle = State(initialValue: false)
+    /// The app whose Trend sparkline is under the pointer and the pointer's place in the table; the preview shows after a
+    /// short delay (`_sparkShown`), as a pointer crossing the column must not flash one per row.
+    private let _spark = State<(app: AppKey, point: CGPoint)?>(initialValue: nil)
+    private let _sparkShown = State<String?>(initialValue: nil)
     /// Only the hidden columns are kept between tables. A kept `TableColumnCustomization` also keeps each column's width,
     /// so a new table narrower than the last (inspector shown) scrolled Peak, Trend and Pin out of view (measured).
     private let _columns = State(initialValue: AppTable.customization())
@@ -134,6 +138,8 @@ struct AppTable: View {
                     if row.process == nil, row.id != Row.idleID, let values = sparklines[row.app] {
                         linked(Sparkline(values: values, color: colors[row.app] ?? .secondary, top: top,
                                          threshold: alerts.rules.forApp(row.app.key).level(of: metric)), row, .leading)
+                            .onHover { inside in _spark.wrappedValue = inside ? (row.app, Self.pointerInWindow()) : nil }
+                            .accessibilityValue(sparkCard(row.app).map { $0.summary } ?? "")
                     }
                 }
                 .width(min: 60, ideal: 80, max: 120)
@@ -169,19 +175,22 @@ struct AppTable: View {
             }
             // Double-click or Return opens the inspector on the row.
             .contextMenu(forSelectionType: Row.ID.self) { ids in
-                if let row = ids.first.flatMap({ byID[$0] }), row.id != Row.idleID {
-                    Button("Show in Inspector", systemImage: "sidebar.trailing") {
-                        selection.app = row.app
-                        selection.process = row.process
-                        selection.inspectorShown = true
-                    }
-                    .help("Show \(row.name) in the inspector")
-                    if row.process == nil {
-                        pinButton(row.app)
-                        Menu("Colour") { AppColorPicker(app: row.app, history: history) }
-                            .help("Choose the colour that shows \(row.name)")
+                Group {
+                    if let row = ids.first.flatMap({ byID[$0] }), row.id != Row.idleID {
+                        Button("Show in Inspector", systemImage: "sidebar.trailing") {
+                            selection.app = row.app
+                            selection.process = row.process
+                            selection.inspectorShown = true
+                        }
+                        .help("Show \(row.name) in the inspector")
+                        if row.process == nil {
+                            pinButton(row.app)
+                            Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: row.app, history: history) }
+                                .help("Choose the colour that shows \(row.name)")
+                        }
                     }
                 }
+                    .labelStyle(.titleAndIcon)
             } primaryAction: { ids in
                 guard let id = ids.first, id != Row.idleID else { return }
                 selection.inspectorShown = true
@@ -203,6 +212,14 @@ struct AppTable: View {
             .onChange(of: held == nil) { _, sorting in
                 if sorting, let id = selected.wrappedValue { Task { proxy.scrollTo(id) } }
             }
+            .task(id: _spark.wrappedValue?.app) {
+                _sparkShown.wrappedValue = nil
+                guard let app = _spark.wrappedValue?.app, (try? await Task.sleep(for: .milliseconds(400))) != nil else { return }
+                _sparkShown.wrappedValue = app.key
+            }
+            .previewBeside(_spark.wrappedValue.flatMap { $0.app.key == _sparkShown.wrappedValue ? $0.point : nil }, inWindow: true) {
+                if let app = _spark.wrappedValue?.app { sparkCard(app) }
+            }
             .overlay(alignment: .top) {
                 if held != nil {
                     Label("Sorting paused", systemImage: "pause.circle.fill")
@@ -214,6 +231,29 @@ struct AppTable: View {
                         .allowsHitTesting(false)
                 }
             }
+        }
+    }
+
+    /// The pointer in window points from the top left: a table cell cannot name the table's space.
+    private static func pointerInWindow() -> CGPoint {
+        guard let window = NSApp.keyWindow, let view = window.contentView else { return .zero }
+        let p = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+        return CGPoint(x: p.x, y: view.bounds.height - p.y)
+    }
+
+    /// The Trend preview: now, average and peak, the app's line with its alert level, its three busiest processes.
+    private func sparkCard(_ app: AppKey) -> PreviewCard<Sparkline>? {
+        guard let rank = ranking.first(where: { $0.app == app }), let values = sparklines[app] else { return nil }
+        let top = values.max() ?? 1
+        return PreviewCard(size: .large, title: app.name, span: ["\(metric.label) over \(history.range.label)"],
+                           stats: [.init(label: "Now", value: metric.format(values.last ?? 0)),
+                                   .init(label: "Average", value: metric.format(rank.average)),
+                                   .init(label: "Peak", value: metric.format(rank.peak))],
+                           sections: [.init(heading: "Busiest processes",
+                                            rows: rank.processes.sorted { $0.average > $1.average }.prefix(3)
+                                                .map { .init(label: "\($0.name) (\($0.pid))", value: metric.format($0.average)) })]) {
+            Sparkline(values: values, color: colors[app] ?? .secondary, top: top,
+                      threshold: alerts.rules.forApp(app.key).level(of: metric), height: 96)
         }
     }
 
@@ -246,7 +286,7 @@ struct AppTable: View {
 
     private func pinButton(_ app: AppKey) -> some View {
         let pinned = selection.isPinned(app)
-        return Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.fill" : "pin") { selection.togglePin(app) }
+        return Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.slash" : "pin") { selection.togglePin(app) }
             .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
     }
 

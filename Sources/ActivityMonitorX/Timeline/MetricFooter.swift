@@ -52,8 +52,7 @@ struct MetricFooter: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .font(.callout)
-        .padding(.horizontal)
-        .padding(.vertical, 10)
+        .padding(Layout.padding)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(metric.label) summary")
         .task(id: "\(live) \(metric.label)") { await read() }

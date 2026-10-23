@@ -1,7 +1,7 @@
 import AMXCore
 import SwiftUI
 
-/// Metric is flipped often, so it is the segmented control in the centre; the range and Live are in `RangeBar` above the
+/// Metric is flipped often, so it is the segmented control in the centre; the range is in `RangeBar` above the
 /// content. Search is the system toolbar field. Three capsules: Metric; the action group, Quit and Info; More and Search.
 /// Info and Search are on every screen. More holds the view toggles: Show Chart on Apps, Hide Quiet where Metric filters,
 /// Show Dismissed on Alerts. System screens show no app data: their other items are removed, not disabled; Disk's Space pill
@@ -13,6 +13,8 @@ struct MainToolbar: CustomizableToolbarContent {
     let diskMap: DiskMapModel
     /// The window is too narrow for the Metric segments.
     let compact: Bool
+    /// Where the items that can crowd the Metric segments report their width.
+    let fit: ToolbarFit
 
     /// Alerts are not filtered by Metric or Hide Quiet, so those items are removed there.
     private var filters: Bool { !selection.isSystem && selection.sidebar != .alerts }
@@ -28,8 +30,14 @@ struct MainToolbar: CustomizableToolbarContent {
                         .help("Choose the metric this screen shows")
                 } else {
                     metricPicker.pickerStyle(.segmented).help("Choose the metric this screen shows")
+                        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { if abs((fit.drawn[history.metrics.count] ?? 0) - $0) >= 1 { fit.drawn[history.metrics.count] = $0 } }
                 }
             }
+        }
+        else {
+            // Without Metric and the system title, the action items would follow the title pill: the spacer keeps them at
+            // the trailing edge.
+            ToolbarSpacer(.flexible, placement: .primaryAction)
         }
         if selection.sidebar == .alerts {
             ToolbarItem(id: "dismissAll", placement: .primaryAction) {
@@ -40,6 +48,11 @@ struct MainToolbar: CustomizableToolbarContent {
                     .help("Dismiss all alerts shown. Show Dismissed lists them again.")
                     .accessibilityLabel("Dismiss all alerts shown")
             }
+        }
+        // Live is the screen's primary action: its own round capsule before the others.
+        if selection.hasRange {
+            ToolbarItem(id: "live", placement: .primaryAction) { LiveButton(history: history).fitItem("live", fit) }
+            ToolbarSpacer(.fixed, placement: .primaryAction)
         }
         if selection.showsSpace {
             ToolbarItem(id: "diskMapTarget", placement: .primaryAction) { DiskMapTargetMenu(model: diskMap) }
@@ -67,6 +80,7 @@ struct MainToolbar: CustomizableToolbarContent {
                     .disabled(request == nil)
                     .help(help)
                     .accessibilityLabel(help)
+                    .fitItem("quit", fit)
             }
         }
         ToolbarItem(id: "inspector", placement: .primaryAction) {
@@ -74,24 +88,29 @@ struct MainToolbar: CustomizableToolbarContent {
             Button("Info", systemImage: "info.circle") { selection.inspectorShown.toggle() }
                 .help(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
                 .accessibilityLabel(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
+                .fitItem("inspector", fit)
         }
         if filters || selection.sidebar == .alerts {
             ToolbarItem(id: "more", placement: .primaryAction) {
                 Menu("More", systemImage: "ellipsis.circle") {
-                    if (selection.sidebar ?? .apps) == .apps {
-                        Toggle("Show Chart", isOn: Bindable(selection).showChart)
+                    Group {
+                        if (selection.sidebar ?? .apps) == .apps {
+                            Toggle("Show Chart", systemImage: "chart.xyaxis.line", isOn: Bindable(selection).showChart)
+                        }
+                        if filters {
+                            Toggle("Hide Quiet System Processes", systemImage: "eye.slash", isOn: Bindable(history).hideQuietSystem)
+                                // A group shows all its members.
+                                .disabled(history.scope != nil)
+                        }
+                        if selection.sidebar == .alerts {
+                            Toggle("Show Dismissed Alerts", systemImage: "eye", isOn: Bindable(alerts).showDismissed)
+                        }
                     }
-                    if filters {
-                        Toggle("Hide Quiet System Processes", isOn: Bindable(history).hideQuietSystem)
-                            // A group shows all its members.
-                            .disabled(history.scope != nil)
-                    }
-                    if selection.sidebar == .alerts {
-                        Toggle("Show Dismissed Alerts", isOn: Bindable(alerts).showDismissed)
-                    }
+                        .labelStyle(.titleAndIcon)
                 }
                 .accessibilityLabel("More")
                 .help("Choose what the list and chart show")
+                .fitItem("more", fit)
             }
         }
         // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
@@ -99,11 +118,37 @@ struct MainToolbar: CustomizableToolbarContent {
             ToolbarItem(id: "search", placement: .primaryAction) {
                 Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
                     .help("Search: \(selection.searchPrompt)")
+                    .fitItem("search", fit)
             }
         }
     }
 
-    private var metricPicker: some View {
+    private var metricPicker: some View { MetricPicker(history: history) }
+}
+
+/// The round Live button: it starts Live, and pauses back to the range before it (D48). One button for both states, so
+/// the focus stays. While Live runs it is prominent, tinted by the accent, never a status colour.
+private struct LiveButton: View {
+    let history: HistoryModel
+
+    var body: some View {
+        let on = history.range == .live
+        let back = history.beforeLive.custom == nil ? "the \(history.beforeLive.range.spoken) range" : "the custom range"
+        let hint = on ? "Pause Live and return to \(back)" : "Start Live data: the chart updates every second"
+        Button("Live", systemImage: on ? "pause.fill" : "play.fill") { history.toggleLive() }
+            .labelStyle(.iconOnly)
+            .glassEffect(on ? .regular.tint(.accentColor) : .identity, in: .circle)
+            .accessibilityValue(on ? "On" : "Off")
+            .accessibilityHint(hint)
+            .help(hint)
+    }
+}
+
+/// The Metric choice; `MainWindow` also lays out the segmented one off screen to measure its ideal width.
+struct MetricPicker: View {
+    let history: HistoryModel
+
+    var body: some View {
         Picker("Metric", selection: Bindable(history).metric) {
             ForEach(history.metrics, id: \.self) { Text($0.label).tag($0) }
         }

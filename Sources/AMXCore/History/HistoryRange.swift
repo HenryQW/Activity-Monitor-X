@@ -56,3 +56,21 @@ extension HistoryRange {
         }
     }
 }
+
+extension HistoryRange {
+    /// The smallest stored range longer than a window of `length` seconds; nil from the widest.
+    public static func wider(than length: Double) -> HistoryRange? {
+        allCases.dropFirst().first { $0.seconds > length }
+    }
+
+    /// The largest stored range shorter than a window of `length` seconds; nil from the narrowest.
+    public static func narrower(than length: Double) -> HistoryRange? {
+        allCases.dropFirst().last { $0.seconds < length }
+    }
+
+    /// A window of `length` seconds around the middle of `window`, moved back to end by `now` at the latest.
+    public func window(around window: ClosedRange<Double>, now: Double) -> ClosedRange<Double> {
+        let end = min((window.lowerBound + window.upperBound + seconds) / 2, now)
+        return (end - seconds)...end
+    }
+}

@@ -15,7 +15,7 @@ struct DiskView: View {
         }
         // The pills stay at the top over a centred empty state.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaInset(edge: .top, spacing: 0) {
+        .safeAreaBar(edge: .top, spacing: 0) {
             Picker("View", selection: Bindable(selection).diskPane) {
                 Text("Activity").tag(DiskPane.activity)
                 Text("Space").tag(DiskPane.space)
@@ -24,7 +24,7 @@ struct DiskView: View {
             .labelsHidden()
             .accessibilityLabel("View")
             .help("Show the disk activity or the space that files use")
-            .padding(10)
+            .padding(Layout.inset)
         }
     }
 }
@@ -50,21 +50,21 @@ private struct DiskActivityView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            RangeBar()
-            Divider()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    charts
-                    section("Physical Disks") { disks }
-                    section("Volumes") { volumes }
-                    section("APFS Containers") { containers }
-                }
-                .padding()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // The pill's column stays free of the charts, so it never covers a y-axis label.
+                charts
+                    .padding(.trailing, ChartZoom.width)
+                    .overlay(alignment: .topTrailing) { ChartZoom().padding(.top, 24) }
+                section("Physical Disks") { disks }
+                section("Volumes") { volumes }
+                section("APFS Containers") { containers }
             }
+            .padding()
         }
-        .navigationTitle("Disk")
-        .navigationSubtitle("All physical disks")
+        // The charts and lists scroll under the range bar.
+        .safeAreaBar(edge: .top, spacing: 0) { RangeBar() }
+        .screenTitle("Disk", subtitle: Text("All physical disks"), icon: .symbol("internaldrive"))
         // Stops with the screen: no disk reads while Disk is not shown.
         .task { await disk.run() }
         .onChange(of: selection.refreshes) { Task { await disk.refresh() } }
@@ -283,7 +283,7 @@ private struct DiskActivityView: View {
                 .width(ideal: 100)
                 .customizationID("mountPoint")
             TableColumn("") { volume in
-                Button("Show in Space") { showInSpace(volume) }
+                Button("Show in Space", systemImage: "internaldrive") { showInSpace(volume) }.labelStyle(.titleAndIcon)
                     .controlSize(.small)
                     .help("Show what takes the space on \(volume.name)")
             }
@@ -291,7 +291,7 @@ private struct DiskActivityView: View {
         }
         .contextMenu(forSelectionType: VolumeInfo.ID.self) { ids in
             if ids.count == 1, let volume = volumes.first(where: { $0.id == ids.first }) {
-                Button("Show in Space") { showInSpace(volume) }
+                Button("Show in Space", systemImage: "internaldrive") { showInSpace(volume) }.labelStyle(.titleAndIcon)
             }
         }
         // Inside the page's scroll view: as tall as its rows, scrolled with the page.
