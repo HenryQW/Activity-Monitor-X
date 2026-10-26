@@ -11,7 +11,7 @@ struct HardwareInspector: View {
         if let row = path.last {
             Form {
                 Section { Text(row.name).font(.title3.bold()).overlayScrollers() }
-                Section("Value") {
+                CardSection("Value") {
                     Text(row.value.isEmpty ? "None" : row.value).textSelection(.enabled)
                     Button("Copy", systemImage: "doc.on.doc") {
                         NSPasteboard.general.clearContents()
@@ -20,7 +20,7 @@ struct HardwareInspector: View {
                     .help("Copy the name and the value")
                 }
                 if path.count > 1 {
-                    Section("Section") { Text(path.dropLast().map(\.name).joined(separator: " > ")) }
+                    CardSection("Section") { Text(path.dropLast().map(\.name).joined(separator: " > ")) }
                 }
             }
             .formStyle(.grouped)

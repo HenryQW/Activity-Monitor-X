@@ -35,6 +35,7 @@ Rules:
 - **WIN-18** (user) The one primary action of a screen is prominent: the toolbar Live button while Live runs (accent-tinted glass, never red or yellow), and an empty state's single action (D66).
 - **WIN-19** (user) Hover hints show after the pointer rests 1 s (the app's own tooltip delay, never a system setting); a sidebar row whose name can truncate has a hint with the full name (D66).
 - **WIN-20** (user) A pinned app shows its bundle's display name; the executable name or bundle ID shows only when no bundle names it (D66).
+- **WIN-21** (user) The toolbar's trailing buttons are one compact capsule of icon buttons in a system control group: Quit (screens with an app inspector), Info, More, Search, each with its name as hint and accessibility label. Live keeps its own round capsule before it; the title pill stays (D73).
 
 ## INS: Inspector
 
@@ -47,6 +48,7 @@ Rules:
 - **INS-7** (user) A click on a Launch History run or an inspector alert selects that time on the chart; Launch History shows runs as bars, each also an accessibility button (D60).
 - **INS-8** (user) An action row under the header: Pin, Show in Finder, Alert Rules…, Quit…; Force Quit is in the Quit confirmation (D60).
 - **INS-9** (user) Inspector Average and Peak roll to the new value only after a change the user made (app, span); a Live tick swaps the number with no animation; the popover gauges do not animate (D60, D67).
+- **INS-10** (user) Every titled inspector section is a card that opens and closes: its first row has a disclosure arrow, the title and a summary at the right (System Health: its worst state; Top Apps: the top app and value; Biggest Changes: counts up and down, None or No data; Alerts: the count). Open or closed is kept per title (D73).
 
 ## COL: Colours and chart
 
@@ -58,7 +60,7 @@ Rules:
 - **COL-6** (user) The app selected in the inspector stays emphasised in the chart (others at 0.5) while no row is hovered (D60).
 - **COL-7** (user) Disk Space colours files by kind, with a dot legend (D60).
 - **COL-8** (user) A sparkline draws its part above the alert threshold in yellow, with a dashed threshold line (D60).
-- **COL-9** (user) Low-space bars use the warning yellow, not an app colour (D60).
+- **COL-9** (user) Low-space bars use the warning yellow, not an app colour. Low space is free space under 15 % of the capacity, or on the startup volume under the Mac's memory; a small external drive is not low because it holds less than the memory (D60, D72).
 
 ## SCR: Screens
 
@@ -75,6 +77,11 @@ Rules:
 - **SCR-11** (user) Live keeps the last data when the helper is lost and says "Helper not reachable. Data as of" the time (D60).
 - **SCR-12** (user) Space shows scan progress with a system progress bar: determinate for a volume (scanned bytes of used space), indeterminate for a folder; the text gives items and bytes so far, with Stop beside it (D64).
 - **SCR-13** (user) The Space item menu (table and treemap) has Open, Open With, Quick Look | Show in Finder, Get Info, Open in Terminal | Copy Path, Copy Name | Rename…, Move to Trash, each with an icon; items that do not apply are hidden; Move to Trash asks nothing (the Trash restores); a failed action shows the system's error (D64).
+- **SCR-14** (user) Hardware names a built-in display by its type, in the system's own words, as System Settings does ("Built-in Liquid Retina XDR Display", not "Color LCD"); external displays keep their own names.
+- **SCR-15** (user) Hardware: the overview is the chip and a grid of part cells, centred as one group, at every width (D74; no text fallback, user call). The chip draws each CPU core as the `cpu` symbol filled from the bottom to its use, the clusters side by side with one empty column between them; the GPU cores are blocks of lanes (macOS has no GPU symbol) in the same columns, in rows as wide as the CPU row, all filled to the GPU total; memory is one `memorychip` symbol beside them under "Memory" and its percent, filled from the left. Each percent sits at the right edge of its cores. Beside the chip, one cell at least 38 pt high for each part with data (the startup volume, the battery, each connected display, each external drive): a live shape, the name and one fact; two cells to a row, a third column past three rows. Beside the chip, chip and cells have one height, the taller one's: a taller grid spreads the chip's rows, a taller chip makes the cells taller (user call). Where chip and cells do not fit side by side, the cells go under the chip and share its width, also below 196 pt (user call); the chip's columns shrink to fit (20 to 9 pt). A cluster too narrow for its name and percent on one line puts every cluster's header on two lines. The title is the Mac name, with the model, chip and unified memory under it, and no caption (user call). A click on a part (cluster, GPU, memory, storage, display, battery) gives it an accent outline, selects its row in the inventory, opens the rows down to it, also under a search, and scrolls it to the top; a row chosen in the table outlines the part that owns it (all clusters for the Processors row). Each part is a button with a hint that says the action. Low free space is said in text as well as in yellow; the Storage hint says free space does not include purgeable space (D70).
+- **SCR-16** (user) Hardware parts are live and look like the real part: the memory chip fills to the memory used; each volume's flash chips fill to its used share (two chips for the startup volume, one for an external drive); every external drive the inventory names shows as a part (no disk images or network mounts), and a drive plugged in or out reads the inventory again; the built-in display is a laptop lid and another display a monitor on a stand, each filled to its brightness where macOS reports it (the hint says so where it does not); the battery is a battery shape filled from the left to its charge, with a bolt while it charges, and its charge in text (D72). The built-in display's cell says "Built-in Display"; its full name is in the hint and the accessibility name.
+- **SCR-17** (user) The Hardware inventory shows a fact once: where system_profiler gives the same value twice under labels with a word in common (Resolution and Resolution, Pixels and Pixel resolution), the second row is left out.
+- **SCR-18** (user) The Hardware inventory shows what is connected: Bluetooth devices that are connected are listed under the controller, and paired devices that are not connected go in one "Not Connected" group, closed at first; a USB or Thunderbolt bus or port with nothing plugged in is not shown. Icons name things only, as Apple's lists do (D75): each section and each bus, device, display and volume has a system symbol (by its kind where macOS gives one: mouse, keyboard, headphones, built-in or external display, internal or external drive; else its section's); a value, a set of values ("Controller properties", "Battery information") and a group ("Not Connected") has none. Every symbol sits centred in one 18 pt column, and a row with none keeps the column empty, so the names at one level line up.
 
 ## CAL: Calendar and time zone
 
@@ -91,6 +98,9 @@ Rules:
 - **CAL-11** (user) Left and Right move the selected bar in Day and Hour, with Shift they extend the span; VoiceOver steps through a cell's bars and selects each; double-click on a Day bar opens that Hour (D66).
 - **CAL-12** (user) The Month, Week and Day grids fit the content column at every width and never run under the inspector: cells shrink and drop detail by width (busiest app name, its peak, the counts, the mean and "No data"); the day number or hour and the lines stay (D66).
 - **COL-10** (user) Every floating panel, capsule, popover and hover preview, whatever its size, is Liquid Glass (D65, D66).
+- **COL-11** (user) No glass in glass: a level 2 capsule is the one glass under its controls. Inside it, pop-ups and buttons are borderless, and a system divider keeps neighbours apart where text would run together. A choice of a few values (Calendar Day/Week/Month, range bar 1H to 90D) shows the chosen value as a pill on the capsule, as the toolbar segments do, with no track of its own. A segmented picker never sits inside a capsule (D71).
+- **COL-12** (user) Use on the Hardware diagram is a level that fills each core cell from the bottom, in the accent colour; selection is an accent outline. The GPU cells are neutral, with one level line at the total; the hint on the cells is "GPU: N %. macOS gives one total for all GPU cores." Pads, traces, holes and substrate use system greys and label colours only, are decoration that VoiceOver skips, and are not drawn again on each reading. No animation on a reading (D70).
+- **COL-13** (user) Levels on the Hardware board take the status colours at a rule's levels, else the accent: cores and the GPU at the system CPU rule (SET-7) while it is on; memory at the system's pressure level (warning, critical); a volume yellow on low space (COL-9) and the startup volume red at the free space alert's level; the battery yellow at 20 % and red at 10 % while not charging, with "low" in its text (D72).
 
 ## MOT: Motion
 

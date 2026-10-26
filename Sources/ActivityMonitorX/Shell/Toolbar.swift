@@ -2,7 +2,7 @@ import AMXCore
 import SwiftUI
 
 /// Metric is flipped often, so it is the segmented control in the centre; the range is in `RangeBar` above the
-/// content. Search is the system toolbar field. Three capsules: Metric; the action group, Quit and Info; More and Search.
+/// content. Search is the system toolbar field. Capsules: Metric; Live; one action group of Quit, Info, More and Search.
 /// Info and Search are on every screen. More holds the view toggles: Show Chart on Apps, Hide Quiet where Metric filters,
 /// Show Dismissed on Alerts. System screens show no app data: their other items are removed, not disabled; Disk's Space pill
 /// adds its target and Scan, Hardware has Refresh. Calendar keeps Metric only: it has its own periods in place of a range.
@@ -69,57 +69,55 @@ struct MainToolbar: CustomizableToolbarContent {
         if [.alerts, .hardware].contains(selection.sidebar) || selection.showsSpace {
             ToolbarSpacer(.fixed, placement: .primaryAction)
         }
-        // The screens whose inspector is the app's, with its Quit; Force Quit stays there and in the confirmation.
-        if !selection.isSystem || selection.sidebar == .energy {
-            ToolbarItem(id: "quit", placement: .primaryAction) {
-                let request = selection.app.flatMap(selection.quitRequest(of:))
-                let name = selection.signallable?.name ?? selection.app?.name
-                let help = selection.process == nil ? "Quit \(name ?? "the selected app") and close its windows"
-                    : "Ask \(name ?? "the selected process") to quit"
-                Button("Quit", systemImage: "xmark.circle") { selection.signalRequest = request }
-                    .disabled(request == nil)
-                    .help(help)
-                    .accessibilityLabel(help)
-                    .fitItem("quit", fit)
-            }
-        }
-        ToolbarItem(id: "inspector", placement: .primaryAction) {
-            // ⌥⌘I lives on the View menu command.
-            Button("Info", systemImage: "info.circle") { selection.inspectorShown.toggle() }
-                .help(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
-                .accessibilityLabel(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
-                .fitItem("inspector", fit)
-        }
-        if filters || selection.sidebar == .alerts {
-            ToolbarItem(id: "more", placement: .primaryAction) {
-                Menu("More", systemImage: "ellipsis.circle") {
-                    Group {
-                        if (selection.sidebar ?? .apps) == .apps {
-                            Toggle("Show Chart", systemImage: "chart.xyaxis.line", isOn: Bindable(selection).showChart)
-                        }
-                        if filters {
-                            Toggle("Hide Quiet System Processes", systemImage: "eye.slash", isOn: Bindable(history).hideQuietSystem)
-                                // A group shows all its members.
-                                .disabled(history.scope != nil)
-                        }
-                        if selection.sidebar == .alerts {
-                            Toggle("Show Dismissed Alerts", systemImage: "eye", isOn: Bindable(alerts).showDismissed)
-                        }
-                    }
-                        .labelStyle(.titleAndIcon)
+        // One compact capsule of icon buttons (TB1): Quit, Info, More and Search share a system control group, in the
+        // order of use; Live keeps its own round capsule before it.
+        ToolbarItem(id: "actions", placement: .primaryAction) {
+            ControlGroup {
+                // The screens whose inspector is the app's, with its Quit; Force Quit stays there and in the confirmation.
+                if !selection.isSystem || selection.sidebar == .energy {
+                    let request = selection.app.flatMap(selection.quitRequest(of:))
+                    let name = selection.signallable?.name ?? selection.app?.name
+                    let help = selection.process == nil ? "Quit \(name ?? "the selected app") and close its windows"
+                        : "Ask \(name ?? "the selected process") to quit"
+                    Button("Quit", systemImage: "xmark.circle") { selection.signalRequest = request }
+                        .disabled(request == nil)
+                        .help(help)
+                        .accessibilityLabel(help)
                 }
-                .accessibilityLabel("More")
-                .help("Choose what the list and chart show")
-                .fitItem("more", fit)
+                // ⌥⌘I lives on the View menu command.
+                Button("Info", systemImage: "info.circle") { selection.inspectorShown.toggle() }
+                    .help(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
+                    .accessibilityLabel(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
+                if filters || selection.sidebar == .alerts {
+                    Menu("More", systemImage: "ellipsis.circle") {
+                        Group {
+                            if (selection.sidebar ?? .apps) == .apps {
+                                Toggle("Show Chart", systemImage: "chart.xyaxis.line", isOn: Bindable(selection).showChart)
+                            }
+                            if filters {
+                                Toggle("Hide Quiet System Processes", systemImage: "eye.slash", isOn: Bindable(history).hideQuietSystem)
+                                    // A group shows all its members.
+                                    .disabled(history.scope != nil)
+                            }
+                            if selection.sidebar == .alerts {
+                                Toggle("Show Dismissed Alerts", systemImage: "eye", isOn: Bindable(alerts).showDismissed)
+                            }
+                        }
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .menuIndicator(.hidden)
+                    .accessibilityLabel("More")
+                    .help("Choose what the list and chart show")
+                }
+                // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
+                if !selection.searchPresented && selection.query.isEmpty {
+                    Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
+                        .help("Search: \(selection.searchPrompt)")
+                }
             }
-        }
-        // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
-        if !selection.searchPresented && selection.query.isEmpty {
-            ToolbarItem(id: "search", placement: .primaryAction) {
-                Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
-                    .help("Search: \(selection.searchPrompt)")
-                    .fitItem("search", fit)
-            }
+            .controlGroupStyle(.navigation)
+            .labelStyle(.iconOnly)
+            .fitItem("actions", fit)
         }
     }
 

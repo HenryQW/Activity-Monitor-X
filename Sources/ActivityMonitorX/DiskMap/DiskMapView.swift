@@ -187,17 +187,22 @@ struct DiskMapView: View {
     /// Show the selected item, else the shown folder, in Finder; open the inspector with its details.
     private func actions(focus: [Int]) -> some View {
         // Grouped small items have no one path: their folder shows.
+        let path = model.selected.flatMap(model.path) ?? model.path(focus)
         return HStack(spacing: Layout.inset) {
-            if let path = model.selected.flatMap(model.path) ?? model.path(focus) {
+            if let path {
                 let url = URL(filePath: path)
                 Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                     .help("Show \(url.lastPathComponent) in Finder")
             }
             if !selection.inspectorShown {
+                // Without bezels, a line keeps the two buttons apart.
+                if path != nil { Divider().padding(.vertical, Layout.padding) }
                 Button("Show in Inspector") { selection.inspectorShown = true }
                     .help("Show the details of the selection in the inspector")
             }
         }
+        // The capsule is the buttons' one glass: no bezel on it (D71).
+        .buttonStyle(.borderless)
         .fixedSize()
         .floatingCapsule()
     }

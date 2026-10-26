@@ -10,7 +10,7 @@ struct AlertCountsCard: View {
         let counts = Dictionary(grouping: events) { $0.rule ?? $0.kind }
             .map { (rule: $0.key, count: $0.value.count) }
             .sorted { ($1.count, $0.rule) < ($0.count, $1.rule) }
-        Section(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
+        CardSection("Alerts", summary: Text(events.count.formatted())) {
             if counts.isEmpty {
                 Text("No alerts").foregroundStyle(.secondary)
             }

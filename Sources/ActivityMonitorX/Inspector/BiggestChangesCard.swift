@@ -9,7 +9,8 @@ struct BiggestChangesCard: View {
     let colors: [AppKey: Color]
 
     var body: some View {
-        Section("Biggest Changes") {
+        let summary = history.changes.map { $0.up.isEmpty && $0.down.isEmpty ? "None" : "\($0.up.count) up, \($0.down.count) down" } ?? "No data"
+        CardSection("Biggest Changes", summary: Text(summary)) {
             if let changes = history.changes {
                 if changes.up.isEmpty && changes.down.isEmpty {
                     Text("No changes").foregroundStyle(.secondary)

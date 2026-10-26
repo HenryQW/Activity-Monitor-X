@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The time range at the top of the content of the screens that have one (Apps, pinned apps, groups, Disk): a level 2
 /// glass capsule that fits its content, with the quick ranges as segments, then the window shown (short; the full window
-/// is its hint) and Custom…, which opens the From/To pickers. Live is the round toolbar button (`LiveButton`); while it
+/// is its hint) and Custom…, which opens the From/To pickers. The controls have no bezel or track on the glass (D71). Live is the round toolbar button (`LiveButton`); while it
 /// runs the window text reads "Live" and no segment is checked. A custom window checks no segment. Where the column is
 /// narrow, the window text goes first, then the segments become a pop-up.
 struct RangeBar: View {
@@ -24,9 +24,12 @@ struct RangeBar: View {
     private func capsule(segments: Bool, window shown: Bool) -> some View {
         HStack(spacing: Layout.padding) {
             if segments {
-                picker.pickerStyle(.segmented)
+                CapsuleChoice(title: "Range", values: quick, selection: range) {
+                    Text($0.label).accessibilityLabel($0.spoken)
+                }
+                .help("Choose the time range")
             } else {
-                picker.pickerStyle(.menu)
+                picker
             }
             if shown {
                 Text(window).foregroundStyle(.secondary).lineLimit(1)
@@ -34,7 +37,10 @@ struct RangeBar: View {
                     .accessibilityLabel("Time range")
                     .accessibilityValue(full)
             }
+            // Without a bezel, Custom… needs a line to read apart from the window text.
+            Divider().padding(.vertical, Layout.padding)
             Button("Custom…") { selection.rangeShown = true }
+                .buttonStyle(.borderless)
                 .help("Choose a custom time range")
                 .popover(isPresented: Bindable(selection).rangeShown, arrowEdge: .bottom) {
                     RangePopover(history: history) { selection.rangeShown = false }
@@ -44,16 +50,23 @@ struct RangeBar: View {
         .floatingCapsule()
     }
 
+    /// The quick ranges; Live is the toolbar button.
+    private var quick: [HistoryRange] { HistoryRange.allCases.filter { $0 != .live } }
+
+    /// Live and a custom window check no range.
+    private var range: Binding<HistoryRange?> {
+        Binding(get: { history.custom == nil && history.range != .live ? history.range : nil },
+                set: { range in if let range { history.range = range } })
+    }
+
     private var picker: some View {
-        Picker("Range", selection: Binding<HistoryRange?>(
-            get: { history.custom == nil && history.range != .live ? history.range : nil },
-            set: { range in if let range { history.range = range } })) {
-            ForEach(HistoryRange.allCases.filter { $0 != .live }, id: \.self) {
-                Text($0.label).accessibilityLabel($0.spoken).tag(HistoryRange?.some($0))
-            }
+        Picker("Range", selection: range) {
+            ForEach(quick, id: \.self) { Text($0.label).accessibilityLabel($0.spoken).tag(HistoryRange?.some($0)) }
         }
         .labelsHidden()
         .fixedSize()
+        .pickerStyle(.menu)
+        .buttonStyle(.borderless)
         .help("Choose the time range")
     }
 

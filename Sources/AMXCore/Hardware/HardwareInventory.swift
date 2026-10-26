@@ -16,6 +16,9 @@ public struct HardwareNode: Sendable, Identifiable, Equatable {
     public let name: String
     public let properties: [Property]
     public let children: [HardwareNode]?
+    /// A system symbol that says what the node is: on things only (sections, buses, devices, displays, volumes), never on
+    /// a set of values or a group; set at parse time.
+    public var symbol: String?
 
     public func value(_ key: String) -> String? {
         properties.first { $0.key == key }?.value
@@ -40,25 +43,63 @@ public enum HardwareInventory {
 
     private static let dropped = ["serial", "uid", "udid", "unique", "address"]
 
+    /// Each section's symbol; a node takes its section's unless it is a kind with its own (`symbol(of:)`).
+    static let sectionSymbols = [
+        "Hardware": "cpu", "Memory": "memorychip", "Graphics and Displays": "display", "NVMe": "internaldrive",
+        "Storage": "internaldrive", "Power": "battery.100", "USB": "cable.connector", "Thunderbolt/USB4": "bolt.horizontal",
+        "Bluetooth": "dot.radiowaves.left.and.right", "Network": "network", "Audio": "speaker.wave.2", "Camera": "camera",
+    ]
+    /// Ports are listed whether or not anything is plugged in: a bus with no devices under it is not shown.
+    private static let portSections: Set = ["SPUSBHostDataType", "SPThunderboltDataType"]
+    /// Devices that are paired but not connected go in one group, closed, after the connected ones.
+    private static let notConnected = "device_not_connected"
+
     public static func parse(_ json: Data) throws -> [HardwareNode] {
         guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any] else {
             throw CocoaError(.coderReadCorrupt)
         }
         return sections.compactMap { type, title in
-            let items = (root[type] as? [[String: Any]] ?? []).flatMap { nodes($0, fallback: title, parent: title) }
-            return items.isEmpty ? nil : HardwareNode(id: title, name: title, properties: [], children: items)
+            let list = (root[type] as? [[String: Any]] ?? []).filter { !portSections.contains(type) || $0["_items"] != nil }
+            let symbol = sectionSymbols[title]
+            let items = list.flatMap { nodes($0, fallback: title, parent: title, symbol: symbol) }
+            var section = HardwareNode(id: title, name: title, properties: [], children: items)
+            section.symbol = symbol
+            return items.isEmpty ? nil : section
         }
     }
 
-    /// An item with a `_name` is one node; one whose values are all dictionaries is a set of nodes named by key.
-    private static func nodes(_ item: [String: Any], fallback: String, parent: String) -> [HardwareNode] {
+    /// An item with a `_name` is one node; one whose values are all dictionaries is a set of nodes named by key. Both are
+    /// things, except a raw `_name` (`sppower_battery_information`, lower case with underscores): that, and an item with
+    /// no name ("Controller properties"), is a set of values.
+    private static func nodes(_ item: [String: Any], fallback: String, parent: String, symbol: String?) -> [HardwareNode] {
         if item["_name"] == nil, !item.isEmpty, item.values.allSatisfy({ $0 is [String: Any] }) {
-            return item.keys.sorted().map { node(named: $0, item[$0] as! [String: Any], parent: parent) }
+            return item.keys.sorted().map { node(named: $0, item[$0] as! [String: Any], parent: parent, symbol: symbol, thing: true) }
         }
-        return [node(named: item["_name"] as? String ?? fallback, item, parent: parent)]
+        return [node(named: item["_name"] as? String ?? fallback, item, parent: parent, symbol: symbol, thing: (item["_name"] as? String).map { !($0.contains("_") && $0 == $0.lowercased()) } ?? false)]
     }
 
-    private static func node(named name: String, _ item: [String: Any], parent: String) -> HardwareNode {
+    /// A Bluetooth device by its type, a display, a volume inside or outside the Mac; else the parent's symbol.
+    static func symbol(of item: [String: Any], inherited: String?) -> String? {
+        switch item["device_minorType"] as? String {
+        case "Mouse": return "computermouse"
+        case "Keyboard": return "keyboard"
+        case "Headphones": return "headphones"
+        default: break
+        }
+        if item["_spdisplays_resolution"] != nil {
+            return item["spdisplays_connection_type"] as? String == "spdisplays_internal" ? "laptopcomputer" : "display"
+        }
+        if item["mount_point"] != nil {
+            return (item["physical_drive"] as? [String: Any])?["is_internal_disk"] as? String == "yes" ? "internaldrive" : "externaldrive"
+        }
+        return inherited
+    }
+
+    /// `symbol` passes down to the things inside; the node shows it only when it is a `thing`.
+    private static func node(named rawName: String, _ item: [String: Any], parent: String, symbol inherited: String?, thing: Bool) -> HardwareNode {
+        let symbol = symbol(of: item, inherited: inherited)
+        // A built-in display is named by its type, as System Settings names it ("Color LCD" is the panel's own name).
+        let name = (item["spdisplays_display_type"] as? String).map(displayType) ?? rawName
         let id = parent + "/" + name
         var properties: [HardwareNode.Property] = []
         var children: [HardwareNode] = []
@@ -69,21 +110,39 @@ public enum HardwareInventory {
             if key.range(of: "^SP.*DataType$", options: .regularExpression) != nil, key != "SPMemoryDataType" { continue }
             switch item[key]! {
             case let list as [[String: Any]]:
-                children += list.flatMap { nodes($0, fallback: label(key), parent: id) }
+                if key == notConnected {
+                    let group = id + "/Not Connected"
+                    var node = HardwareNode(id: group, name: "Not Connected", properties: [],
+                                            children: list.flatMap { nodes($0, fallback: label(key), parent: group, symbol: symbol) })
+                    if !list.isEmpty { children.append(node) }
+                } else {
+                    children += list.flatMap { nodes($0, fallback: label(key), parent: id, symbol: symbol) }
+                }
             case let dict as [String: Any]:
-                children += nodes(dict, fallback: label(key), parent: id)
+                children += nodes(dict, fallback: label(key), parent: id, symbol: symbol)
             case let value:
                 let name = label(key)
-                var shown = text(value)
+                var shown = key == "spdisplays_display_type" ? displayType(value as? String ?? "") : text(value)
                 // A value that starts with its own key ("Vendor Apple" under "Vendor") loses the repeat.
                 if shown.count > name.count + 1, shown.lowercased().hasPrefix(name.lowercased() + " ") {
                     shown = String(shown.dropFirst(name.count + 1))
                 }
                 if key == "number_processors" { shown = processors(shown, clusters: ChipInfo.current().clusters) }
+                // system_profiler gives some display facts twice ("_spdisplays_resolution" and "spdisplays_resolution",
+                // pixels and pixel resolution): a value that an earlier row with a label word in common shows is left out.
+                if properties.contains(where: { $0.value == shown && sharesWord($0.label, name) }) { continue }
                 properties.append(.init(key: key, label: name, value: shown))
             }
         }
-        return HardwareNode(id: id, name: name, properties: properties, children: children.isEmpty ? nil : children)
+        var node = HardwareNode(id: id, name: name, properties: properties, children: children.isEmpty ? nil : children)
+        node.symbol = thing ? symbol : nil
+        return node
+    }
+
+    /// "Pixels" and "Pixel resolution" share a word; "Main" and "Online" do not.
+    private static func sharesWord(_ a: String, _ b: String) -> Bool {
+        let words = { (s: String) in s.lowercased().split(separator: " ") }
+        return words(a).contains { x in words(b).contains { $0.hasPrefix(x) || x.hasPrefix($0) } }
     }
 
     /// "proc 15:5:10:0" (total, then cores per cluster from the fastest) becomes "15 cores (5 Super, 10 Performance)".
@@ -94,6 +153,13 @@ public enum HardwareInventory {
         else { return raw }
         let parts = zip(clusters, counts.dropFirst()).map { "\($1) \($0.name)" }
         return "\(counts[0]) cores (\(parts.joined(separator: ", ")))"
+    }
+
+    /// A display's "1512 x 982 @ 120.00Hz" becomes "1512 x 982, 120 Hz"; a value without a rate stays as it is.
+    public static func resolution(_ raw: String) -> String {
+        let parts = raw.components(separatedBy: " @ ")
+        guard parts.count == 2, parts[1].hasSuffix("Hz"), let rate = Double(parts[1].dropLast(2)) else { return raw }
+        return "\(parts[0]), \(rate.formatted(.number.precision(.fractionLength(0...2)))) Hz"
     }
 
     /// A key as a row title: `_spdisplays_resolution` becomes "Resolution".
@@ -138,6 +204,13 @@ public enum HardwareInventory {
         default:
             return "\(value)"
         }
+    }
+
+    /// The system's own text for a display type ("Built-in Liquid Retina XDR Display"); the general rule for one it lacks.
+    static func displayType(_ raw: String) -> String {
+        let shown = Bundle(path: "/System/Library/SystemProfiler/SPDisplaysReporter.spreporter")?
+            .localizedString(forKey: raw, value: nil, table: nil)
+        return shown.flatMap { $0 == raw ? nil : $0 } ?? text(raw)
     }
 
     private static func stripped(_ s: String) -> (String, Bool) {

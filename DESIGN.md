@@ -8,7 +8,7 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 
 ## Principles
 
-1. **Native first.** System controls, fonts and materials with their default look. Custom drawing only where data needs it (charts, the Calendar grid, the treemap, sparklines), and then it uses system colours, fonts and hit areas so it reads as part of the system.
+1. **Native first.** System controls, fonts and materials with their default look. Custom drawing only where data needs it (charts, the Calendar grid, the treemap, sparklines, the Hardware board), and then it uses system colours, fonts and hit areas so it reads as part of the system. A drawing of a real thing looks like that thing: a system symbol where one exists (`cpu`, `memorychip`), a drawing in the symbol style only where none does. The parts of such a drawing may have a light system fill, as the clickable parts of the data they are; that is not a decorative box.
 2. **Colour is information.** Three roles, never mixed:
    - Identity: which app. Each app keeps one colour everywhere, and app colours are never red or yellow.
    - Status: yellow for a warning, red for critical, only when a value is over a rule.
@@ -33,8 +33,9 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 - One layout grid: 8 pt insets and gaps, 12 pt inside capsules, 16 pt panel corners.
 - The one primary action of a screen is prominent; other buttons use the standard style.
 - The toolbar holds the view controls in grouped capsules. Content controls that belong to the data (range bar, period strip) sit above the content, not in the toolbar.
-- Glass is for everything that floats: toolbar items, the panels, level 2 capsules, every popover and hover preview. System glass only, so Reduce Transparency and Increase Contrast work.
-- Density is compact and aligned: grids are gapless with hairline separators, rows line up, no boxes for decoration.
+- Glass is for everything that floats: toolbar items, the panels, level 2 capsules, every popover and hover preview. System glass only, so Reduce Transparency and Increase Contrast work. Glass never sits on glass: controls inside a glass capsule are borderless.
+- Density is compact and aligned: grids are gapless with hairline separators, rows line up, no boxes for decoration. Parts shown side by side share one height.
+- In a list, an icon names a thing (an app, a device, a volume), never a value or a group. Icons sit centred in one fixed-width column, and a row with none keeps the column empty, so the names at one level line up.
 
 ## Type, numbers and motion
 

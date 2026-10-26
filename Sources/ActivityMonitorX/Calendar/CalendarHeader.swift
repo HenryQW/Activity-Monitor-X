@@ -35,7 +35,8 @@ struct CalendarHeader: View {
 
     private func bar(_ form: Fit) -> some View {
         let name = model.period.rawValue.capitalized
-        // Level 2 capsules: the period, the zone and the title, then what the cells show and the steps.
+        // Level 2 capsules: the period, the zone and the title, then what the cells show and the steps. The controls have
+        // no bezel or track of their own: the capsule is their one glass (D71).
         return HStack(spacing: Layout.inset) {
             HStack(spacing: Layout.padding) {
                 period(segments: form.segments, compact: form.compact)
@@ -46,6 +47,7 @@ struct CalendarHeader: View {
             Spacer(minLength: 0)
             HStack(spacing: Layout.inset) {
                 showMenu(name: form.showName, compact: form.compact)
+                Divider().padding(.vertical, Layout.padding)
                 steps(name)
             }
             .floatingCapsule()
@@ -54,22 +56,29 @@ struct CalendarHeader: View {
 
     /// Day, Week and Month as segments, or as a pop-up.
     private func period(segments: Bool, compact: Bool) -> some View {
-        let picker = Picker("Period", selection: Binding<CalendarPeriod?>(
+        let selection = Binding<CalendarPeriod?>(
             // Hour is reached by zooming and has no segment.
             get: { model.period == .hour ? nil : model.period },
-            set: { if let period = $0 { (model.period, model.selected) = (period, nil) } })) {
-            ForEach(CalendarPeriod.strip, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) }
-        }
-        .labelsHidden()
-        .fixedSize()
-        .help("Choose the period")
+            set: { if let period = $0 { (model.period, model.selected) = (period, nil) } })
         return Group {
-            if segments { picker.pickerStyle(.segmented) } else { picker.pickerStyle(.menu).menuIndicator(compact ? .hidden : .visible) }
+            if segments {
+                CapsuleChoice(title: "Period", values: CalendarPeriod.strip, selection: selection) { Text($0.rawValue.capitalized) }
+            } else {
+                Picker("Period", selection: selection) {
+                    ForEach(CalendarPeriod.strip, id: \.self) { Text($0.rawValue.capitalized).tag(Optional($0)) }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .pickerStyle(.menu)
+                .buttonStyle(.borderless)
+                .menuIndicator(compact ? .hidden : .visible)
+            }
         }
+        .help("Choose the period")
     }
 
     private func steps(_ name: String) -> some View {
-        ControlGroup {
+        HStack(spacing: Layout.inset) {
             Button("Previous \(name)", systemImage: "chevron.left") { model.step(-1) }
                 .labelStyle(.iconOnly)
                 .disabled(!model.canStep(-1))
@@ -82,6 +91,7 @@ struct CalendarHeader: View {
                 .disabled(!model.canStep(1))
                 .help("Show the next \(name.lowercased())")
         }
+        .buttonStyle(.borderless)
         .fixedSize()
     }
 
@@ -113,6 +123,7 @@ struct CalendarHeader: View {
             // Compact forms keep the abbreviation: the difference from system time would clip. The menu and hint name the zone.
             Text(compact ? ZoneLabel.abbreviation(forced ?? system, at: Date()) : AppTime.title(of: forced))
         }
+        .buttonStyle(.borderless)
         .menuIndicator(compact ? .hidden : .visible)
         .fixedSize()
         .accessibilityLabel("Time zone")
@@ -169,6 +180,7 @@ struct CalendarHeader: View {
             if shown { Text("Show: \(CalendarView.showName(model.show, groups: groups.groups))") }
             else { Image(systemName: "line.3.horizontal.decrease") }
         }
+        .buttonStyle(.borderless)
         .menuIndicator(compact ? .hidden : .visible)
         .fixedSize()
         .accessibilityLabel("Show")

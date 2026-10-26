@@ -61,7 +61,7 @@ struct InspectorView: View {
         return Form {
             Section { Text(history.scope?.name ?? "All Apps").font(.title3.bold()).overlayScrollers() }
             SystemHealthCard(isLive: isLive)
-            Section("Top Apps") {
+            CardSection("Top Apps", summary: top.first.map { Text("\($0.app.name) \(metric.format($0.average))") }) {
                 if top.isEmpty {
                     Text(selection.search.isEmpty ? "No apps" : "No app matches the search").foregroundStyle(.secondary)
                 }
@@ -151,7 +151,7 @@ struct InspectorView: View {
                                  : "Usual: the same hours of day in the 7 days before the range.")
                         }
                     }
-                    Section(metric.label) {
+                    CardSection(metric.label) {
                         Chart {
                             // One vectorized plot, not a mark per point.
                             AreaPlot(AppSeries.closed(series, bucket: history.range.chartBucket), x: .value("Time", \.date),
@@ -178,7 +178,7 @@ struct InspectorView: View {
                         .frame(height: 110)
                     }
                     if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
-                        Section("About") {
+                        CardSection("About") {
                             LabeledContent("Name", value: entry.title)
                             if let vendor = entry.vendor { LabeledContent("Vendor", value: vendor) }
                             Text(entry.description)
@@ -188,12 +188,12 @@ struct InspectorView: View {
                         }
                     }
                     if let peak = rank.processes.max(by: { $0.peak < $1.peak }) {
-                        Section("Peak Process") {
+                        CardSection("Peak Process") {
                             LabeledContent("\(peak.name) (\(String(peak.pid)))", value: metric.format(peak.peak)).monospacedDigit()
                         }
                     }
                     if history.range != .live { LaunchHistoryCard(app: rank.app, processes: rank.processes, color: color) }
-                    Section(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
+                    CardSection("Alerts", summary: Text(events.count.formatted())) {
                         if events.isEmpty {
                             Text("No alerts").foregroundStyle(.secondary)
                         }

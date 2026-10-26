@@ -12,8 +12,11 @@ struct SystemHealthCard: View {
         let points = history.system.filter { point in span.map { $0.contains(point.bucket) } ?? true }
         let info = ProcessInfo.processInfo
         let thermal = info.thermalState.rawValue
-        Section("System Health") {
-            if !isLive, let pressure = points.map(\.pressureLevel).filter({ $0 > 0 }).max() {
+        let pressure = isLive ? nil : points.map(\.pressureLevel).filter({ $0 > 0 }).max()
+        // The worst state shown, so the closed card still warns.
+        let worst = max(pressure.map { $0 >= 4 ? 2 : $0 >= 2 ? 1 : 0 } ?? 0, thermal >= 3 ? 2 : thermal >= 2 ? 1 : 0)
+        CardSection("System Health", summary: Text(worst == 2 ? "Critical" : worst == 1 ? "Warning" : "Normal")) {
+            if let pressure {
                 row("Memory Pressure", SystemState.pressure(pressure), severity: pressure >= 4 ? 2 : pressure >= 2 ? 1 : 0)
                     .help("The highest memory pressure in the range")
                 LabeledContent("Swap Used", value: Metric.memory.format(points.map(\.swapUsed).max() ?? 0))

@@ -35,3 +35,28 @@ extension View {
             .glassEffect(.regular, in: .rect(cornerRadius: Layout.corner))
     }
 }
+
+/// A choice of a few values in a level 2 capsule, as the toolbar shows its segments: the chosen value is a pill on the
+/// capsule's glass and there is no track. A segmented picker draws its own track in every style (glass in glass), so the
+/// values are toggles in the accessory bar style; the group reads as one control with the title.
+struct CapsuleChoice<Value: Hashable, Label: View>: View {
+    let title: String
+    let values: [Value]
+    let selection: Binding<Value?>
+    @ViewBuilder let label: (Value) -> Label
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(values, id: \.self) { value in
+                Toggle(isOn: Binding(get: { selection.wrappedValue == value }, set: { if $0 { selection.wrappedValue = value } })) {
+                    label(value)
+                }
+                .toggleStyle(.button)
+            }
+        }
+        .buttonStyle(.accessoryBar)
+        .fixedSize()
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}

@@ -35,13 +35,13 @@ struct DiskInspector: View {
 
     @ViewBuilder private func details(_ volume: VolumeInfo) -> some View {
         title(volume.name)
-        Section("Space") {
+        CardSection("Space") {
             LabeledContent("Capacity", value: Metric.bytes(Double(volume.totalBytes)))
             LabeledContent("Used", value: Metric.bytes(Double(volume.used)))
             LabeledContent("Available", value: Metric.bytes(Double(volume.available)))
         }
         .monospacedDigit()
-        Section("Volume") {
+        CardSection("Volume") {
             LabeledContent("File system", value: volume.role.map { "\(volume.fileSystem.uppercased()), \($0)" } ?? volume.fileSystem.uppercased())
             LabeledContent("Mount point", value: volume.mountPoint)
             LabeledContent("Device", value: volume.bsdName.isEmpty ? "None" : volume.bsdName)
@@ -50,7 +50,7 @@ struct DiskInspector: View {
         }
         if let id = Volumes.wholeDisk(of: volume, containers: disk.containers),
            let physical = disk.disks.first(where: { $0.id == id }) {
-            Section("Disk") {
+            CardSection("Disk") {
                 LabeledContent("Name", value: physical.model ?? physical.bsdName)
                 health(physical)
             }
@@ -59,7 +59,7 @@ struct DiskInspector: View {
 
     @ViewBuilder private func details(_ physical: PhysicalDisk) -> some View {
         title(physical.model ?? physical.bsdName)
-        Section("Disk") {
+        CardSection("Disk") {
             LabeledContent("Capacity", value: Metric.bytes(Double(physical.sizeBytes)))
             LabeledContent("Device", value: physical.bsdName)
             if let name = physical.protocolName { LabeledContent("Connection", value: name) }

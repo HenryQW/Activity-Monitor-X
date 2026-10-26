@@ -14,7 +14,7 @@ struct DiskMapInspector: View {
             let path = model.path(indexPath)
             Form {
                 Section { Text(indexPath.isEmpty ? model.title : node.name).font(.title3.bold()).overlayScrollers() }
-                Section(model.selected == nil ? "Shown Folder" : "Item") {
+                CardSection(model.selected == nil ? "Shown Folder" : "Item") {
                     LabeledContent("Kind", value: Self.kind(node.kind))
                     LabeledContent("Size", value: node.kind == .refused ? "Not readable" : Metric.bytes(Double(node.size)))
                     LabeledContent("Items", value: node.items.formatted())
@@ -48,7 +48,7 @@ struct DiskMapInspector: View {
                     }
                 }
                 if let path {
-                    Section("Path") {
+                    CardSection("Path") {
                         Text(path).textSelection(.enabled)
                         HStack {
                             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }

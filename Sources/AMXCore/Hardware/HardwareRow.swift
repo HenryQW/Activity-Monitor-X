@@ -4,9 +4,11 @@ public struct HardwareRow: Identifiable, Sendable, Equatable {
     public let name: String
     public let value: String
     public let children: [HardwareRow]?
+    /// The node's symbol; nil for a property row.
+    public let symbol: String?
 
-    public init(id: String, name: String, value: String, children: [HardwareRow]?) {
-        (self.id, self.name, self.value, self.children) = (id, name, value, children)
+    public init(id: String, name: String, value: String, children: [HardwareRow]?, symbol: String? = nil) {
+        (self.id, self.name, self.value, self.children, self.symbol) = (id, name, value, children, symbol)
     }
 
     /// The toolbar search: a row whose name, or value when it has no children (a parent's value is its count), holds
@@ -27,6 +29,16 @@ public struct HardwareRow: Identifiable, Sendable, Equatable {
             }
         }
         return (keep(rows), opened)
+    }
+
+    /// Each row with the property `key` (and `value`, where given) among its children, with that property's row, in tree
+    /// order. A property row's id is its node's row id, "=" and the key.
+    public static func rows(holding key: String, value: String? = nil, in rows: [HardwareRow]) -> [(row: HardwareRow, property: HardwareRow)] {
+        rows.flatMap { row -> [(row: HardwareRow, property: HardwareRow)] in
+            let children = row.children ?? []
+            let property = children.first { $0.children == nil && $0.id.hasSuffix("=" + key) && (value == nil || $0.value == value) }
+            return (property.map { [(row, $0)] } ?? []) + Self.rows(holding: key, value: value, in: children)
+        }
     }
 
     /// The rows from the section down to the row with `id`; empty when no row has it.

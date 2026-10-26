@@ -91,7 +91,7 @@ struct CalendarInspector: View {
         case .hour: "\(day), \(start.formatted(.dateTime.hour().minute())) to \(Date(timeIntervalSince1970: cell.end).formatted(.dateTime.hour().minute()))"
         }
         Section { Text(title).font(.title3.bold()).overlayScrollers() }
-        Section("Summary") {
+        CardSection("Summary") {
             if let value = cell.value {
                 LabeledContent("Average") {
                     VStack(alignment: .trailing) {
@@ -114,10 +114,10 @@ struct CalendarInspector: View {
             }
         }
         .monospacedDigit()
-        Section(page.bucket < 3600 ? "Lines" : "Hours") {
+        CardSection(page.bucket < 3600 ? "Lines" : "Hours") {
             CalendarLinesChart(cell: cell, page: page, colors: colors)
         }
-        Section("Top Apps") {
+        CardSection("Top Apps") {
             if cell.top.isEmpty { Text("No apps").foregroundStyle(.secondary) }
             ForEach(cell.top, id: \.app) { entry in
                 LabeledContent {
@@ -146,7 +146,7 @@ struct CalendarInspector: View {
     }
 
     @ViewBuilder private func alerts(_ events: [EventMark]) -> some View {
-        Section(events.isEmpty ? "Alerts" : "Alerts (\(events.count.formatted()))") {
+        CardSection("Alerts", summary: Text(events.count.formatted())) {
             if events.isEmpty { Text("No alerts").foregroundStyle(.secondary) }
             ForEach(events.prefix(8)) { event in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -177,12 +177,12 @@ struct CalendarInspector: View {
         let first = Date(timeIntervalSince1970: span.start), last = Date(timeIntervalSince1970: span.end)
         let day = first.formatted(.dateTime.weekday(.wide).day().month(.wide))
         Section { Text("\(day), \(first.formatted(time)) to \(last.formatted(time))").font(.title3.bold()).overlayScrollers() }
-        Section("Summary") {
+        CardSection("Summary") {
             if !values.isEmpty { LabeledContent("Average", value: metric.format(values.reduce(0, +) / Double(values.count))) }
             if let peak, slots.count > 1 { LabeledContent("Peak", value: "\(metric.format(peak.value!)) at \(Date(timeIntervalSince1970: peak.start).formatted(time))") }
         }
         .monospacedDigit()
-        Section("Lines") {
+        CardSection("Lines") {
             VStack(spacing: 2) {
                 ValueLines(values: slots.map(\.value), top: page.top, status: page.levels, severities: slots.map(\.severity), lineWidth: 6)
                     .frame(height: 70)
@@ -196,7 +196,7 @@ struct CalendarInspector: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Lines of the selected time")
         }
-        Section("Top Apps") {
+        CardSection("Top Apps") {
             if _reading.wrappedValue {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let apps = _apps.wrappedValue {
@@ -249,7 +249,7 @@ struct CalendarInspector: View {
         if _reading.wrappedValue {
             Section { ProgressView().frame(maxWidth: .infinity) }
         } else if let c = _comparison.wrappedValue {
-            Section("Compared") {
+            CardSection("Compared") {
                 compared("Average", c.now.average.map(metric.format), c.then.average.map(metric.format), delta(c.now.average, c.then.average))
                 compared("Peak", c.now.peak.map(metric.format), c.then.peak.map(metric.format), delta(c.now.peak, c.then.peak))
                 if page.status != nil {
@@ -267,7 +267,7 @@ struct CalendarInspector: View {
                 }
             }
             .monospacedDigit()
-            Section(c.now.units.count > 24 || cells.count > 24 ? "By Day" : "By Hour") {
+            CardSection(c.now.units.count > 24 || cells.count > 24 ? "By Day" : "By Hour") {
                 PairBars(now: c.now.units, before: c.then.units)
                     .frame(height: 80)
                 HStack {
@@ -283,7 +283,7 @@ struct CalendarInspector: View {
                 .font(.caption2)
                 .labelStyle(.titleAndIcon)
             }
-            Section("Biggest Changes") {
+            CardSection("Biggest Changes") {
                 if c.change.up.isEmpty && c.change.down.isEmpty { Text("No changes").foregroundStyle(.secondary) }
                 ForEach(c.change.up + c.change.down, id: \.app) { change in
                     LabeledContent(change.app.name, value: (change.delta > 0 ? "+" : "-") + metric.format(abs(change.delta))).monospacedDigit()
@@ -325,7 +325,7 @@ struct CalendarInspector: View {
         let busiest = cells.max { $0.value! < $1.value! }
         let unit = page.period == .month ? "day" : page.period == .week ? "block" : "hour"
         Section { Text("\(page.period.rawValue.capitalized) Summary").font(.title3.bold()).overlayScrollers() }
-        Section(page.metric.label) {
+        CardSection(page.metric.label) {
             LabeledContent("Average", value: cells.isEmpty ? "No data"
                            : page.metric.format(cells.flatMap(\.lines).compactMap { $0 }.reduce(0, +) / Double(cells.flatMap(\.lines).compactMap { $0 }.count)))
             if let busiest {

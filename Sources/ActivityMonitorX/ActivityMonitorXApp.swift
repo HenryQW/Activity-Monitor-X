@@ -81,6 +81,7 @@ struct ActivityMonitorXApp: App {
                 .environment(diskMap)
                 .environment(hardware)
                 .environment(calendar)
+                .environment(readout)
                 .environment(settings)
                 .environment(appDelegate.preferences)
                 .task { await history.run() }

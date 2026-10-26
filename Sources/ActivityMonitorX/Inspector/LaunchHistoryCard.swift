@@ -28,7 +28,7 @@ struct LaunchHistoryCard: View {
         let runs = runs(lanes: Set(lanes), from: from, to: to)
         let launches = history.launches(of: app)
         let format = history.range.timeFormat
-        Section("Launch History") {
+        CardSection("Launch History") {
             Chart {
                 // Each lane's name above its bars, so the bars keep the pane's full width.
                 ForEach(lanes, id: \.self) { name in

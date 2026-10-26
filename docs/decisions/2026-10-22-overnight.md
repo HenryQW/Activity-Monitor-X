@@ -474,3 +474,55 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Findings:** macOS 27 hides menu item images by default; action and alert icons are set to show (SET-3). Menu bar menus follow the system appearance, not the app's Light/Dark setting (native behaviour, kept).
 - **Cost if wrong:** about 250 lines in `StatusMenu.swift`; the window popover is in git (aa33ed2).
 
+## D71: No glass in glass on level 2 (user rule)
+
+- **Goal (user):** the Calendar bar showed bezels and a segment track inside its glass capsules; "we should not use glass in glass".
+- **Probe:** every SwiftUI picker style and every `NSSegmentedControl` style draws its own track inside a glass capsule (the SDK has no borderless segment style; `borderShape` only changes corners). Pop-ups and buttons lose the bezel cleanly with `.buttonStyle(.borderless)`. Glass buttons in a `GlassEffectContainer` read as separate blue controls, unlike the toolbar.
+- **Call:** keep the level 2 capsules (D66); inside them, borderless pop-ups and buttons with system dividers, and a choice of a few values as accessory-bar toggles (`CapsuleChoice`), which show the chosen value as a pill on the glass, as the toolbar Metric control does. Fixed: Calendar bar, range bar, Space actions capsule.
+- **Not changed:** the inspector's View picker sits in the level 1 panel, as segmented controls sit in system sidebars and inspectors; the Live button tint on its toolbar item is not checked.
+- **Cost if wrong:** the period and range choices lose the segment track; `CapsuleChoice` is about 20 lines.
+
+## D70: Hardware overview as one board (user pick, HW3)
+
+- **Goal (user):** a more fun hardware depiction, "mimicking an actual motherboard is one direction".
+- **Options (board round 10):** HW1 die floorplan (S), HW2 chip package (M), HW3 the whole Mac as one board (L, needs 620 pt). Designer and main session recommended HW2.
+- **Call (user):** HW3, with HW2 as the layout under 620 pt.
+- **Rules:** use is a level in the accent colour (the app uses the accent for one-series data; selection is an outline, not a fill); macOS gives one GPU total, so one level line over neutral cells; the places of storage, connectors and battery and the count of two memory packages are invented, and the caption says "Diagram, not to scale"; one connector per connected display, not per port; the memory type only from `dimm_type`.
+- **Review (Opus):** 1 High (cluster cells were not clickable: offsets do not size the stack), 3 Medium (static work and the decoration redrawn on each 2 s reading; low space only by colour; a click under a search lost its open rows), 5 Low; all fixed in the main session.
+- **Process (user):** after a regression the user saw on Hardware, page work is no longer split across subagents.
+- **Cost if wrong:** about 650 lines in `ChipDiagram`, `HardwareBoard` and `PackageLayout`; the old chip card is in git (61d14f6).
+- **Later (user, 2026-10-26):** the board takes the full width and the package scales with it (cells, pitches and memory grow, text does not, up to 2.4 times); the caption "Diagram, not to scale…" was redundant and is gone; the memory size moved under the title and the purgeable note to the Storage hint.
+
+## D72: Live board parts and status colours on Hardware (user requests)
+
+- **Goal (user):** memory as two dynamic sticks; storage chips shaded by use, no bar; external drives; displays and battery as their real shapes, filled to brightness and charge; yellow and red at thresholds, not only the accent.
+- **Data:** memory used from `HostReader.memory()` (the Apps footer's figure); charge from `PowerReader`; brightness from the private DisplayServices call `DisplayServicesGetBrightness`, loaded at run time (nil if missing). macOS has no public brightness call. An external display answers with an error: its brightness lives in the monitor (DDC), which macOS does not read back, so it shows no fill and the hint says so. Reading it over DDC needs private I2C calls and can upset some monitors: not built.
+- **Thresholds:** the rules the app already has (system CPU rule for cores and GPU, the system's memory pressure level, low space and the free space alert); the battery's 20 % and 10 % are our choice (common low-battery levels; not checked against macOS).
+- **Fix on the way:** the low-space rule flagged any volume with less free space than the Mac's memory, so an empty 8 GB drive was "low"; that clause now applies to the startup volume only (also on the Disk screen).
+- **Cost if wrong:** one private call (`DisplayBrightness`, 20 lines); the rest is drawing in `ChipDiagram` and `HardwareBoard`.
+
+## D73: Compact toolbar and inspector cards (user pick, board round 11)
+
+- **Goal (user):** learn from a three-column reference app: compact buttons at the top, and a denser inspector.
+- **Options:** TB1 one compact capsule of icon buttons; TB2 the title inline in the bar (would undo the D66 title pill); IN1 inspector sections as collapsible cards with summaries.
+- **Call (user):** TB1 and IN1; keep the title pill.
+- **Built:** TB1 as a system `ControlGroup` with the navigation style in one toolbar item (the default style stacked the buttons); Live stays apart, since a tinted Live inside the capsule would be glass in glass. IN1 as `CardSection`, a form section whose first row is the disclosure row (an empty section put its header smaller and out of place).
+- **Correction:** the board said the toolbar's x button was Clear Selection; it is Quit for the selected app. Clear Selection is the chart's span button and stays on the chart (it clears the time span, not the app). Quit stays in the capsule; the user decides whether it moves.
+- **Cost if wrong:** about 40 lines in `Toolbar.swift` and `CardSection.swift`; sections go back to `Section` by name.
+
+## D74: Hardware board as chip glyphs and part cells (user pick, board rounds 12 to 16)
+
+- **Goal (user):** a more space-efficient board than the motherboard look (D70, D72), where the battery and memory were too big and the displays too small.
+- **Options:** round 12 motherboard layouts MB1 to MB3 (rejected: battery too big); round 13 SE1 package and part cells, SE2 one shelf, SE3 inside and connected; for memory, rounds 14 and 15 (ME1 to ME3, MF1 to MF3; MF2 kept as a backup); round 16 glyphs for cores, GPU and memory (GL1 to GL3), then three memory columns for GL1 (GL1a chips as label, GL1b two chips and the amount, GL1c one large chip).
+- **Call (user):** SE1 with GL1c: CPU cores as `cpu` symbols, GPU cores as lane blocks in the same columns, one large `memorychip` symbol under "Memory" and its percent; part cells two to a row; cells under the chip stretch to its width; the same layout at every width, with no text fallback.
+- **Built:** `ChipDiagram` draws the glyphs on one column grid (the empty column between clusters lines the GPU row up with the CPU row); the columns shrink from 17 to 9 pt to fit a narrow column. The narrow card with text details is removed. `HardwareBoard` is the chip and a `Grid` of cells in a `ViewThatFits` (side by side, else stacked). The drawn package, its buses, mounting holes and `PackageLayout` are removed. The column width is measured on the inventory table, which always takes the width it is offered.
+- **Cost if wrong:** about 400 lines in `ChipDiagram.swift` and `HardwareBoard.swift`; the earlier board is in git (87fd8f9).
+
+## D75: Inventory icons on things only, in one column (user pick)
+
+- **Goal (user):** the inventory list had icons on some rows and not others, and the names did not line up.
+- **Options:** A, Apple's rules in the tree: icons on things only, one fixed-width icon column; B, the System Information layout: a tree of things with the selected thing's values in a pane beside it.
+- **Call (user):** A. B is cleaner but replaces the Value column and needs room for a second pane, which is short beside the inspector.
+- **Built:** the parser sets a symbol only on a thing (an item with a real `_name`, or one of a set named by key); a raw `_name` and an unnamed item are sets of values. The symbol still passes down, so devices in "Not Connected" keep theirs. A section's one unnamed item that stands in for it takes the section's symbol. macOS gives no kind for a phone, so an iPhone keeps the Bluetooth symbol.
+- **Cost if wrong:** about 20 lines in `HardwareInventory.swift`, `HardwareModel.swift` and the Name column.
+

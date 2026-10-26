@@ -365,8 +365,11 @@ struct SmartStatus: View {
 extension VolumeInfo {
     var used: UInt64 { usedBytes ?? totalBytes - min(freeBytes, totalBytes) }
     var available: UInt64 { availableBytes ?? freeBytes }
-    /// Free space under 15 % of the capacity or under the Mac's memory: the bar is yellow (warning).
-    var lowSpace: Bool { Double(available) < Double(totalBytes) * 0.15 || available < ProcessInfo.processInfo.physicalMemory }
+    /// Free space under 15 % of the capacity, or on the startup volume under the Mac's memory (room to swap): the bar is
+    /// yellow (warning). A small external drive is not low because it holds less than the memory.
+    var lowSpace: Bool {
+        Double(available) < Double(totalBytes) * 0.15 || mountPoint == "/" && available < ProcessInfo.processInfo.physicalMemory
+    }
 }
 
 /// Used bytes with a bar, yellow on low space.
