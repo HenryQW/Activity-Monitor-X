@@ -46,6 +46,8 @@ struct CalendarGrid: View {
 
     private let _hover = State<Hit?>(initialValue: nil)
     private let _pointer = State<CGPoint>(initialValue: .zero)
+    /// Where the input layer starts in the Calendar's content, for the place a zoom grows from.
+    private let _inputOrigin = State<CGPoint>(initialValue: .zero)
     /// Where a drag began: the span it selects runs from there.
     private let _anchor = State<Hit?>(initialValue: nil)
     private let _dragging = State(initialValue: false)
@@ -410,6 +412,7 @@ struct CalendarGrid: View {
     private func input(_ layout: Layout) -> some View {
         Color.clear
             .contentShape(Rectangle())
+            .onGeometryChange(for: CGPoint.self) { $0.frame(in: .named(CalendarView.contentSpace)).origin } action: { _inputOrigin.wrappedValue = $0 }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let point):
@@ -435,7 +438,9 @@ struct CalendarGrid: View {
                 model.select(min(from.low, to.low), max(from.high, to.high), extending: _base.wrappedValue)
             }.onEnded { _ in (_dragging.wrappedValue, _anchor.wrappedValue, _base.wrappedValue) = (false, nil, nil) })
             .simultaneousGesture(SpatialTapGesture(count: 2).onEnded { tap in
-                if let hit = hit(at: tap.location, layout), hit.hasData { model.zoomIn(at: hit.low) }
+                if let hit = hit(at: tap.location, layout), hit.hasData {
+                    model.zoomIn(at: hit.low, from: CGPoint(x: _inputOrigin.wrappedValue.x + tap.location.x, y: _inputOrigin.wrappedValue.y + tap.location.y))
+                }
             })
             .accessibilityHidden(true)
     }

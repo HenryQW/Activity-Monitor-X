@@ -11,6 +11,7 @@ struct CalendarView: View {
     @Environment(GroupsModel.self) private var groups
     @Environment(Preferences.self) private var preferences
     @Environment(AlertsModel.self) private var alerts
+    @Environment(ToolbarFit.self) private var fit
 
     /// What a load reads; a new value starts the screen's task again. Each period has its own intervals.
     private struct Load: Equatable {
@@ -51,15 +52,20 @@ struct CalendarView: View {
         let load = Load(interval: model.interval, metric: history.metric, filter: filter, zone: preferences.zoneKey,
                         weekday: preferences.firstWeekday ?? 0, cpuRule: alerts.rules.systemCPU)
         content.frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(Motion.fade(0.28), value: model.state)
             .safeAreaBar(edge: .top, spacing: 0) {
                 CalendarHeader(title: title(model.period, model.interval), shortTitle: shortTitle(model.period, model.interval)).padding(Layout.inset)
             }
         .screenTitle("Calendar", subtitle: Text(subtitle), icon: .symbol("calendar"))
+        // Outside the title pill's toolbar, so Back sits between the Sidebar button and the pill.
+        .toolbar { ToolbarItem(placement: .navigation) { CalendarBackButton().fitBack(fit) } }
         .task(id: load) {
             await model.run(metric: load.metric, filter: load.filter, rules: alerts.rules)
         }
         .onChange(of: selection.refreshes) { Task { await model.load(metric: history.metric, filter: filter, rules: alerts.rules) } }
         .onChange(of: model.interval) { model.selected = nil }
+        // The new period is in (or failed): the zoom is over.
+        .onChange(of: model.state) { _, state in if state != .loading { model.zoom = nil } }
         .focusable()
         .focusEffectDisabled()
         .onExitCommand { model.zoomOut() }
@@ -88,17 +94,32 @@ struct CalendarView: View {
         }
     }
 
-    /// What the cells name, and the zone when it is not system time or has extra labels.
+    /// Where the screen is: "October 2026", "Week of 20 Oct", "Thu 22 Oct", "Thu 22 Oct, 3 PM".
     private var subtitle: String {
-        var parts = [Self.showName(model.show, groups: groups.groups)]
-        let zone = AppTime.zone, at = Date()
-        if preferences.timeZoneID != nil {
-            parts.append("\(ZoneLabel.abbreviation(zone, at: at)) (forced)")
-        } else if model.period != .month, !preferences.extraZoneIDs.isEmpty {
-            let extras = preferences.extraZoneIDs.compactMap(TimeZone.init(identifier:)).map { ZoneLabel.abbreviation($0, at: at) }
-            parts.append(([ZoneLabel.abbreviation(zone, at: at)] + extras).joined(separator: ", "))
+        let start = model.interval.start
+        let day = start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return switch model.period {
+        case .month: start.formatted(.dateTime.month(.wide).year())
+        case .week: "Week of " + start.formatted(.dateTime.day().month(.abbreviated))
+        case .day: day
+        case .hour: day + ", " + start.formatted(.dateTime.hour())
         }
-        return parts.joined(separator: " · ")
+    }
+
+    /// The content's coordinate space: a zoom grows from the double-click in it.
+    nonisolated static let contentSpace = "calendarContent"
+    private let _size = State(initialValue: CGSize(width: 1, height: 1))
+    /// Read here, not per call, so the transition follows a change of the setting at once.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// A zoom in grows the new period from the clicked cell (scale 0.86 to 1) as the old one grows away (to 1.12); a zoom out is
+    /// the reverse. With Reduce Motion, or with no zoom (stepping, a new metric), it is a fade.
+    private var zoomTransition: AnyTransition {
+        guard !reduceMotion, let zoom = model.zoom else { return .opacity }
+        let size = _size.wrappedValue
+        let anchor = UnitPoint(x: (zoom.from?.x ?? size.width / 2) / size.width, y: (zoom.from?.y ?? size.height / 2) / size.height)
+        return .asymmetric(insertion: .scale(scale: zoom.into ? 0.86 : 1.12, anchor: anchor).combined(with: .opacity),
+                           removal: .scale(scale: zoom.into ? 1.12 : 0.86, anchor: anchor).combined(with: .opacity))
     }
 
     @ViewBuilder private var content: some View {
@@ -118,6 +139,9 @@ struct CalendarView: View {
                     if page.period == .month { CalendarTiles(page: page).padding(.horizontal) }
                     CalendarGrid(page: page, footer: footer)
                 }
+                .coordinateSpace(.named(Self.contentSpace))
+                .onGeometryChange(for: CGSize.self, of: \.size) { _size.wrappedValue = CGSize(width: max(1, $0.width), height: max(1, $0.height)) }
+                .transition(zoomTransition)
             }
         }
     }
@@ -178,5 +202,21 @@ private struct CalendarTiles: View {
             Text(title).font(.caption).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The standard toolbar Back: one level up with the parent's selection. Always there on this screen and disabled at Month,
+/// so nothing appears or moves.
+private struct CalendarBackButton: View {
+    @Environment(CalendarModel.self) private var model
+
+    var body: some View {
+        let wider = model.widerName
+        let hint = wider.map { "Go back to \($0)" } ?? "Month is the widest view"
+        Button("Back", systemImage: "chevron.left") { model.zoomOut() }
+            .labelStyle(.iconOnly)
+            .disabled(wider == nil)
+            .help(hint)
+            .accessibilityHint(hint)
     }
 }

@@ -11,13 +11,12 @@ struct CalendarHeader: View {
     let shortTitle: String
 
     /// What a form keeps of the bar. The first form that fits the column is shown, so nothing is cut: the title shortens,
-    /// then goes (the title pill and Back name the period), then Show is an icon, then the period is a pop-up, then Back's
-    /// slot narrows (its name truncates inside it) to the arrow alone.
+    /// then goes (the title pill names the period), then Show is an icon, then the period is a pop-up, then the pop-ups
+    /// lose their indicator.
     private struct Fit {
         var title: String?
         var showName = true
         var segments = true
-        var back: CGFloat = 124
         /// Pop-ups lose their indicator.
         var compact = false
     }
@@ -29,31 +28,15 @@ struct CalendarHeader: View {
             bar(Fit())
             bar(Fit(showName: false))
             bar(Fit(showName: false, segments: false))
-            bar(Fit(showName: false, segments: false, back: 80, compact: true))
-            bar(Fit(showName: false, segments: false, back: 16, compact: true))
+            bar(Fit(showName: false, segments: false, compact: true))
         }
         .frame(maxWidth: .infinity)
     }
 
     private func bar(_ form: Fit) -> some View {
         let name = model.period.rawValue.capitalized
-        // Level 2 capsules: Back, then the period, the zone and the title, then what the cells show and the steps.
+        // Level 2 capsules: the period, the zone and the title, then what the cells show and the steps.
         return HStack(spacing: Layout.inset) {
-            // The slot stays in Month, hidden, so the strip does not move; the widest name is "Week of 20 Oct".
-            let wider = model.widerName
-            Button { model.zoomOut() } label: {
-                Group {
-                    if form.back < 40 { Image(systemName: "chevron.left") }
-                    else { Label(wider ?? "Week of 20 Oct", systemImage: "chevron.left").lineLimit(1).truncationMode(.tail) }
-                }
-                .frame(width: form.back, alignment: .leading)
-            }
-            .buttonStyle(.glass)
-            .opacity(wider == nil ? 0 : 1)
-            .disabled(wider == nil)
-            .accessibilityHidden(wider == nil)
-            .accessibilityLabel("Back to \(wider ?? "")")
-            .help(wider.map { "Go back to \($0)" } ?? "")
             HStack(spacing: Layout.padding) {
                 period(segments: form.segments, compact: form.compact)
                 zoneMenu(compact: form.compact)

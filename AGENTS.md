@@ -32,7 +32,8 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - `ViewThatFits` does not work inside toolbar items; measure width instead.
 - SwiftUI `.inspector` grows the window; the inspector is an in-content pane (ADR 0007).
 - In agent worktrees plain `git` may be refused; use `/usr/bin/git`.
-- A `MenuBarExtra` alone does not keep a SwiftUI app running: `applicationShouldTerminateAfterLastWindowClosed` returns false while the item shows.
+- A status item alone does not keep a SwiftUI app running: `applicationShouldTerminateAfterLastWindowClosed` returns false while the item shows.
+- macOS 27 hides menu item images by default; set `preferredImageVisibility = .visible` where an icon must show (D69).
 - Notifications and login items need the app run from its bundle with the signing identifier equal to the bundle ID; dev builds (other ID) have both off.
 - `windowToolbarStyle` is ignored on the `Settings` scene; Liquid Glass on toolbar, sidebar and popovers is automatic.
 

@@ -85,6 +85,8 @@ struct TimelineView: View {
                              shareTotal: group.map { _ in ranking.reduce(0) { $0 + $1.average } }, live: isLive, hover: hover)
                         .equatable()
                 }
+                // Live and a range are different charts: the identity makes Start and Pause Live cross-fade, not morph.
+                .id(isLive)
                 // The table scrolls under the footer, and its last row can scroll clear of it.
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     if footer {
@@ -100,8 +102,11 @@ struct TimelineView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Without the chart the table scrolls under the range bar.
         .safeAreaBar(edge: .top, spacing: 0) { RangeBar() }
-        // Start Live and Pause Live fade from one chart to the other instead of a jump.
-        .animation(.easeInOut(duration: 0.3), value: isLive)
+        // Start Live, Pause Live and a new range, metric or group fade from one chart to the next instead of a jump: the old
+        // chart fades out as the new one fades in, and the marks never interpolate (`.id(isLive)` makes the two Live states
+        // separate charts).
+        .animation(Motion.fade(), value: isLive)
+        .animation(Motion.fade(), value: isLive ? live.state : history.state)
         .screenTitle(title ?? "Apps", subtitle: subtitle(ranking, shown: shown),
                      icon: focus.map(TitleIcon.app) ?? group.map { .symbol($0.symbol, $0.color.color) } ?? .symbol("square.grid.2x2"))
         // A span hidden with the chart would rank the table for a time nobody sees.

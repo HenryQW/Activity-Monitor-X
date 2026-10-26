@@ -6,6 +6,8 @@ import SwiftUI
 @Observable @MainActor
 final class ToolbarFit {
     var pill: CGFloat = 0
+    /// Calendar's Back button, between the Sidebar button and the pill; 0 on other screens.
+    var back: CGFloat = 0
     /// The segments' ideal width, laid out off screen for the metrics now listed (`count` of them).
     var ideal: CGFloat = 0
     var count = 0
@@ -20,6 +22,8 @@ final class ToolbarFit {
     /// From the detail's leading edge to the title pill: the Sidebar button and its gaps, plus the 7 pt by which the
     /// segments' centre sits left of the detail's centre (measured).
     static let leading: CGFloat = 59
+    /// The space between the Back button and its neighbours (to measure).
+    static let backGap: CGFloat = 8
     /// What the system adds to the item widths to reach the window edge: the trailing inset, and the space of each capsule.
     static let trailingInset: CGFloat = 10
     static let perItem: CGFloat = 4
@@ -35,7 +39,7 @@ final class ToolbarFit {
     func need(searching: Bool) -> CGFloat {
         let widths = Array(items.values) + (searching ? [Self.searchField] : [])
         let trailing = widths.reduce(0, +) + Self.perItem * CGFloat(widths.count) + Self.trailingInset - 7
-        return segments + 2 * (max(trailing, Self.leading + pill) + Self.gap)
+        return segments + 2 * (max(trailing, Self.leading + (back > 0 ? back + Self.backGap : 0) + pill) + Self.gap)
     }
 
     func compact(width: CGFloat, searching: Bool, was: Bool) -> Bool {
@@ -48,5 +52,11 @@ extension View {
     func fitItem(_ id: String, _ fit: ToolbarFit) -> some View {
         onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { if abs((fit.items[id] ?? 0) - $0) >= 1 { fit.items[id] = $0 } }
             .onDisappear { fit.items[id] = nil }
+    }
+
+    /// Reports Calendar's Back button width to `ToolbarFit`, and clears it when the button leaves the toolbar.
+    func fitBack(_ fit: ToolbarFit) -> some View {
+        onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { if abs(fit.back - $0) >= 1 { fit.back = $0 } }
+            .onDisappear { fit.back = 0 }
     }
 }

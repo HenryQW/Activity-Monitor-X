@@ -48,6 +48,10 @@ struct ActivityMonitorXApp: App {
         }
         // App level, not the window's .task: the badge and notifications keep up with the window closed.
         Task { await alerts.run() }
+        // Runs while the menu bar item is hidden too; two cheap reads every 5 s.
+        Task { [readout] in await readout.run() }
+        appDelegate.statusMenu = StatusMenu(client: live.client, readout: readout, alerts: alerts, history: history,
+                                            selection: selection, preferences: appDelegate.preferences)
     }
 
     /// The 228 KB glossary decodes off the main actor; nil without a bundle (`swift run`).
@@ -101,21 +105,6 @@ struct ActivityMonitorXApp: App {
             ProcessCommands(selection: selection)
         }
 
-        MenuBarExtra(isInserted: Bindable(appDelegate.preferences).menuBarShown) {
-            MenuBarContent(client: live.client)
-                .environment(readout)
-                .environment(alerts)
-                .environment(history)
-                .environment(selection)
-        } label: {
-            MenuBarLabel()
-                .environment(readout)
-                .environment(alerts)
-                .environment(appDelegate.preferences)
-                .environment(selection)
-        }
-        .menuBarExtraStyle(.window)
-
         Settings {
             SettingsView()
                 .environment(settings)
@@ -128,6 +117,8 @@ struct ActivityMonitorXApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = Preferences()
+    /// Kept here: menu items hold their target weakly.
+    var statusMenu: StatusMenu?
 
     func applicationWillFinishLaunching(_ notification: Notification) { preferences.applyAppearance() }
 

@@ -25,6 +25,14 @@ struct AppTable: View {
     /// Row positions (apps and processes) while the order holds; nil while the table sorts.
     private let _held = State<[Row.ID: Int]?>(initialValue: nil)
     private let _showIdle = State(initialValue: false)
+    /// Set by a quiet toggle, whose rows change when the reload ends; the next row change then animates, or none within 10 s (D67).
+    private let _afterQuiet = State(initialValue: false)
+    private let _quietReset = State<Task<Void, Never>?>(initialValue: nil)
+    /// An app to scroll to once its row exists: a reveal can change the range first.
+    private let _pendingScroll = State(initialValue: false)
+    private let _scrollReset = State<Task<Void, Never>?>(initialValue: nil)
+    /// The table's own click is changing the selected app: it is already in view, so no scroll.
+    private let _fromTable = State(initialValue: false)
     /// The app whose Trend sparkline is under the pointer and the pointer's place in the table; the preview shows after a
     /// short delay (`_sparkShown`), as a pointer crossing the column must not flash one per row.
     private let _spark = State<(app: AppKey, point: CGPoint)?>(initialValue: nil)
@@ -65,6 +73,7 @@ struct AppTable: View {
         let details = AppKey.details(for: ranking.map(\.app))
         // One y scale per metric: 0 to the largest value in view, so rows compare with each other.
         let top = ranking.compactMap { sparklines[$0.app]?.max() }.max() ?? 1
+        let ids = rows.map(\.id)
         let byID = Dictionary(rows.flatMap { [$0] + $0.processes }.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let selected = Binding<Row.ID?>(
             get: {
@@ -81,6 +90,7 @@ struct AppTable: View {
                 // The idle row is a button, not a selection.
                 guard id != Row.idleID else { return }
                 let row = id.flatMap { byID[$0] }
+                if row?.app != selection.app { _fromTable.wrappedValue = true }
                 // App first: changing the app clears the process.
                 selection.app = row?.app
                 selection.process = row?.process
@@ -208,9 +218,40 @@ struct AppTable: View {
             .onChange(of: _sortOrder.wrappedValue) { _, order in
                 if _held.wrappedValue != nil { _held.wrappedValue = Self.positions(self.rows(sortedBy: order, idle: idle)) }
             }
+            // Rows move only for a user action: a sort, a pin, opening an app, the idle row. Live launches, quits
+            // and ticks change them with no animation (D67).
+            .animation(Motion.smooth(0.25), value: UserChange(
+                sort: _sortOrder.wrappedValue,
+                pinned: selection.pinned, expanded: _expanded.wrappedValue, idle: _showIdle.wrappedValue))
+            .animation(_afterQuiet.wrappedValue ? Motion.smooth(0.25) : nil, value: ids)
+            .onChange(of: history.hideQuietSystem) {
+                _quietReset.wrappedValue?.cancel()
+                _afterQuiet.wrappedValue = true
+                _quietReset.wrappedValue = Task {
+                    guard (try? await Task.sleep(for: .seconds(10))) != nil else { return }
+                    _afterQuiet.wrappedValue = false
+                }
+            }
+            .onChange(of: ids) {
+                _afterQuiet.wrappedValue = false
+                scrollToPending(proxy, rows: byID, selected: selected.wrappedValue)
+            }
             // Sorting again can move the selected row out of view.
             .onChange(of: held == nil) { _, sorting in
-                if sorting, let id = selected.wrappedValue { Task { proxy.scrollTo(id) } }
+                if sorting, let id = selected.wrappedValue { Task { scroll(proxy, to: id) } }
+            }
+            // An app revealed from Alerts, Calendar, a preview or the inspector comes into view.
+            .onChange(of: selection.app) {
+                _scrollReset.wrappedValue?.cancel()
+                _pendingScroll.wrappedValue = !_fromTable.wrappedValue && selection.app != nil
+                _fromTable.wrappedValue = false
+                guard _pendingScroll.wrappedValue else { return }
+                scrollToPending(proxy, rows: byID, selected: selected.wrappedValue)
+                // The row may come with a reload; a reveal that finds none in 5 s is dropped.
+                _scrollReset.wrappedValue = Task {
+                    guard (try? await Task.sleep(for: .seconds(5))) != nil else { return }
+                    _pendingScroll.wrappedValue = false
+                }
             }
             .task(id: _spark.wrappedValue?.app) {
                 _sparkShown.wrappedValue = nil
@@ -232,6 +273,25 @@ struct AppTable: View {
                 }
             }
         }
+    }
+
+    /// The user's row changes: each animates the rows it moves, adds or removes.
+    private struct UserChange: Equatable {
+        let sort: [KeyPathComparator<Row>]
+        let pinned: [AppKey]
+        let expanded: Set<Row.ID>
+        let idle: Bool
+    }
+
+    /// A short glide, or a jump with Reduce Motion or Low Power Mode.
+    private func scroll(_ proxy: ScrollViewProxy, to id: Row.ID) {
+        withAnimation(Motion.smooth(0.3)) { proxy.scrollTo(id) }
+    }
+
+    private func scrollToPending(_ proxy: ScrollViewProxy, rows: [Row.ID: Row], selected: Row.ID?) {
+        guard _pendingScroll.wrappedValue, let id = selected, rows[id] != nil else { return }
+        _pendingScroll.wrappedValue = false
+        scroll(proxy, to: id)
     }
 
     /// The pointer in window points from the top left: a table cell cannot name the table's space.

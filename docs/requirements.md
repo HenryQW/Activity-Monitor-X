@@ -25,7 +25,7 @@ Rules:
 - **WIN-8** (user) Search and the Inspector button are on every screen and work on what the screen lists (D50).
 - **WIN-9** (user) Every icon and button has a hover hint (D26).
 - **WIN-10** (user) No toolbar item goes into the overflow: Metric shows its segments while the detail width fits the title pill, the segments and the item capsules (measured, 16 pt hysteresis), else a pop-up that names the metric (D21, D48, D58, D66).
-- **WIN-11** (user) Apps, pinned apps, groups and Disk have the range bar as a floating glass capsule at the top of the content column, as wide as its content; Calendar, Alerts and the other System screens do not. The time range is not in the toolbar. As the column narrows, the window text goes first, then the segments become a pop-up. The Calendar bar fits any column width the same way: its title shortens, then goes; Show becomes an icon, the period a pop-up, Back's label shrinks to the arrow; ‹ Today › stays whole; nothing is clipped (D58, D66).
+- **WIN-11** (user) Apps, pinned apps, groups and Disk have the range bar as a floating glass capsule at the top of the content column, as wide as its content; Calendar, Alerts and the other System screens do not. The time range is not in the toolbar. As the column narrows, the window text goes first, then the segments become a pop-up. The Calendar bar fits any column width the same way: its title shortens, then goes; Show becomes an icon, then the period a pop-up; ‹ Today › stays whole; nothing is clipped (D58, D66).
 - **WIN-12** (user) The toolbar groups its items into capsules; Quit and Info are one action group; the other view options are in a More menu (D60).
 - **WIN-13** (user) A floating glass footer across the content column shows the system values of the metric now and in the range; the table scrolls under it; totals from bucket means read "About" (D60, D66).
 - **WIN-14** (user) Hover hints and action labels say the action and the result where space permits (D60).
@@ -46,7 +46,7 @@ Rules:
 - **INS-6** (user) With nothing selected, Calendar, Hardware and Disk show a short summary of the screen; the Calendar alert count comes from the history of the period (D50, D60).
 - **INS-7** (user) A click on a Launch History run or an inspector alert selects that time on the chart; Launch History shows runs as bars, each also an accessibility button (D60).
 - **INS-8** (user) An action row under the header: Pin, Show in Finder, Alert Rules…, Quit…; Force Quit is in the Quit confirmation (D60).
-- **INS-9** (user) Live numbers (inspector Average and Peak, popover gauges) roll to the new value; no animation with Reduce Motion (D60).
+- **INS-9** (user) Inspector Average and Peak roll to the new value only after a change the user made (app, span); a Live tick swaps the number with no animation; the popover gauges do not animate (D60, D67).
 
 ## COL: Colours and chart
 
@@ -62,8 +62,8 @@ Rules:
 
 ## SCR: Screens
 
-- **SCR-1** (user) Calendar: Day, Week and Month cells, no Year view. Double-click zooms Month to Week to Day to Hour; Escape, the period strip and View > Zoom Out (⌘[) zoom out; View > Zoom In is ⌘]. A Back button at the start of the Calendar bar (its space kept in Month, so the strip never moves) names the wider period ("October", "Week of 20 Oct", "Thu 22") and returns to it with its selection; the mouse back button and a swipe do the same (D38, D63).
-- **SCR-2** (user) Energy: a live band diagram from the power sources to the top 5 apps and Other. A click on an app selects it and opens it into its top processes and a process Other (the app's watts by each process's share); a second click folds it; one app is open at a time (D47, D58).
+- **SCR-1** (user) Calendar: Day, Week and Month cells, no Year view. Double-click zooms Month to Week to Day to Hour; Escape, the period strip and View > Zoom Out (⌘[) zoom out; View > Zoom In is ⌘]. A Back button in the toolbar (chevron only, between the Sidebar button and the title pill) returns one level up with its selection; it is always there on Calendar and disabled in Month, so nothing appears or moves; its hint names the result ("Go back to October"). The title pill's subtitle names where you are ("Week of 20 Oct"). The mouse back button and a swipe do the same (D38, D63, D66).
+- **SCR-2** (user) Energy: a live band diagram from the power sources to the top 5 apps and Other. A click on an app selects it and opens it into its top processes and a process Other (the app's watts by each process's share); a second click folds it; one app is open at a time. The bands animate only after a user change (open or fold, keep or remove, sort); a Live tick swaps them (D47, D58, D67).
 - **SCR-3** (user) Sidebar items reorder by drag inside their section (D28).
 - **SCR-4** (user) Energy: a right-click on an app has Show in Inspector, Show in Apps, Keep in Flow or Remove from Flow, Pin or Unpin, and Colour; on a process, Show in Inspector (D58).
 - **SCR-5** (user) Energy: a kept app has its own band while it runs, also outside the top 5; Sort (Watts or Name, stored, Watts by default) orders the app bands, with Other last (D58).
@@ -92,13 +92,23 @@ Rules:
 - **CAL-12** (user) The Month, Week and Day grids fit the content column at every width and never run under the inspector: cells shrink and drop detail by width (busiest app name, its peak, the counts, the mean and "No data"); the day number or hour and the lines stay (D66).
 - **COL-10** (user) Every floating panel, capsule, popover and hover preview, whatever its size, is Liquid Glass (D65, D66).
 
+## MOT: Motion
+
+- **MOT-1** (user) One helper decides every animation: `.smooth` only, 0.15 to 0.3 s, no bounce, interruptible; frequent actions (sidebar clicks, hover, Live ticks, Calendar steps) get no added motion; with Reduce Motion or Low Power Mode a move, scale or glass morph becomes a short fade or a cut (D67).
+- **MOT-2** (user) A range change keeps the old chart until the new data is ready (a spinner only after 0.5 s), then cross-fades once; Start and Pause Live cross-fade; chart marks never interpolate (D67).
+- **MOT-3** (user) Calendar zoom grows the new period out of the double-clicked point, and zoom out shrinks back to the point that level began from; with Reduce Motion a fade (D67).
+- **MOT-4** (user) Pinning and unpinning a sidebar row, and an alert coming in, dismissed or restored, fade (0.2 s); a search does not animate the list (D67).
+- **MOT-5** (user) Footer figures roll to the new value only after a change the user made (metric, range, span), once its data has loaded; a Live tick, a reload of the same range and the app's own readings swap with no animation (D67).
+- **MOT-6** (user) App and process rows animate in, out and to new places (0.25 s) only for a user action: sort, pin, opening an app, the idle row, the Hide Quiet toggle. Typing in search, Live launches, quits and value ticks change rows with no animation (D67).
+- **MOT-7** (user) Revealing an app from outside the table (Alerts, Calendar, a preview, the inspector) and sorting scroll its row into view with a 0.3 s smooth animation; with Reduce Motion or Low Power Mode the view jumps (D67).
+
 ## SET: Settings and menu bar item
 
 - **SET-1** (user) Settings > General has "Window opens with" and "Time range at open" (D48, D58).
 - **SET-2** (user) Settings > General > Appearance: System, Light, Dark (D27).
-- **SET-3** (user) The menu bar item shows a CPU sparkline; its menu actions have icons in one column, so the titles line up (D25, D54, D58).
+- **SET-3** (user) The menu bar item shows a CPU sparkline. Its menu is a real system menu: every row has the native highlight, keyboard navigation, type-to-select and VoiceOver, with no custom row component or hover fill. Every action and alert row shows its icon, also on macOS 27, where menus hide icons by default; each row has a hover hint that says its action (D25, D54, D58, D68, D69).
 - **SET-4** (user) Settings > Alerts "Banners for": Critical Only (default) or All Alerts; warnings arrive passive (D60).
-- **SET-5** (user) The menu bar item adds a template warning glyph while an unread alert exists; the popover shows that alert on top and CPU and Memory Pressure as gauges with the number centred; the popover CPU sparkline is yellow over the system CPU warning level (SET-7). System CPU alerts follow the same glyph and passive rules (D60, D63).
+- **SET-5** (user) The menu bar item adds a template warning glyph while an unread alert exists. The menu shows, from the top: CPU and Memory Pressure as gauges with the number centred, in one row with no highlight; the newest unread alert; Top Apps (app icon, name, CPU and memory in right-aligned columns); Recent Alerts (severity symbol, subject, message and time below). Each gauge ring is tinted by level, green normal, yellow warning, red critical (Memory Pressure by the system's pressure level, CPU by the system CPU rule, green when the rule is off). A Top Apps row opens Apps with that app selected. The menu CPU sparkline is yellow over the system CPU warning level (SET-7). Live top apps are read from the helper only while the menu is open. The menu follows the system appearance, as menu bar menus do. System CPU alerts follow the same glyph and passive rules (D60, D63, D69).
 - **SET-6** (user) Settings > General has First day of week, "Follow System" by default (D63).
 - **SET-7** (user) Settings > Alerts has a System CPU rule: CPU of all cores, warning 70 % and critical 90 % held for 5 min by default, editable, on or off; it names the top app as a likely cause (D63).
 - **SET-8** (user) Settings > General has a Terminal pop-up (installed terminal apps, default Terminal) used by Open in Terminal (D64).

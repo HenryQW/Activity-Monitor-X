@@ -121,8 +121,11 @@ final class CalendarModel {
     /// cells hold bars (a line each) and these are the starts of the first and last selected bar. A period without them
     /// shows none.
     var selected: ClosedRange<Double>?
-    /// The periods left by zooming in, with their anchor and selection, for Back.
-    private var trail: [(period: CalendarPeriod, anchor: Date, selected: ClosedRange<Double>?)] = []
+    /// A zoom the content animates: its direction, and where it grows from (the double-click in the content; nil is the middle).
+    /// `CalendarView` clears it once the new period shows (or fails), so a later reload does not scale.
+    var zoom: (into: Bool, from: CGPoint?)?
+    /// The periods left by zooming in, with their anchor, selection and the point the zoom grew from, for Back.
+    private var trail: [(period: CalendarPeriod, anchor: Date, selected: ClosedRange<Double>?, point: CGPoint?)] = []
     /// The usual total by weekday and hour; nil until read, and with too little history.
     private(set) var usual: CalendarUsual?
 
@@ -166,22 +169,29 @@ final class CalendarModel {
     }
 
     /// Opens the finer period that starts at `start` (a click twice on a cell); nothing at Hour.
-    func zoomIn(at start: Double) {
+    func zoomIn(at start: Double, from point: CGPoint? = nil) {
         guard let deeper = period.zoomedIn else { return }
-        open(deeper, at: start)
+        open(deeper, at: start, from: point)
     }
 
-    /// Opens `period` around `start`, for example the hour of a line.
-    func open(_ period: CalendarPeriod, at start: Double) {
-        trail.append((self.period, anchor, selected))
+    /// Opens `period` around `start`, for example the hour of a line. It grows from `point` in the content, else from the middle.
+    func open(_ period: CalendarPeriod, at start: Double, from point: CGPoint? = nil) {
+        startZoom(into: true, from: point)
+        trail.append((self.period, anchor, selected, point))
         (anchor, self.period, selected) = (Date(timeIntervalSince1970: start), period, nil)
+    }
+
+    private func startZoom(into: Bool, from point: CGPoint?) {
+        zoom = (into, point)
     }
 
     /// Back to the wider period; nothing at Month. It restores the period, anchor and selection that were left, if the
     /// shown period is still inside them, else it opens the wider period around the one shown.
     func zoomOut() {
         guard let wider = period.zoomedOut else { return }
-        if let left = trail.popLast(), left.period == wider, wider.interval(containing: left.anchor, calendar: calendar).contains(anchor) {
+        let left = trail.popLast()
+        startZoom(into: false, from: left?.point)
+        if let left, left.period == wider, wider.interval(containing: left.anchor, calendar: calendar).contains(anchor) {
             (anchor, period, selected) = (left.anchor, wider, left.selected)
         } else {
             trail.removeAll()
@@ -205,7 +215,8 @@ final class CalendarModel {
     func run(metric: Metric, filter: CalendarFilter, rules: AlertRules) async {
         if let page, page.interval == interval, page.metric == metric {
             guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
-        } else {
+        } else if page?.period != period || page?.metric != metric {
+            // A zoom or a new metric swaps the content through the spinner; a step to the next or previous period just swaps the cells.
             state = .loading
         }
         await load(metric: metric, filter: filter, rules: rules)

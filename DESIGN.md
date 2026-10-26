@@ -39,7 +39,10 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 ## Type, numbers and motion
 
 - System text styles only. Numbers that change use monospaced digits.
-- Motion explains a change (a number rolls, Live fades in, energy flows) and never decorates. Chart marks and readouts do not move. Reduce Motion turns motion off.
+- Motion explains a rare change the user caused (a zoom, a panel, a range, a pin, a dismiss) and never decorates. A frequent action gets no added motion: sidebar clicks, hover, Live ticks, Calendar steps.
+- Numbers roll only after a change the user made; a Live tick swaps the number. Chart marks and readouts do not move.
+- Curves are the system's smooth spring, short, with no bounce. Every animation can be interrupted; nothing makes the user wait.
+- Reduce Motion turns a move, a scale or a glass morph into a short fade or a cut.
 
 ## Voice
 

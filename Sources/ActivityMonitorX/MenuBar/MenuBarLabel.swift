@@ -19,7 +19,7 @@ final class MenuBarReadout {
 
     /// Nil until the second sample: CPU needs two.
     private(set) var percents: Percents?
-    /// The last 60 CPU readings, oldest first: 5 min at the 5 s tick. The popover shows the same buffer.
+    /// The last 60 CPU readings, oldest first: 5 min at the 5 s tick. The menu shows the same buffer.
     private(set) var cpuHistory: [Double] = []
 
     func run() async {
@@ -36,25 +36,34 @@ final class MenuBarReadout {
 }
 
 /// CPU and memory pressure in the menu bar; "…" until the first real reading, never 0 %. A warning glyph shows only
-/// while an unread alert exists; it is part of the template image, so it has no colour (D25).
+/// while an unread alert exists; it is part of the template image, so it has no colour (D25). It draws over the status
+/// button, which it sizes and names.
 struct MenuBarLabel: View {
+    let menu: StatusMenu
     @Environment(MenuBarReadout.self) private var readout
     @Environment(AlertsModel.self) private var alerts
     @Environment(Selection.self) private var selection
     @Environment(Preferences.self) private var preferences
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         let p = readout.percents
         let cpu = p.map { "\($0.cpu)%" } ?? "…", pressure = p.map { "\($0.pressure)%" } ?? "…"
         let unread = alerts.unread > 0
+        let spoken = (p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
+            + (unread ? ", unread alert" : "")
         content(cpu: cpu, pressure: pressure, unread: unread)
-            .accessibilityLabel((p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
-                + (unread ? ", unread alert" : ""))
-            // Runs while the item is hidden too (Task 0 probe 3); two cheap reads every 5 s.
-            .task { await readout.run() }
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { menu.item.length = $0 }
+            .accessibilityHidden(true)
+            .onChange(of: spoken, initial: true) { menu.item.button?.setAccessibilityLabel(spoken) }
             // The label lives for the app's whole life, so the menu bar and notifications can reopen a closed window.
-            .onAppear { selection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() } }
+            .onAppear {
+                selection.openMain = { [openWindow] in openWindow(id: "main"); NSApp.activate() }
+                menu.openSettings = openSettings
+            }
     }
 
     @ViewBuilder private func content(cpu: String, pressure: String, unread: Bool) -> some View {

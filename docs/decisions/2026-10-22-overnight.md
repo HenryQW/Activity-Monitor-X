@@ -452,3 +452,25 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **System limits:** the sidebar stays the system's (no inset API); the inspector starts below the toolbar row (a full-height panel puts toolbar items glass on glass); level 2 uses regular glass (clear glass made footer figures unreadable); Space capsules sit above the split view (AppKit panes take no safe area bar).
 - **Costs:** Metric becomes a pop-up below 1050 pt (was 840) to leave room for a 240 pt title; inspector scroll bars ignore the system "Always" setting; supersedes DESIGN.md "panes use a standard material".
 - **Reviews:** Opus review found 2 High (docs not updated; scroller token missed rebuilt views) and 5 more; all fixed.
+
+## D67: Motion follows Apple's guidance (user pick)
+
+- **Goal (user):** subtle animation, not overdone; "follow Apple's advice".
+- **Sources (fetched 2026-10-24):** HIG Motion (purposeful, optional, brief, cancellable; avoid motion on frequent interactions; no macOS durations); HIG Accessibility (Reduce Motion: fades instead of moves and scales, tighter springs, no blur animation); SwiftUI SDK (`.smooth` bounce 0, `.snappy` bounce 0.15, default 0.5 s). The 0.15 to 0.3 s band is our choice.
+- **Call:** one `Motion` helper; built: chart cross-fade on range change and Live, Calendar zoom from the click point, pin and alert fades, Energy bands only on user changes. Numbers no longer roll on Live ticks (changes P9, INS-9). Not built: screen-switch and hover motion (frequent). Later, on the user's go (2026-10-26): footer roll, table rows and scroll to row, all only after user changes, and Low Power Mode as a second off switch.
+- **Cost:** for about 0.1 s after a range change the old chart shows against the new range.
+
+## D68: Menu bar popover uses system components only (user rule)
+
+- **User rules:** reuse system components, no custom ones; the dials must show their level by colour.
+- **Call:** the custom hover row was removed; rows are plain system buttons. A probe found no system button style that gives a hover highlight in a window-style menu bar popover (`.accessoryBarAction` and `List` rows have a resting fill; the others show none). The dials stay system `Gauge`s, tinted green, yellow, red by level (Memory Pressure: the system's level, as macOS shows it; CPU: the system CPU rule).
+- **Open:** the only fully system way to get native hover, keyboard and highlight is a real menu (`.menuBarExtraStyle(.menu)`), which cannot show dials or the sparkline. User decision.
+
+## D69: The menu bar item opens a real system menu (user pick)
+
+- **Goal (user):** hover feedback on menu rows with system components only (D68 open item).
+- **Options:** keep the window popover with no hover; a SwiftUI `.menu` style (no gauges); an `NSStatusItem` with an `NSMenu` whose first item hosts the gauges as a view.
+- **Call (user):** the `NSMenu`. Native highlight, keyboard, type-to-select and VoiceOver on every row; the gauges and sparkline stay in the first item; live top apps poll only while the menu is open.
+- **Findings:** macOS 27 hides menu item images by default; action and alert icons are set to show (SET-3). Menu bar menus follow the system appearance, not the app's Light/Dark setting (native behaviour, kept).
+- **Cost if wrong:** about 250 lines in `StatusMenu.swift`; the window popover is in git (aa33ed2).
+

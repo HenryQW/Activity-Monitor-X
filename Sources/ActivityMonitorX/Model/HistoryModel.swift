@@ -69,8 +69,16 @@ final class HistoryModel {
         let back = shown == .live && range == beforeLive.range && custom == beforeLive.custom
         (shown, self.custom) = (range, custom)
         span = nil
-        if range != .live && !back { state = .loading }
         reload()
+        if range != .live && !back { spinnerIfSlow() }
+    }
+    /// The data on screen stays while a new range loads, so the chart cross-fades once; a load slower than 0.5 s shows the spinner.
+    private func spinnerIfSlow() {
+        let generation = generation
+        Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            if generation == self.generation, loading != nil, state == .ready { state = .loading }
+        }
     }
     var metric: Metric = .cpu {
         didSet {

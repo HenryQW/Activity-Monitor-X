@@ -28,6 +28,9 @@ struct AlertsView: View {
                                        description: Text("Rules run all the time, also while the app is closed."))
             }
         }
+        // A new row, a dismissed row and a restored row fade in or out; a search filters the rows with no fade.
+        .animation(Motion.fade(), value: alerts.alerts.map(\.id))
+        .animation(Motion.fade(), value: alerts.dismissed)
         .screenTitle("Alerts", icon: .symbol("exclamationmark.triangle"))
         .onAppear { show(appearsActive) }
         .onChange(of: appearsActive) { _, active in show(active) }

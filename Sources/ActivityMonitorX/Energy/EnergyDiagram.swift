@@ -13,11 +13,16 @@ struct EnergyDiagram: View {
     @Environment(Selection.self) private var selection
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The app or process under the pointer, and the pointer's place in the diagram.
     private let _hover = State<(node: EnergyNode, point: CGPoint)?>(initialValue: nil)
 
     private static let nodeWidth = 10.0, gap = 14.0, leading = 150.0, trailing = 210.0, top = 22.0, bottom = 22.0
+
+    private struct Change: Equatable {
+        let expanded: AppKey?
+        let kept: Set<String>
+        let byName: Bool
+    }
 
     private struct LinkID: Hashable {
         let from, to: EnergyNode
@@ -46,7 +51,8 @@ struct EnergyDiagram: View {
                         .accessibilityAddTraits(app == nil ? [] : app == selection.app ? [.isButton, .isSelected] : .isButton)
                         .accessibilityAction { click(link.to) }
                 }
-                ForEach(nodes.indices, id: \.self) { i in
+                // A node's identity is the node, not its place in the list, so a rectangle never slides to another node.
+                ForEach(Array(nodes.enumerated()), id: \.element) { i, _ in
                     let rect = placed.nodes[i]
                     Rectangle()
                         .fill(color(nodes[i]))
@@ -65,7 +71,8 @@ struct EnergyDiagram: View {
             }
             .offset(x: Self.leading, y: Self.top)
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: flows)
+        // The bands move for a change the user made (open or fold an app, keep, sort), never for a Live tick.
+        .animation(Motion.smooth(0.3), value: Change(expanded: model.expanded, kept: model.kept, byName: model.sortsByName))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(summary)
     }
@@ -86,7 +93,7 @@ struct EnergyDiagram: View {
             .frame(width: Self.leading - 8, alignment: .trailing)
             .position(x: rects[i].minX - Self.leading / 2 - 4, y: sourceY[k])
         }
-        ForEach(nodes.indices.filter { column[$0] == 1 }, id: \.self) { i in
+        ForEach(Array(nodes.enumerated()).filter { column[$0.offset] == 1 }, id: \.element) { i, _ in
             HStack(spacing: 6) {
                 Text(name(nodes[i])).fontWeight(.semibold)
                 Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit()
@@ -96,10 +103,11 @@ struct EnergyDiagram: View {
             .position(x: rects[i].midX, y: nodes[i] == .mac ? rects[i].minY - 11 : rects[i].maxY + 11)
         }
         ForEach(2...max(2, last), id: \.self) { c in
-            let members = nodes.indices.filter { column[$0] == c }
-            let y = SankeyLayout.spread(members.map { rects[$0].midY }, spacing: 18, in: 9...max(9, size.height - 9))
+            let members = nodes.indices.filter { column[$0] == c }.map { (index: $0, node: nodes[$0]) }
+            let y = SankeyLayout.spread(members.map { rects[$0.index].midY }, spacing: 18, in: 9...max(9, size.height - 9))
             let width = max(0, c == last ? Self.trailing - 8 : step - Self.nodeWidth - 8)
-            ForEach(Array(members.enumerated()), id: \.element) { k, i in
+            ForEach(Array(members.enumerated()), id: \.element.node) { k, member in
+                let i = member.index
                 let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
                 HStack(spacing: 6) {
                     Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selection.app ? .semibold : nil)

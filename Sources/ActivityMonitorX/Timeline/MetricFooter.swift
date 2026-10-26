@@ -32,6 +32,15 @@ struct MetricFooter: View {
         var severity = 0
     }
 
+    /// The numbers roll for a change the user made (metric, range, span), once its data has loaded; a Live tick, a reload
+    /// of the same range and the app's own 2 s readings swap them.
+    private struct Roll: Equatable {
+        let metric: Metric
+        let range: HistoryRange
+        let span: ClosedRange<Double>?
+        let state: LoadState
+    }
+
     private struct GraphPoint: Identifiable {
         var id: String { "\(series) \(bucket)" }
         let bucket: Double
@@ -146,6 +155,8 @@ struct MetricFooter: View {
                     if stat.severity > 0 { SeverityIcon(severity: stat.severity) }
                     Text(stat.value)
                         .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(Motion.smooth(0.25), value: Roll(metric: metric, range: history.range, span: history.span, state: history.state))
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }

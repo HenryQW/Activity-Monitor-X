@@ -12,8 +12,11 @@ struct InspectorView: View {
     @Environment(HistoryModel.self) private var history
     @Environment(LiveModel.self) private var live
     @Environment(Selection.self) private var selection
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @SceneStorage("inspectorTab") private var tab = Tab.overview
+    private struct Roll: Equatable {
+        let app: String
+        let span: ClosedRange<Double>?
+    }
     private enum Tab: String { case overview = "Overview", processes = "Processes", files = "Files" }
     /// The app whose full process list is shown; another app starts short again.
     private let _showAllOf = State<String?>(initialValue: nil)
@@ -93,6 +96,8 @@ struct InspectorView: View {
         let detail = AppKey.details(for: (history.range == .live ? live.ranking : history.ranking).map(\.app) + [rank.app])[rank.app.key]
         let running = rank.processes.filter { !$0.exited }
         let exited = rank.processes.filter(\.exited)
+        // The numbers roll for a change the user made (another app, another span), never for a Live tick.
+        let roll = Roll(app: rank.app.key, span: history.span)
         let runningRows = AppRank.byName(running)
         let usual = history.range == .live ? nil : history.usual(of: rank.app)
         // A long-gone helper never hides a running process: only the exited rows are cut, to the top 20 by average.
@@ -123,7 +128,7 @@ struct InspectorView: View {
                         LabeledContent {
                             Text(metric.format(rank.average))
                                 .contentTransition(.numericText(value: rank.average))
-                                .animation(reduceMotion ? nil : .default, value: rank.average)
+                                .animation(Motion.smooth(0.25), value: roll)
                         } label: {
                             Text("Average")
                             if let usual { Text(Self.compare(rank.average, usual: usual, metric: metric)) }
@@ -133,7 +138,7 @@ struct InspectorView: View {
                         LabeledContent {
                             Text(metric.format(rank.peak))
                                 .contentTransition(.numericText(value: rank.peak))
-                                .animation(reduceMotion ? nil : .default, value: rank.peak)
+                                .animation(Motion.smooth(0.25), value: roll)
                         } label: {
                             Text("Peak")
                         }

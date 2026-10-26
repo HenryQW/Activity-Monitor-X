@@ -113,6 +113,8 @@ struct MainWindow: View {
                     }
                 }
             }
+            // Pin and Unpin: the row fades in or out.
+            .animation(Motion.fade(), value: appSelection.pinned.map(\.key))
             .safeAreaInset(edge: .bottom, alignment: .leading) {
                 Button { appSelection.editingGroup = .new } label: { Label("Add Group", systemImage: "plus") }
                     .buttonStyle(.plain)
@@ -303,6 +305,8 @@ private struct InspectorPane<Content: View>: View {
     @Binding var width: Double
     let available: CGFloat
     @ViewBuilder let content: Content
+    /// Read here, not per call, so the transition below follows a change of the setting at once.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let _dragStart = State<Double?>(initialValue: nil)
 
     private var maxWidth: Double { max(200, min(400, Double(available) - contentMin - 2 * Layout.inset)) }
@@ -346,10 +350,10 @@ private struct InspectorPane<Content: View>: View {
                     .padding([.vertical, .trailing], Layout.inset)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")
-                    .transition(.move(edge: .trailing))
+                    .transition(reduceMotion ? .opacity : .move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeOut(duration: 0.15), value: shown)
+        .animation(Motion.fade(0.25), value: shown)
     }
 }
