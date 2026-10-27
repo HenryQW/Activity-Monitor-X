@@ -197,7 +197,19 @@ struct AppTable: View {
                             pinButton(row.app)
                             Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: row.app, history: history) }
                                 .help("Choose the colour that shows \(row.name)")
+                            if row.app.key.hasPrefix("/") {
+                                Button("Show in Finder", systemImage: "folder") {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: row.app.key)])
+                                }
+                                .help("Show \(row.name) in the Finder")
+                            }
                         }
+                        if let pid = row.pid {
+                            Button("Copy PID", systemImage: "doc.on.doc") { DiskItemMenu.copy(String(pid)) }
+                                .help("Copy the process ID \(String(pid))")
+                        }
+                        Divider()
+                        QuitButtons(app: row.app, process: row.process, name: row.name)
                     }
                 }
                     .labelStyle(.titleAndIcon)

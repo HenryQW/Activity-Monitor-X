@@ -40,7 +40,9 @@ final class Selection {
 
     /// The selected process if it can be signalled: never pid ≤ 1, an exited pid has nothing to quit, and amxd refuses
     /// another user's process (D15), which `kill(pid, 0)` reports as EPERM. amxd still checks the start time.
-    var signallable: ProcessRank? {
+    var signallable: ProcessRank? { Self.signallable(process) }
+
+    static func signallable(_ process: ProcessRank?) -> ProcessRank? {
         process.flatMap { !$0.exited && $0.pid > 1 && kill($0.pid, 0) == 0 ? $0 : nil }
     }
 

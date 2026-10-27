@@ -38,8 +38,20 @@ extension HardwareModel {
         volumes.filter { volume in
             guard volume.mountPoint != "/" else { return true }
             guard let row = HardwareRow.rows(holding: "mount_point", value: volume.mountPoint, in: rows).first?.row else { return false }
-            return HardwareRow.rows(holding: "protocol", value: "Disk Image", in: [row]).isEmpty
+            // The protocol is on the drive row above the volume (SCR-25).
+            let images = Set(HardwareRow.rows(holding: "protocol", value: "Disk Image", in: rows).map(\.row.id))
+            return !HardwareRow.path(to: row.id, in: rows).contains { images.contains($0.id) }
         }
+    }
+
+    /// A Storage drive row's physical disk, found through its first volume; nil for any other row.
+    func drive(_ row: HardwareRow) -> PhysicalDisk? {
+        guard row.id.hasPrefix("Storage/"), row.id.dropFirst(8).contains("/") == false,
+              // A hidden volume (Data) is not among the volumes read: the first one that is.
+              let volume = HardwareRow.rows(holding: "mount_point", in: row.children ?? [])
+                  .lazy.compactMap({ m in self.allVolumes.first { $0.mountPoint == m.property.value } }).first,
+              let bsd = Volumes.wholeDisk(of: volume, containers: containers) else { return nil }
+        return disks.first { $0.bsdName == bsd }
     }
 
     /// The parts with data and the row each one selects, for `partRows`. The clusters share the Processors row: the
@@ -105,7 +117,7 @@ struct HardwareBoard: View {
 
     var body: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Layout.padding) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(hardware.value("machine_name") ?? "Mac").font(.headline)
                     Text([hardware.value("machine_model"), chip.name, "\(hardware.memory(chip)) unified memory"].compactMap { $0 }
@@ -114,6 +126,8 @@ struct HardwareBoard: View {
                 }
                 board
             }
+            // With the box's own small inset, the layout's padding from its edge.
+            .padding(Layout.inset)
         }
     }
 
@@ -125,7 +139,7 @@ struct HardwareBoard: View {
             + volumes.filter { $0.mountPoint != "/" }.map { .volume($0.mountPoint) }
         let columns = min(3, max(2, (parts.count + 2) / 3))
         let cells = { (cellWidth: Double, cellHeight: Double?) in
-            Grid(horizontalSpacing: 5, verticalSpacing: 5) {
+            Grid(horizontalSpacing: Layout.inset, verticalSpacing: Layout.inset) {
                 ForEach(Array(stride(from: 0, to: parts.count, by: columns)), id: \.self) { start in
                     GridRow {
                         ForEach(parts[start..<min(start + columns, parts.count)], id: \.self) {
@@ -140,19 +154,18 @@ struct HardwareBoard: View {
         let diagram = ChipDiagram(chip: chip, hardware: hardware, maxWidth: width - 64)
             .onGeometryChange(for: Double.self) { $0.size.width } action: { _chipWidth.wrappedValue = $0 }
         // Under the chip the cells share its width, also below 196 pt: their text truncates and the hint has it in full.
-        let under = max(80, (_chipWidth.wrappedValue - 5 * Double(columns - 1)) / Double(columns))
+        let under = max(80, (_chipWidth.wrappedValue - Layout.inset * Double(columns - 1)) / Double(columns))
         return ViewThatFits(in: .horizontal) {
             // Side by side, both take the taller one's height: the chip spreads its rows, the cells grow past 38 pt.
-            HStack(spacing: 18) {
+            HStack(spacing: Layout.padding) {
                 diagram.frame(maxHeight: .infinity)
                 cells(196, nil).frame(maxHeight: .infinity)
             }
             .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: 12) { diagram; cells(under, 38) }
+            VStack(spacing: Layout.padding) { diagram; cells(under, 38) }
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
     }
 
     @ViewBuilder private func cell(_ part: BoardPart, volumes: [VolumeInfo], selected: Set<BoardPart>) -> some View {
@@ -179,7 +192,7 @@ struct HardwareBoard: View {
             self.cell(.battery, name: "Battery", fact: [shortCharge, cycles].compactMap { $0 }.joined(separator: ", "),
                       label: "Battery", value: facts.joined(separator: ", "),
                       hint: "Show the battery in the list. " + facts.joined(separator: ", "), selected: selected) {
-                batteryShape
+                BatteryShape(percent: hardware.charge?.percent.map(Double.init), charging: hardware.charge?.charging == true, level: chargeLevel)
             }
         case .cluster, .gpu, .memory:
             EmptyView()
@@ -194,28 +207,12 @@ struct HardwareBoard: View {
         // Text with the colour: the yellow is never the only cue.
         let low = volume.lowSpace ? ", low" : ""
         let startup = volume.mountPoint == "/"
-        let rule = alerts.rules.freeSpace
-        let critical = startup && rule.enabled && Double(volume.available) <= Double(volume.totalBytes) * Double(rule.percentFree) / 100
-        let color = ChipDiagram.status(critical ? 2 : volume.lowSpace ? 1 : 0)
+        let color = ChipDiagram.status(volume.spaceLevel(alerts.rules.freeSpace))
         return cell(.volume(volume.mountPoint), name: volume.name, fact: "\(free) free\(low)", label: "Storage, \(volume.name)",
                     value: "\(free) free of \(total)\(volume.lowSpace ? ", low free space" : "")",
                     hint: "Show \(volume.name) in the list" + (startup ? ". Free space does not include purgeable space." : ""),
                     selected: selected) {
-            HStack(spacing: 2) {
-                ForEach(0..<(startup ? 2 : 1), id: \.self) { _ in
-                    let shape = RoundedRectangle(cornerRadius: 2)
-                    shape.fill(Self.package)
-                        .overlay(alignment: .bottom) {
-                            GeometryReader { proxy in
-                                Rectangle().fill(color).frame(height: proxy.size.height * share).frame(maxHeight: .infinity, alignment: .bottom)
-                            }
-                        }
-                        .clipShape(shape)
-                        .overlay { outline(2) }
-                        .overlay(alignment: .topLeading) { Circle().fill(.tertiary).frame(width: 2.5, height: 2.5).offset(x: 2.5, y: 2.5) }
-                        .frame(width: 13, height: 20)
-                }
-            }
+            FlashChips(count: startup ? 2 : 1, share: share, color: color)
         }
     }
 
@@ -224,7 +221,7 @@ struct HardwareBoard: View {
     private func screen(_ brightness: Double?, builtIn: Bool) -> some View {
         let shape = RoundedRectangle(cornerRadius: 2)
         return VStack(spacing: 0) {
-            shape.fill(Self.package)
+            shape.fill(PartStyle.package)
                 .overlay(alignment: .bottom) {
                     if let brightness {
                         GeometryReader { proxy in
@@ -258,32 +255,7 @@ struct HardwareBoard: View {
         return "\(percent)%" + (charge.charging ? ", charging" : chargeLevel > 0 ? ", low" : "")
     }
 
-    /// 2 at 10 % or less, 1 at 20 % or less, while not charging.
-    private var chargeLevel: Int {
-        guard let charge = hardware.charge, let percent = charge.percent, !charge.charging else { return 0 }
-        return percent <= 10 ? 2 : percent <= 20 ? 1 : 0
-    }
-
-    /// A battery filled from the left to its charge, with a bolt while it charges.
-    private var batteryShape: some View {
-        let shape = RoundedRectangle(cornerRadius: 3)
-        let percent = Double(hardware.charge?.percent ?? 0)
-        return HStack(spacing: 1) {
-            shape.fill(Self.package)
-                .overlay(alignment: .leading) {
-                    GeometryReader { proxy in
-                        RoundedRectangle(cornerRadius: 1.5).fill(ChipDiagram.status(chargeLevel))
-                            .frame(width: max(0, proxy.size.width - 4) * min(percent, 100) / 100)
-                            .frame(maxHeight: .infinity)
-                            .padding(2)
-                    }
-                }
-                .overlay { shape.strokeBorder(trace, lineWidth: 1.2) }
-                .overlay { if hardware.charge?.charging == true { Image(systemName: "bolt.fill").font(.system(size: 8)).foregroundStyle(.primary) } }
-                .frame(width: 26, height: 12)
-            RoundedRectangle(cornerRadius: 0.5).fill(trace).frame(width: 2, height: 5)
-        }
-    }
+    private var chargeLevel: Int { BatteryShape.level(percent: hardware.charge?.percent, charging: hardware.charge?.charging == true) }
 
     /// A cell, 196 pt wide and at least 38 pt high beside the chip, 38 pt high under it: the shape in a 32 by 22 box, the name and one fact; a button with the accent outline while
     /// it shows the selected row; one accessibility element.
@@ -301,10 +273,8 @@ struct HardwareBoard: View {
             }
             .font(.caption)
             .monospacedDigit()
-            .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.quinary, in: .rect(cornerRadius: 7))
-            .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.tint, lineWidth: 2).opacity(selected.contains(part) ? 1 : 0) }
+            .partCell(selected: selected.contains(part))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -314,11 +284,5 @@ struct HardwareBoard: View {
         .accessibilityAddTraits(selected.contains(part) ? .isSelected : [])
     }
 
-    @ViewBuilder private func outline(_ radius: Double) -> some View {
-        if contrast == .increased { RoundedRectangle(cornerRadius: radius).strokeBorder(Color(nsColor: .separatorColor)) }
-    }
-
-    static let package = Color(nsColor: .secondarySystemFill)
-
-    private var trace: Color { Color(nsColor: contrast == .increased ? .secondaryLabelColor : .tertiaryLabelColor) }
+    private var trace: Color { PartStyle.trace(contrast) }
 }

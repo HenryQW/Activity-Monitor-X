@@ -39,8 +39,9 @@ struct RangeBar: View {
             }
             // Without a bezel, Custom… needs a line to read apart from the window text.
             Divider().padding(.vertical, Layout.padding)
+            // The segments' style: the same inner margin, so the word does not sit on the capsule's edge.
             Button("Custom…") { selection.rangeShown = true }
-                .buttonStyle(.borderless)
+                .buttonStyle(.accessoryBar)
                 .help("Choose a custom time range")
                 .popover(isPresented: Bindable(selection).rangeShown, arrowEdge: .bottom) {
                     RangePopover(history: history) { selection.rangeShown = false }

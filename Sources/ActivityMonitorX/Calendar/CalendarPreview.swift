@@ -62,7 +62,7 @@ struct CalendarPreview: View {
                                      note: UsualProfile.describe(value, usual: usual), secondary: true))
         }
         let apps = cell.top.map { PreviewRow(swatch: colors[$0.app], label: $0.app.name, value: metric.format($0.value)) }
-        var sections = [PreviewSection(heading: "Busiest by \(metric.label)", rows: apps)]
+        var sections = [PreviewSection(heading: "Busiest by \(metric.label)", rows: apps + unrecorded)]
         let alerts = alertRows
         if !alerts.isEmpty { sections.append(PreviewSection(heading: "Alerts", rows: alerts)) }
         let hint = "Click to select · double-click to open the \(page.period.zoomedIn?.rawValue ?? "hour")"
@@ -110,6 +110,13 @@ struct CalendarPreview: View {
         return rows
     }
 
+    /// The Mac's CPU that no recorded process accounts for, where the cell's value is the Mac's (CB1): the app rows then
+    /// add up to less than the value.
+    private var unrecorded: [PreviewRow] {
+        guard let value = cell.value, let recorded = cell.recorded, value - recorded >= 1 else { return [] }
+        return [PreviewRow(label: "Not in any process", value: metric.format(value - recorded))]
+    }
+
     // MARK: Compact
 
     private func appRows(_ apps: [CellApp]) -> [PreviewSection] {
@@ -118,7 +125,8 @@ struct CalendarPreview: View {
 
     private var compactHour: some View {
         let time = Date(timeIntervalSince1970: cell.start).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour())
-        return PreviewCard(size: .compact, title: time, top: cell.value.map(metric.format), sections: appRows(cell.top))
+        return PreviewCard(size: .compact, title: time, top: cell.value.map(metric.format),
+                           sections: [PreviewSection(rows: appRows(cell.top)[0].rows + unrecorded)])
     }
 
     private func compactLine(_ line: Int) -> some View {

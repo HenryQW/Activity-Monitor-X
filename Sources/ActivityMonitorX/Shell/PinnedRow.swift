@@ -2,7 +2,7 @@ import AMXCore
 import AppKit
 import SwiftUI
 
-/// A Pinned Apps row: the name (its hint gives the full name when the sidebar truncates it), a `pin.slash` button on hover
+/// A Pinned Apps row: the app's icon (the section title already says pinned) and the name (its hint gives the full name when the sidebar truncates it), a `pin.slash` button on hover
 /// that unpins at once, and the right-click menu of the app's actions.
 struct PinnedRow: View {
     let app: AppKey
@@ -15,7 +15,12 @@ struct PinnedRow: View {
     var body: some View {
         let name = AppName.display(app, history: history)
         HStack(spacing: 0) {
-            Label(name, systemImage: "pin").help(name)
+            Label {
+                Text(name)
+            } icon: {
+                Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 16, height: 16)
+            }
+            .help(name)
             Spacer(minLength: 0)
             if _hover.wrappedValue {
                 Button("Unpin \(name)", systemImage: "pin.slash") { selection.togglePin(app) }

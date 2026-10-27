@@ -47,8 +47,18 @@ struct DiskChart: View {
         let names = series
         let latest = points.last.map { values(at: $0.date) } ?? []
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: Layout.padding) {
                 Text(title).font(.headline)
+                // The key follows the title it explains, as line samples, as the chart draws lines (LG2).
+                if names.count > 1 {
+                    ForEach(names.indices, id: \.self) { i in
+                        HStack(spacing: 4) {
+                            Capsule().fill(i == 0 ? Color.accentColor : Color.secondary).frame(width: 12, height: 2.5)
+                            Text(names[i]).foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
+                    }
+                }
                 Spacer()
                 if let rule { Text(rule.label).font(.caption).foregroundStyle(.secondary) }
             }
@@ -69,16 +79,7 @@ struct DiskChart: View {
                     }
                 }
                 .chartForegroundStyleScale(domain: names, range: [Color.accentColor, Color.secondary].prefix(names.count).map { $0 })
-                .chartLegend(position: .top, alignment: .trailing) {
-                    if names.count > 1 {
-                        HStack(spacing: 8) {
-                            ForEach(names.indices, id: \.self) { i in
-                                Label(names[i], systemImage: "circle.fill").foregroundStyle(i == 0 ? Color.accentColor : Color.secondary)
-                            }
-                        }
-                        .font(.caption)
-                    }
-                }
+                .chartLegend(.hidden)
                 .chartXScale(domain: xDomain)
                 .chartXAxis {
                     AxisMarks(preset: .aligned) { _ in

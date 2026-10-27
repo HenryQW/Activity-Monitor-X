@@ -125,33 +125,14 @@ struct InspectorView: View {
                         }
                         .overlayScrollers()
                         actions(rank)
-                        LabeledContent {
-                            Text(metric.format(rank.average))
-                                .contentTransition(.numericText(value: rank.average))
-                                .animation(Motion.smooth(0.25), value: roll)
-                        } label: {
-                            Text("Average")
-                            if let usual { Text(Self.compare(rank.average, usual: usual, metric: metric)) }
-                        }
-                        .monospacedDigit()
-                        .help("The app's average in the range, every process counted.")
-                        LabeledContent {
-                            Text(metric.format(rank.peak))
-                                .contentTransition(.numericText(value: rank.peak))
-                                .animation(Motion.smooth(0.25), value: roll)
-                        } label: {
-                            Text("Peak")
-                        }
-                        .monospacedDigit()
-                        .help("The app's highest value in the range.")
-                    } footer: {
-                        // Live has no usual value.
-                        if history.range != .live {
-                            Text(usual == nil ? "Usual needs 2 days of history in the 7 days before the range."
-                                 : "Usual: the same hours of day in the 7 days before the range.")
-                        }
                     }
-                    CardSection(metric.label) {
+                    // The numbers live with the chart they read: the average is the card's summary, Peak and Usual its rows.
+                    CardSection(metric.label, summary: AnyView(
+                        Text("\(metric.format(rank.average)) average")
+                            .contentTransition(.numericText(value: rank.average))
+                            .animation(Motion.smooth(0.25), value: roll)
+                            .help("The app's average in the range, every process counted.")),
+                                spoken: "\(metric.format(rank.average)) average") {
                         Chart {
                             // One vectorized plot, not a mark per point.
                             AreaPlot(AppSeries.closed(series, bucket: history.range.chartBucket), x: .value("Time", \.date),
@@ -176,7 +157,22 @@ struct InspectorView: View {
                             }
                         }
                         .frame(height: 110)
+                        LabeledContent {
+                            Text(metric.format(rank.peak))
+                                .contentTransition(.numericText(value: rank.peak))
+                                .animation(Motion.smooth(0.25), value: roll)
+                        } label: {
+                            Text("Peak")
+                        }
+                        .help("The app's highest value in the range.")
+                        // Live has no usual value.
+                        if history.range != .live {
+                            LabeledContent("Usual", value: usual.map { Self.compare(rank.average, usual: $0, metric: metric) } ?? "Needs 2 days of history")
+                                .help(usual == nil ? "Usual needs 2 days of history in the 7 days before the range."
+                                      : "Usual: the same hours of day in the 7 days before the range.")
+                        }
                     }
+                    .monospacedDigit()
                     if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
                         CardSection("About") {
                             LabeledContent("Name", value: entry.title)
@@ -242,37 +238,43 @@ struct InspectorView: View {
             .labelsHidden()
             .accessibilityLabel("View")
             .help("Show the overview, the processes or the open files")
-            .padding(10)
+            .padding(Layout.padding)
         }
     }
 
-    /// Pin, Show in Finder, Alert Rules and Quit: one width and one height, icon over title. Quit only asks; its
-    /// confirmation offers Force Quit, so no destructive action is one click from the app's name.
+    /// Pin, Show in Finder and Alert Rules as small icon-and-word buttons, then Quit… at the end; where the pane is narrow,
+    /// the first three keep their icons only (their hints and spoken names stay whole). Quit keeps its word: it only asks,
+    /// and its confirmation offers Force Quit, so no destructive action is one click from the app's name.
     private func actions(_ rank: AppRank) -> some View {
         let app = rank.app
         let isPinned = selection.isPinned(app)
         let quit = selection.quitRequest(of: app)
-        return HStack(spacing: 6) {
-            Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") { selection.togglePin(app) }
-                .help(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
-            Button {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: app.key)])
-            } label: {
-                // "in Finder" does not fit a 240 pt pane, even on its own line (measured).
-                Label { ViewThatFits(in: .horizontal) { Text("Show\nin Finder"); EmptyView() } } icon: { Image(systemName: "folder") }
+        func others(_ style: some LabelStyle) -> some View {
+            HStack(spacing: 6) {
+                Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") { selection.togglePin(app) }
+                    .accessibilityLabel(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+                    .help(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+                Button("Finder", systemImage: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: app.key)])
+                }
+                .accessibilityLabel("Show \(app.name) in Finder")
+                // A bare executable name has no path to show.
+                .disabled(!app.key.hasPrefix("/"))
+                .help(app.key.hasPrefix("/") ? "Show \(app.name) in the Finder" : "\(app.name) has no app bundle to show")
+                Button("Rules…", systemImage: "bell") { _rulesShown.wrappedValue = true }
+                    .accessibilityLabel("Alert Rules for \(app.name)")
+                    .help("Mute alerts for \(app.name) or give it its own alert values")
             }
-            .accessibilityLabel("Show \(app.name) in Finder")
-            // A bare executable name has no path to show.
-            .disabled(!app.key.hasPrefix("/"))
-            .help(app.key.hasPrefix("/") ? "Show \(app.name) in the Finder" : "\(app.name) has no app bundle to show")
-            Button("Alert Rules…", systemImage: "bell") { _rulesShown.wrappedValue = true }
-                .help("Mute alerts for \(app.name) or give it its own alert values")
-            Button("Quit…", systemImage: "xmark.circle") { selection.signalRequest = quit }
-                .disabled(quit == nil)
-                .help(quitHelp(rank, quit))
+            .labelStyle(style)
         }
-        .labelStyle(StackedLabelStyle())
-        .fixedSize(horizontal: false, vertical: true)
+        let quitButton = Button("Quit…") { selection.signalRequest = quit }
+            .disabled(quit == nil)
+            .help(quitHelp(rank, quit))
+        return ViewThatFits(in: .horizontal) {
+            HStack { others(.titleAndIcon); Spacer(minLength: 8); quitButton }
+            HStack { others(.iconOnly); Spacer(minLength: 8); quitButton }
+        }
+        .controlSize(.small)
     }
 
     /// What Quit does, or why it cannot act.
@@ -325,6 +327,17 @@ struct InspectorView: View {
             .monospacedDigit()
             .foregroundStyle(p.exited ? .secondary : .primary)
             .tag(ProcKey(p))
+            .contextMenu {
+                Group {
+                    Button("Copy PID", systemImage: "doc.on.doc") { DiskItemMenu.copy(String(p.pid)) }
+                        .help("Copy the process ID \(String(p.pid))")
+                    if !p.exited {
+                        Divider()
+                        QuitButtons(app: nil, process: p, name: p.name)
+                    }
+                }
+                .labelStyle(.titleAndIcon)
+            }
     }
 
     /// The running copies of an app bundle; none for a bare executable name.
@@ -334,23 +347,11 @@ struct InspectorView: View {
     }
 }
 
-/// The icon over the title, centred, filling the button: buttons in a row get one width and one height.
-private struct StackedLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(spacing: 3) {
-            configuration.icon.imageScale(.large)
-            configuration.title.font(.caption).multilineTextAlignment(.center).lineLimit(2)
-        }
-        // The bezel's own side margins leave too little for a title at 240 pt; the title may use part of them.
-        .padding(.horizontal, -5)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 /// An event's message with its date and time below; a click selects its time on the chart.
 private struct EventRow: View {
     @Environment(HistoryModel.self) private var history
     @Environment(Selection.self) private var selection
+    @Environment(AlertsModel.self) private var alerts
     let event: EventMark
 
     var body: some View {
@@ -368,6 +369,20 @@ private struct EventRow: View {
         }
         .buttonStyle(.plain)
         .help("Select this time on the chart")
+        .contextMenu {
+            Group {
+                Button("Show at Alert Time", systemImage: "clock") {
+                    history.selectTime(around: event.ts)
+                    selection.showChart = true
+                }
+                .help("Select this time on the chart")
+                if !alerts.dismissed.contains(event.id) {
+                    Button("Dismiss", systemImage: "xmark.circle") { alerts.dismiss([event.id]) }
+                        .help("Dismiss the alert. Alerts can show dismissed alerts again.")
+                }
+            }
+            .labelStyle(.titleAndIcon)
+        }
     }
 }
 

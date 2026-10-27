@@ -16,7 +16,7 @@ struct ChipDiagram: View {
     @Environment(AlertsModel.self) private var alerts
     @Environment(MenuBarReadout.self) private var readout
 
-    static let gap = 3.0, padding = 10.0, spacing = 14.0, memoryWidth = 72.0
+    static let gap = 3.0, padding = Layout.padding, spacing = 14.0, memoryWidth = 72.0
 
     /// The CPU cores and one empty column between clusters; with no CPU cores (a virtual machine), the GPU's, up to 16.
     static func columns(_ chip: ChipInfo, gpuCores: Int?) -> Int {

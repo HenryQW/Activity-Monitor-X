@@ -22,8 +22,9 @@ final class ToolbarFit {
     /// From the detail's leading edge to the title pill: the Sidebar button and its gaps, plus the 7 pt by which the
     /// segments' centre sits left of the detail's centre (measured).
     static let leading: CGFloat = 59
-    /// The space between the Back button and its neighbours (to measure).
-    static let backGap: CGFloat = 8
+    /// The space Back adds besides its own width: none, it shares the Sidebar button's capsule (measured: with 8 pt
+    /// Calendar asked for 16 pt too much and showed the pop-up where the segments fit).
+    static let backGap: CGFloat = 0
     /// What the system adds to the item widths to reach the window edge: the trailing inset, and the space of each capsule.
     static let trailingInset: CGFloat = 10
     static let perItem: CGFloat = 4

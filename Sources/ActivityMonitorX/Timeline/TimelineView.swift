@@ -70,7 +70,6 @@ struct TimelineView: View {
                                               : history.otherProcesses(bucket: b, named: named)
                                       },
                                       hover: hover)
-                            .overlay(alignment: .topTrailing) { if !isLive { clearSelection } }
                             // The pill's column: the plot, its y-axis labels, the event markers and the hover bubble stay left of it.
                             .padding(.trailing, ChartZoom.width)
                             .overlay(alignment: .trailing) { ChartZoom() }
@@ -90,7 +89,7 @@ struct TimelineView: View {
                 // The table scrolls under the footer, and its last row can scroll clear of it.
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     if footer {
-                        MetricFooter(metric: history.metric, live: isLive, ranking: ranking, stacked: points)
+                        MetricFooter(metric: history.metric, live: isLive, stacked: points)
                             .frame(maxWidth: .infinity)
                             .floatingBar()
                             .padding(Layout.inset)
@@ -137,28 +136,18 @@ struct TimelineView: View {
         return HStack {
             Text("Ranked for \(interval.formatted(history.range.intervalFormat))")
                 .foregroundStyle(.secondary)
+            // By the line it undoes, and named for its result (user call, SC1).
+            Button("Show Whole Range") { history.span = nil }
+                .keyboardShortcut(.cancelAction)
+                .help("Clear the selected time span and rank for the whole range")
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
             Spacer()
         }
         .font(.callout)
         .padding(.horizontal)
         .padding(.bottom, 6)
-    }
-
-    /// Over the plot's top-right corner, by the selection; the zoom pill and the range bar hold the ranges. Glass on the
-    /// content layer by the user's choice, against ADR 0009.
-    @ViewBuilder private var clearSelection: some View {
-        if history.span != nil {
-            Button("Clear Selection", systemImage: "xmark") { history.span = nil }
-                .keyboardShortcut(.cancelAction)
-                .help("Clear the selected time span")
-                .buttonStyle(.glass)
-                .buttonBorderShape(.capsule)
-                .controlSize(.small)
-                .labelStyle(.iconOnly)
-                // Below the event lane and clear of the trailing y-axis labels.
-                .padding(.top, 24)
-                .padding(.trailing, 44)
-        }
     }
 
     /// In the span bar's place while Live has lost the helper: the chart and table keep the last data.

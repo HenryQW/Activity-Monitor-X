@@ -31,6 +31,9 @@ struct CalendarFilter: Equatable, Sendable {
     var query = ""
     var group: ProcessGroup?
 
+    /// No search and no group: the cells show the whole Mac.
+    var everyApp: Bool { query.isEmpty && group == nil }
+
     func keeps(_ tracks: [ProcessTrack]) -> [ProcessTrack] {
         let found = query.isEmpty ? tracks : tracks.filter { AppSearch.matches($0.app, query) }
         return group.map { GroupScores.members(found, of: $0) } ?? found
@@ -72,7 +75,7 @@ struct CalendarPage {
     func counts(_ cells: [CalendarCell]) -> (warning: Int, critical: Int) { status?.counts(cells) ?? (0, 0) }
 
     /// The CPU levels as dashed lines: only for every app, as with a search or a group the lines are a subset of the Mac.
-    var levels: CalendarStatus? { filter.query.isEmpty && filter.group == nil ? status : nil }
+    var levels: CalendarStatus? { filter.everyApp ? status : nil }
 
     /// The severity of each line of `cell`; empty with no status.
     func severities(_ cell: CalendarCell) -> [Int?] { status?.severities(cell) ?? [] }
@@ -257,8 +260,9 @@ final class CalendarModel {
                     bounds = CalendarPeriod.bounds(interval, bucket: bucket, now: now)
                     tracks = try reader.tracks(source: .hour, from: bounds[0], to: bounds[bounds.count - 1], metric: metric)
                 }
-                let grid = period.grid(interval, buckets: CalendarBucket.read(filter.keeps(tracks), bounds: bounds), bucket: bucket,
-                                       calendar: calendar)
+                let buckets = try reader.calendarBuckets(filter.keeps(tracks), metric: metric, everyApp: filter.everyApp,
+                                                         source: CalendarPeriod.source(bucket: bucket), bounds: bounds, bucket: bucket)
+                let grid = period.grid(interval, buckets: buckets, bucket: bucket, calendar: calendar)
                 let status = try reader.calendarStatus(metric: metric, rules: rules, source: CalendarPeriod.source(bucket: bucket),
                                                        from: bounds[0], to: bounds[bounds.count - 1], bucket: bucket)
                 let events = try reader.events(from: bounds[0], to: bounds[bounds.count - 1]).filter { $0.rule != nil }
@@ -287,9 +291,11 @@ final class CalendarModel {
         let value = await Task.detached { () -> CalendarUsual? in
             let start = ((now - RetentionPolicy().hour) / 3600).rounded(.up) * 3600
             let bounds = Array(stride(from: start, through: now, by: 3600))
-            guard bounds.count > 1,
-                  let tracks = try? HistoryReader(pool: pool).tracks(source: .hour, from: start, to: now, metric: metric) else { return nil }
-            let totals = CalendarBucket.read(filter.keeps(tracks), bounds: bounds).map(\.total)
+            let reader = HistoryReader(pool: pool)
+            guard bounds.count > 1, let tracks = try? reader.tracks(source: .hour, from: start, to: now, metric: metric),
+                  let buckets = try? reader.calendarBuckets(filter.keeps(tracks), metric: metric, everyApp: filter.everyApp, source: .hour,
+                                                            bounds: bounds, bucket: 3600) else { return nil }
+            let totals = buckets.map(\.total)
             return CalendarUsual(totals: totals, start: start, calendar: calendar)
         }.value
         // A read for another metric or filter started since: its answer owns `usual`.
@@ -325,7 +331,8 @@ final class CalendarModel {
             let kept = filter.keeps(tracks)
             func stats(_ from: Double, _ to: Double) throws -> SpanStats {
                 let bounds = CalendarPeriod.bounds(DateInterval(start: Date(timeIntervalSince1970: from), end: Date(timeIntervalSince1970: to)), bucket: 3600, now: now)
-                let hours = CalendarBucket.read(kept, bounds: bounds).map(\.total)
+                let hours = try reader.calendarBuckets(kept, metric: metric, everyApp: filter.everyApp, source: .hour, bounds: bounds,
+                                                       bucket: 3600).map(\.total)
                 let status = try reader.calendarStatus(metric: metric, rules: rules, source: .hour, from: bounds[0],
                                                        to: bounds[bounds.count - 1], bucket: 3600)
                 return SpanStats(hours: hours, start: from, status: status, calendar: calendar)

@@ -54,7 +54,7 @@ struct CalendarView: View {
         content.frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Motion.fade(0.28), value: model.state)
             .safeAreaBar(edge: .top, spacing: 0) {
-                CalendarHeader(title: title(model.period, model.interval), shortTitle: shortTitle(model.period, model.interval)).padding(Layout.inset)
+                CalendarHeader().padding(Layout.inset)
             }
         .screenTitle("Calendar", subtitle: Text(subtitle), icon: .symbol("calendar"))
         // Outside the title pill's toolbar, so Back sits between the Sidebar button and the pill.
@@ -109,6 +109,8 @@ struct CalendarView: View {
     /// The content's coordinate space: a zoom grows from the double-click in it.
     nonisolated static let contentSpace = "calendarContent"
     private let _size = State(initialValue: CGSize(width: 1, height: 1))
+    /// The width the Month cells take: the tiles take the same.
+    private let _gridWidth = State(initialValue: 0.0)
     /// Read here, not per call, so the transition follows a change of the setting at once.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -136,8 +138,10 @@ struct CalendarView: View {
         case .ready:
             if let page = model.page {
                 VStack(spacing: 8) {
-                    if page.period == .month { CalendarTiles(page: page).padding(.horizontal) }
-                    CalendarGrid(page: page, footer: footer)
+                    if page.period == .month {
+                        CalendarTiles(page: page).frame(width: _gridWidth.wrappedValue > 0 ? _gridWidth.wrappedValue : nil).padding(.horizontal)
+                    }
+                    CalendarGrid(page: page, footer: footer) { if abs($0 - _gridWidth.wrappedValue) >= 1 { _gridWidth.wrappedValue = $0 } }
                 }
                 .coordinateSpace(.named(Self.contentSpace))
                 .onGeometryChange(for: CGSize.self, of: \.size) { _size.wrappedValue = CGSize(width: max(1, $0.width), height: max(1, $0.height)) }
@@ -145,34 +149,12 @@ struct CalendarView: View {
             }
         }
     }
-
-    /// The title for a narrow bar: "Oct 2026", "20 to 26 Oct", "Thu 22 Oct", "22 Oct, 9 AM".
-    private func shortTitle(_ period: CalendarPeriod, _ interval: DateInterval) -> String {
-        switch period {
-        case .hour: return interval.start.formatted(.dateTime.day().month(.abbreviated).hour())
-        case .day: return interval.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-        case .week:
-            let last = interval.end.addingTimeInterval(-1)
-            return "\(interval.start.formatted(.dateTime.day())) to \(last.formatted(.dateTime.day().month(.abbreviated)))"
-        case .month: return interval.start.formatted(.dateTime.month(.abbreviated).year())
-        }
-    }
-
-    private func title(_ period: CalendarPeriod, _ interval: DateInterval) -> String {
-        switch period {
-        case .hour: return interval.start.formatted(.dateTime.weekday(.wide).day().month(.wide).hour())
-        case .day: return interval.start.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
-        case .week:
-            let last = interval.end.addingTimeInterval(-1)
-            return "\(interval.start.formatted(.dateTime.day().month(.abbreviated))) to \(last.formatted(.dateTime.day().month(.abbreviated).year()))"
-        case .month: return interval.start.formatted(.dateTime.month(.wide).year())
-        }
-    }
 }
 
-/// The month at a glance: its mean, its busiest hour, its busiest app and its alerts.
+/// The month at a glance as cells of one height, each with the thing it is about, as Hardware's cells: the metric's
+/// symbol and its mean, a clock and the busiest hour, the top app's icon and its share, the alert symbols and their counts.
+/// Four in a row, two rows of two where the column is narrow.
 private struct CalendarTiles: View {
-    @Environment(HistoryModel.self) private var history
     let page: CalendarPage
 
     var body: some View {
@@ -180,30 +162,53 @@ private struct CalendarTiles: View {
         let values = cells.flatMap(\.lines).compactMap { $0 }
         let peak = cells.compactMap { cell in cell.peak.map { (cell.lineStart($0), cell.lines[$0]!) } }.max { $0.1 < $1.1 }
         let leader = CalendarPeriod.leader(of: cells)
-        let critical = page.alerts.count { $0.severity >= 2 }
-        HStack(alignment: .top, spacing: 12) {
-            tile("Average \(page.metric.label)", values.isEmpty ? "No data" : page.metric.format(values.reduce(0, +) / Double(values.count)),
-                 "this month")
-            tile("Busiest hour", peak.map { Date(timeIntervalSince1970: $0.0).formatted(.dateTime.weekday(.abbreviated).day().hour()) } ?? "No data",
-                 peak.map { page.metric.format($0.1) } ?? "")
-            tile("Top app", leader?.app.name ?? "No data", leader.map { "\(($0.share).formatted(.percent.precision(.fractionLength(0)))) of all \(page.metric.label)" } ?? "")
-            tile("Alerts", page.alerts.count.formatted(), critical > 0 ? "\(critical.formatted()) critical" : "none critical")
+        let critical = page.alerts.count { $0.severity >= 2 }, warning = page.alerts.count - critical
+        let label = page.metric.label
+        let tiles = [
+            tile(Image(systemName: page.metric.symbol).font(.title3).foregroundStyle(.secondary),
+                 values.isEmpty ? "No data" : "\(page.metric.format(values.reduce(0, +) / Double(values.count))) average", label),
+            tile(Image(systemName: "clock").font(.title3).foregroundStyle(.secondary),
+                 peak.map { "\(page.metric.format($0.1)) at \(Date(timeIntervalSince1970: $0.0).formatted(.dateTime.hour()))" } ?? "No data",
+                 peak.map { "Busiest: \(Date(timeIntervalSince1970: $0.0).formatted(.dateTime.weekday(.abbreviated).day()))" } ?? "Busiest hour"),
+            tile(leader.map { Image(nsImage: AppIcon.image(for: $0.app)).resizable().frame(width: 22, height: 22) },
+                 leader?.app.name ?? "No data",
+                 leader.map { "\($0.share.formatted(.percent.precision(.fractionLength(0)))) of all \(label)" } ?? "Top app"),
+            tile(HStack(spacing: 1) {
+                    if critical > 0 { SeverityIcon(severity: 2) }
+                    if warning > 0 { SeverityIcon(severity: 1) }
+                    if page.alerts.isEmpty { Image(systemName: "bell").font(.title3).foregroundStyle(.secondary) }
+                 },
+                 page.alerts.isEmpty ? "None" : [critical > 0 ? "\(critical) critical" : nil, warning > 0 ? "\(warning) warning\(warning == 1 ? "" : "s")" : nil]
+                    .compactMap { $0 }.joined(separator: ", "),
+                 "Alerts"),
+        ]
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Layout.inset) { ForEach(tiles.indices, id: \.self) { tiles[$0].frame(minWidth: 150) } }
+            Grid(horizontalSpacing: Layout.inset, verticalSpacing: Layout.inset) {
+                GridRow { tiles[0]; tiles[1] }
+                GridRow { tiles[2]; tiles[3] }
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    private func tile(_ title: String, _ value: String, _ note: String) -> some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value).font(.title2.weight(.semibold)).monospacedDigit().lineLimit(2).minimumScaleFactor(0.7)
-                Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+    private func tile(_ icon: (some View)?, _ value: String, _ note: String) -> AnyView {
+        AnyView(HStack(spacing: 8) {
+            icon.frame(width: 28)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).fontWeight(.semibold).monospacedDigit()
+                Text(note).foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } label: {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            .lineLimit(1)
+            Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .combine)
+        .font(.callout)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .partCell(padding: Layout.inset)
+        .accessibilityElement(children: .combine))
     }
 }
+
 
 /// The standard toolbar Back: one level up with the parent's selection. Always there on this screen and disabled at Month,
 /// so nothing appears or moves.

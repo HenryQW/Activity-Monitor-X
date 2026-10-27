@@ -26,6 +26,8 @@ final class DiskModel {
     private(set) var live: [(ts: Double, total: DiskRate)] = []
     private(set) var error: String?
     var selected: Item?
+    /// A menu action that failed (Eject), for the alert.
+    var actionFailure: (title: String, message: String)?
 
     private let sampler = DiskSampler()
     private let volumeSource: VolumeSource

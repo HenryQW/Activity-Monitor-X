@@ -42,6 +42,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - Every change is committed. Work on a branch (or an agent worktree branch) and merge it into the integration branch only after review and acceptance; commit small, one concern per commit. No uncommitted work at the end of a task.
 - Smallest change that follows the existing code; match comment density and naming.
 - Read `DESIGN.md` before a UI change. Specific design rules are requirement lines; change `DESIGN.md` only when the design language changes.
+- Mockups for a UI choice (up to 3, `DESIGN.md`) are made with the visualize tool (`show_widget`), shown inline in the conversation; no offscreen SwiftUI renders or image files (user call).
 - Native SwiftUI and AppKit components with default styling first; no custom fonts or backgrounds on popovers, tiles or cards (user call, D24, D25). Every popover and hover preview is Liquid Glass, whatever its size: native popovers by default, the shared `PreviewCard` with `.glassEffect` (user call, D65).
 - Colours: red and yellow mean warning and critical only; app colours never use them. App colours are stable per app (`appColorSlots`).
 - Every interactive control has an accessibility name; destructive actions have text buttons.

@@ -14,6 +14,8 @@ struct CalendarGrid: View {
     @Environment(\.colorScheme) private var scheme
     let page: CalendarPage
     let footer: CalendarFooter
+    /// Told the width the cells take, so the Month tiles above line up with them.
+    var onWidth: (CGFloat) -> Void = { _ in }
 
     /// What the pointer is on: a cell, or the week cell at the end of a row.
     private struct Hit: Equatable {
@@ -68,6 +70,7 @@ struct CalendarGrid: View {
                     cells(layout, colors: colors)
                 }
             }
+            .onGeometryChange(for: CGFloat.self, of: \.size.width) { onWidth($0) }
             .padding(.leading, layout.origin)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
@@ -167,7 +170,7 @@ struct CalendarGrid: View {
                 ForEach(page.grid.indices, id: \.self) { row in
                     HStack(spacing: 0) {
                         ForEach(page.grid[row].indices, id: \.self) { column in
-                            cellView(page.grid[row][column], row: row, column: column, layout, colors: colors)
+                            cellView(page.grid[row][column], row: row, column: column, layout)
                         }
                         if layout.rowColumn { rowView(row, layout) }
                     }
@@ -186,19 +189,19 @@ struct CalendarGrid: View {
         }
     }
 
-    @ViewBuilder private func cellView(_ cell: CalendarCell?, row: Int, column: Int, _ layout: Layout, colors: [AppKey: Color]) -> some View {
+    @ViewBuilder private func cellView(_ cell: CalendarCell?, row: Int, column: Int, _ layout: Layout) -> some View {
         let selected = cell.map { cell in
             page.period.selectsBars ? selectedBars(in: cell) != nil : model.selected?.contains(cell.start) == true
         } ?? false
         ZStack {
             fill(cell)
             if let cell {
-                CalendarCellView(cell: cell, page: page, colors: colors, footer: footer, extras: extras,
+                CalendarCellView(cell: cell, page: page, footer: footer, extras: extras,
                                  marked: marked(cell), selected: selectedBars(in: cell), width: layout.cell.width)
             } else if page.period == .month {
                 // A day of the month before or after: its number only.
                 Text(outsideDay(row: row, column: column)).font(.caption).foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(5)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(ActivityMonitorX.Layout.inset)
             }
         }
         .frame(width: layout.cell.width, height: layout.cell.height)
@@ -397,8 +400,8 @@ struct CalendarGrid: View {
         if column < layout.columns {
             guard let cell = page.grid[row][column] else { return nil }
             guard page.period.selectsBars, !cell.lines.isEmpty else { return Hit(row: row, column: column, low: cell.start, high: cell.start, cell: cell) }
-            // The lines run across the cell inside its padding.
-            let pad = CalendarCellView.padding(page.period, width: layout.cell.width)
+            // The lines run across the cell inside its padding (`CalendarCellView`).
+            let pad = ActivityMonitorX.Layout.inset
             let across = (point.x - CGFloat(column) * layout.cell.width - pad) / (layout.cell.width - 2 * pad)
             let bar = min(cell.lines.count - 1, max(0, Int(across * CGFloat(cell.lines.count))))
             return Hit(row: row, column: column, low: cell.lineStart(bar), high: cell.lineStart(bar), cell: cell, bar: bar)
@@ -442,6 +445,22 @@ struct CalendarGrid: View {
                     model.zoomIn(at: hit.low, from: CGPoint(x: _inputOrigin.wrappedValue.x + tap.location.x, y: _inputOrigin.wrappedValue.y + tap.location.y))
                 }
             })
+            // The cell under the pointer, as the hover has it when the menu opens.
+            .contextMenu {
+                if let hit = _hover.wrappedValue, hit.hasData {
+                    Group {
+                        if let deeper = page.period.zoomedIn {
+                            Button("Show \(deeper.rawValue.capitalized)", systemImage: "plus.magnifyingglass") { model.zoomIn(at: hit.cell.start) }
+                                .help("Open this \(page.period == .day ? "hour" : "day") in the \(deeper.rawValue) view")
+                        }
+                        Button("Show in Apps", systemImage: "square.grid.2x2") {
+                            selection.reveal(from: hit.cell.start, to: hit.cell.end, history: history)
+                        }
+                        .help("Show the apps for this time on the Apps screen")
+                    }
+                    .labelStyle(.titleAndIcon)
+                }
+            }
             .accessibilityHidden(true)
     }
 

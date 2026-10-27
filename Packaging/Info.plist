@@ -18,6 +18,8 @@
 	<string>5</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Activity Monitor X connects, disconnects and forgets Bluetooth devices when you choose these actions on the Hardware screen.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 </dict>

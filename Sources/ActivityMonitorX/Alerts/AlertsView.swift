@@ -1,9 +1,10 @@
 import AMXCore
 import SwiftUI
 
-/// Alert rows newest first under Today, Yesterday and Earlier; dismissed rows are hidden unless shown, then dimmed: rows that were unread when someone could last start to see
-/// the screen stay bold while it is shown. The sidebar search filters by app or message. Double-click or Show in
-/// Apps opens Apps at the alert.
+/// Alerts newest first in a table, as Apps and Volumes: severity, time, the subject (the app's icon or the system part's
+/// symbol, then its name) and the message. Dismissed rows are hidden unless shown, then dimmed; rows that were unread when
+/// someone could last start to see the screen stay bold while it is shown. The search filters by app or message.
+/// Double-click or Show in Apps opens Apps at the alert.
 struct AlertsView: View {
     @Environment(AlertsModel.self) private var alerts
     @Environment(HistoryModel.self) private var history
@@ -47,25 +48,36 @@ struct AlertsView: View {
 
     private func list(_ rows: [EventMark]) -> some View {
         let unread = _unreadAtShow.wrappedValue
-        let calendar = AppTime.calendar
-        let days = Dictionary(grouping: rows) { event -> Day in
-            let date = Date(timeIntervalSince1970: event.ts)
-            return calendar.isDateInToday(date) ? .today : calendar.isDateInYesterday(date) ? .yesterday : .earlier
-        }
-        return List(selection: _selected.projectedValue) {
-            ForEach(Day.allCases, id: \.self) { day in
-                if let events = days[day] {
-                    Section(day.rawValue) {
-                        ForEach(events) { event in
-                            row(event, day: day, bold: unread.contains(event.id))
+        return Table(rows, selection: _selected.projectedValue) {
+            TableColumn("Severity") { event in cell(event, unread) { SeverityIcon(severity: event.severity) } }
+                .width(min: 56, ideal: 56, max: 64)
+            TableColumn("Time") { event in cell(event, unread) { Text(Self.time(event.ts)).monospacedDigit() } }
+                .width(min: 110, ideal: 150, max: 180)
+            TableColumn("Subject") { event in
+                cell(event, unread) {
+                    Label {
+                        Text(event.subject)
+                    } icon: {
+                        if let app = event.app, event.rule.map({ !RuleName.system.contains($0) }) ?? true {
+                            Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 16, height: 16)
+                        } else {
+                            Image(systemName: RuleName.symbol(event.rule)).foregroundStyle(.secondary)
                         }
                     }
                 }
             }
+            .width(min: 120, ideal: 170, max: 240)
+            TableColumn("Message") { event in cell(event, unread) { Text(event.message).help(event.message) } }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
             Group {
                 if ids.count == 1 { Button("Show App at Alert Time", systemImage: "app.badge") { reveal(ids) } }
+                if !ids.isEmpty {
+                    Button("Copy ^[\(ids.count) Message](inflect: true)", systemImage: "doc.on.doc") {
+                        DiskItemMenu.copy(rows.filter { ids.contains($0.id) }.map(\.message).joined(separator: "\n"))
+                    }
+                    .help("Copy the alert messages")
+                }
                 if !ids.isEmpty {
                     if ids.allSatisfy(alerts.dismissed.contains) {
                         Button("Restore ^[\(ids.count) Alert](inflect: true)", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
@@ -78,28 +90,19 @@ struct AlertsView: View {
         } primaryAction: { reveal($0) }
     }
 
-    private func row(_ event: EventMark, day: Day, bold: Bool) -> some View {
-        let dismissed = alerts.dismissed.contains(event.id)
-        return HStack {
-            SeverityIcon(severity: event.severity).frame(width: 40)
-            // The section names the day, so Today and Yesterday rows show the time only.
-            Text(Date(timeIntervalSince1970: event.ts).formatted(date: day == .earlier ? .abbreviated : .omitted, time: .shortened))
-                .monospacedDigit().frame(width: 140, alignment: .leading)
-            Text(event.subject).frame(width: 160, alignment: .leading)
-            Text(event.message).help(event.message).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .bold(bold)
-        .opacity(dismissed ? 0.5 : 1)
-        .swipeActions(edge: .trailing) {
-            if dismissed {
-                Button("Restore Alert", systemImage: "arrow.uturn.backward") { alerts.restore([event.id]) }
-            } else {
-                Button("Dismiss Alert", systemImage: "xmark.circle") { alerts.dismiss([event.id]) }.tint(.gray)
-            }
-        }
+    /// A cell's content, bold while unread when shown and dimmed when dismissed.
+    private func cell(_ event: EventMark, _ unread: Set<Int64>, @ViewBuilder _ content: () -> some View) -> some View {
+        content().bold(unread.contains(event.id)).opacity(alerts.dismissed.contains(event.id) ? 0.5 : 1)
     }
 
-    private enum Day: String, CaseIterable { case today = "Today", yesterday = "Yesterday", earlier = "Earlier" }
+    /// "Today, 15:42", "Yesterday, 22:31" or "21 Oct 2026, 09:12", in the app's time zone; the menu bar menu uses it too.
+    static func time(_ ts: Double) -> String {
+        let date = Date(timeIntervalSince1970: ts), calendar = AppTime.calendar
+        let time = date.formatted(Date.FormatStyle(time: .shortened, timeZone: AppTime.zone))
+        let day = calendar.isDateInToday(date) ? "Today" : calendar.isDateInYesterday(date) ? "Yesterday"
+            : date.formatted(Date.FormatStyle(date: .abbreviated, timeZone: AppTime.zone))
+        return "\(day), \(time)"
+    }
 
     private func reveal(_ ids: Set<Int64>) {
         guard ids.count == 1, let event = alerts.alerts.first(where: { ids.contains($0.id) }) else { return }

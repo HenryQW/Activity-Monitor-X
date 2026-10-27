@@ -4,10 +4,6 @@ import Observation
 import os
 import ServiceManagement
 
-enum MenuBarStyle: String {
-    case text, chart
-}
-
 /// The screen the main window opens at: Last Screen, or one of the fixed ones.
 enum StartScreen: String, CaseIterable {
     case last, apps, calendar, alerts, energy, disk, hardware
@@ -74,7 +70,7 @@ enum StartRange: String, CaseIterable {
 final class Preferences {
     enum Appearance: String, CaseIterable { case system, light, dark }
 
-    private static let menuBarKey = "menuBarShown", appearanceKey = "appearance", styleKey = "menuBarStyle"
+    private static let menuBarKey = "menuBarShown", appearanceKey = "appearance", menuBarColorKey = "menuBarColor"
     private static let zoneKey = "timeZone", extraZonesKey = "extraZones", firstWeekdayKey = "firstWeekday"
     private static let openAtKey = "openAt", openRangeKey = "openRange", lastScreenKey = "lastScreen", lastRangeKey = "lastRange"
     private static let log = Logger(subsystem: AMX.bundleID, category: "preferences")
@@ -84,6 +80,11 @@ final class Preferences {
     /// Shown by default; while shown, closing the window keeps the app running for notifications.
     var menuBarShown = UserDefaults.standard.object(forKey: Preferences.menuBarKey) as? Bool ?? true {
         didSet { UserDefaults.standard.set(menuBarShown, forKey: Self.menuBarKey) }
+    }
+
+    /// Warning and critical numbers in yellow and red (default); off, the item is greyscale.
+    var menuBarColor = UserDefaults.standard.object(forKey: Preferences.menuBarColorKey) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(menuBarColor, forKey: Self.menuBarColorKey) }
     }
 
     /// System follows the macOS light or dark setting as it changes; Light and Dark hold for this app only.
@@ -145,10 +146,6 @@ final class Preferences {
         case .light: NSAppearance(named: .aqua)
         case .dark: NSAppearance(named: .darkAqua)
         }
-    }
-
-    var menuBarStyle = UserDefaults.standard.string(forKey: Preferences.styleKey).flatMap(MenuBarStyle.init) ?? .chart {
-        didSet { UserDefaults.standard.set(menuBarStyle.rawValue, forKey: Self.styleKey) }
     }
 
     /// On while registered, also while Login Items waits for approval. Setting it registers or unregisters.

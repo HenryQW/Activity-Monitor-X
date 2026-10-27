@@ -19,6 +19,8 @@ public struct HardwareNode: Sendable, Identifiable, Equatable {
     /// A system symbol that says what the node is: on things only (sections, buses, devices, displays, volumes), never on
     /// a set of values or a group; set at parse time.
     public var symbol: String?
+    /// A Bluetooth device's address, for its Connect, Disconnect and Forget actions; never a row (`dropped`).
+    public var address: String?
 
     public func value(_ key: String) -> String? {
         properties.first { $0.key == key }?.value
@@ -54,10 +56,15 @@ public enum HardwareInventory {
     /// Devices that are paired but not connected go in one group, closed, after the connected ones.
     private static let notConnected = "device_not_connected"
 
-    public static func parse(_ json: Data) throws -> [HardwareNode] {
-        guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any] else {
-            throw CocoaError(.coderReadCorrupt)
-        }
+    public static func parse(_ json: Data) throws -> [HardwareNode] { parse(root: try object(json)) }
+
+    private static func object(_ json: Data) throws -> [String: Any] {
+        guard let root = try JSONSerialization.jsonObject(with: json) as? [String: Any] else { throw CocoaError(.coderReadCorrupt) }
+        return root
+    }
+
+    private static func parse(root: [String: Any]) -> [HardwareNode] {
+        let root = byThing(root)
         return sections.compactMap { type, title in
             let list = (root[type] as? [[String: Any]] ?? []).filter { !portSections.contains(type) || $0["_items"] != nil }
             let symbol = sectionSymbols[title]
@@ -66,6 +73,44 @@ public enum HardwareInventory {
             section.symbol = symbol
             return items.isEmpty ? nil : section
         }
+    }
+
+    /// Each thing at the top of its section, its parts inside it (SCR-25): a display beside its GPU, not under it; Storage
+    /// by drive, each drive with its facts (its NVMe entry, which then leaves NVMe) and its volumes inside, which no longer
+    /// repeat the drive.
+    static func byThing(_ root: [String: Any]) -> [String: Any] {
+        var root = root
+        let display = "spdisplays_ndrvs"
+        if let gpus = root["SPDisplaysDataType"] as? [[String: Any]] {
+            root["SPDisplaysDataType"] = gpus.flatMap { gpu in
+                [gpu.filter { $0.key != display }] + (gpu[display] as? [[String: Any]] ?? [])
+            }
+        }
+        guard let volumes = root["SPStorageDataType"] as? [[String: Any]] else { return root }
+        var controllers = root["SPNVMeDataType"] as? [[String: Any]] ?? []
+        var drives: [[String: Any]] = []
+        for volume in volumes {
+            let physical = volume["physical_drive"] as? [String: Any] ?? [:]
+            let name = physical["device_name"] as? String ?? "Drive"
+            let bare = volume.filter { $0.key != "physical_drive" }
+            if let i = drives.firstIndex(where: { $0["_name"] as? String == name }) {
+                drives[i]["volumes"] = (drives[i]["volumes"] as? [[String: Any]] ?? []) + [bare]
+                continue
+            }
+            var drive = physical.filter { $0.key != "device_name" }
+            for c in controllers.indices {
+                guard var items = controllers[c]["_items"] as? [[String: Any]],
+                      let i = items.firstIndex(where: { $0["_name"] as? String == name }) else { continue }
+                drive.merge(items.remove(at: i)) { old, _ in old }
+                controllers[c]["_items"] = items
+            }
+            drive["_name"] = name
+            drive["volumes"] = [bare]
+            drives.append(drive)
+        }
+        root["SPStorageDataType"] = drives
+        root["SPNVMeDataType"] = controllers.filter { ($0["_items"] as? [Any])?.isEmpty == false }
+        return root
     }
 
     /// An item with a `_name` is one node; one whose values are all dictionaries is a set of nodes named by key. Both are
@@ -78,7 +123,8 @@ public enum HardwareInventory {
         return [node(named: item["_name"] as? String ?? fallback, item, parent: parent, symbol: symbol, thing: (item["_name"] as? String).map { !($0.contains("_") && $0 == $0.lowercased()) } ?? false)]
     }
 
-    /// A Bluetooth device by its type, a display, a volume inside or outside the Mac; else the parent's symbol.
+    /// A Bluetooth device by its type, a display, a drive inside or outside the Mac; else the parent's symbol (a volume takes
+    /// its drive's).
     static func symbol(of item: [String: Any], inherited: String?) -> String? {
         switch item["device_minorType"] as? String {
         case "Mouse": return "computermouse"
@@ -89,9 +135,8 @@ public enum HardwareInventory {
         if item["_spdisplays_resolution"] != nil {
             return item["spdisplays_connection_type"] as? String == "spdisplays_internal" ? "laptopcomputer" : "display"
         }
-        if item["mount_point"] != nil {
-            return (item["physical_drive"] as? [String: Any])?["is_internal_disk"] as? String == "yes" ? "internaldrive" : "externaldrive"
-        }
+        // A drive by its own flag; a volume inside a drive takes the drive's.
+        if let isInternal = item["is_internal_disk"] as? String { return isInternal == "yes" ? "internaldrive" : "externaldrive" }
         return inherited
     }
 
@@ -121,8 +166,21 @@ public enum HardwareInventory {
             case let dict as [String: Any]:
                 children += nodes(dict, fallback: label(key), parent: id, symbol: symbol)
             case let value:
-                let name = label(key)
+                var name = label(key)
                 var shown = key == "spdisplays_display_type" ? displayType(value as? String ?? "") : text(value)
+                // Bytes as a size; left out where the item also gives the size in words ("size" beside "size_in_bytes").
+                if key.hasSuffix("_in_bytes") {
+                    let base = String(key.dropLast(9))
+                    if item[base] != nil { continue }
+                    name = label(base)
+                    if let n = value as? NSNumber { shown = ByteCountFormatter.string(fromByteCount: n.int64Value, countStyle: .file) }
+                }
+                if key.hasSuffix("spdisplays_resolution") { shown = resolution(shown) }
+                // "3024x1964Retina" as System Information shows it: "3024 x 1964 Retina".
+                if key == "spdisplays_pixelresolution" {
+                    shown = shown.replacingOccurrences(of: "(\\d)x(\\d+)([A-Za-z]*)", with: "$1 x $2 $3", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespaces)
+                }
                 // A value that starts with its own key ("Vendor Apple" under "Vendor") loses the repeat.
                 if shown.count > name.count + 1, shown.lowercased().hasPrefix(name.lowercased() + " ") {
                     shown = String(shown.dropFirst(name.count + 1))
@@ -130,12 +188,14 @@ public enum HardwareInventory {
                 if key == "number_processors" { shown = processors(shown, clusters: ChipInfo.current().clusters) }
                 // system_profiler gives some display facts twice ("_spdisplays_resolution" and "spdisplays_resolution",
                 // pixels and pixel resolution): a value that an earlier row with a label word in common shows is left out.
-                if properties.contains(where: { $0.value == shown && sharesWord($0.label, name) }) { continue }
+                // System Information calls the pixel resolution "Resolution", which shares no word with "Pixels".
+                if properties.contains(where: { $0.value == shown && (sharesWord($0.label, name) || $0.key == "_spdisplays_pixels") }) { continue }
                 properties.append(.init(key: key, label: name, value: shown))
             }
         }
         var node = HardwareNode(id: id, name: name, properties: properties, children: children.isEmpty ? nil : children)
         node.symbol = thing ? symbol : nil
+        node.address = item["device_address"] as? String
         return node
     }
 
@@ -166,35 +226,46 @@ public enum HardwareInventory {
     public static func label(_ key: String) -> String {
         var s = Substring(key)
         if s.hasPrefix("_") { s.removeFirst() }
-        let key = stripped(String(s)).0
-        return names[key] ?? capitalized(spaced(key))
+        let bare = stripped(String(s)).0
+        return names[bare] ?? systemText(key) ?? titled(spaced(bare))
     }
 
-    /// Plain names for keys the general rule cannot spell (acronyms, joined words). Other keys keep the general rule.
+    /// System Information's own words for a key or a raw value ("spdisplays_metal4" is "Metal 4", "attrib_on" is "On"),
+    /// in the user's language, from its reporters; nil where none has the word.
+    static func systemText(_ raw: String) -> String? {
+        for reporter in reporters {
+            let shown = reporter.localizedString(forKey: raw, value: nil, table: nil)
+            if shown != raw { return shown }
+        }
+        return nil
+    }
+
+    private static let reporters = ["Platform", "Memory", "Displays", "NVMe", "Storage", "Power", "USBHost", "Thunderbolt",
+                                    "Bluetooth", "Network", "Audio", "Camera"]
+        .compactMap { Bundle(path: "/System/Library/SystemProfiler/SP\($0)Reporter.spreporter") }
+
+    /// Names for keys System Information has no word for, or one that would repeat another row's; in its Title Case.
     private static let names = [
-        "pixelresolution": "Pixel resolution", "mtlgpufamilysupport": "Metal support", "ndrvs": "Connected displays",
-        "display-product-id": "Display product ID", "display-vendor-id": "Display vendor ID",
-        "display-week": "Manufacture week", "display-year": "Manufacture year", "displayID": "Display ID",
-        "ac_charger_ID": "Charger ID", "ac_charger_family": "Charger family", "ac_charger_watts": "Charger watts",
-        "battery_pcb_lot_code": "Battery PCB lot code", "dimm_type": "DIMM type", "dimm_manufacturer": "DIMM manufacturer",
-        "boot_rom_version": "Boot ROM version", "os_loader_version": "OS loader version", "bsd_name": "BSD name",
-        "iocontent": "I/O content", "is_internal_disk": "Internal disk", "smart_status": "S.M.A.R.T. status",
-        "ip_address": "IP address", "number_processors": "Processors", "platform_UUID": "Platform UUID",
-        "USBDeviceKeyLinkSpeed": "Link speed", "USBDeviceKeyPowerAllocation": "Power allocation",
-        "USBDeviceKeyProductID": "Product ID", "USBDeviceKeyProductVersion": "Product version",
-        "USBKeyHardwareType": "Hardware type", "USBKeyLocationID": "Location ID",
-        "coreaudio_device_srate": "Sample rate", "coreaudio_device_transport": "Transport",
-        "coreaudio_device_manufacturer": "Manufacturer", "coreaudio_device_input": "Input channels",
-        "coreaudio_device_output": "Output channels", "coreaudio_default_audio_input_device": "Default input",
-        "coreaudio_default_audio_output_device": "Default output", "coreaudio_default_audio_system_device": "Default system output",
-        "coreaudio_input_source": "Input source", "coreaudio_output_source": "Output source",
-        "SPMemoryDataType": "Size", "trim_support": "TRIM support", "model-id": "Model ID",
+        "pixelresolution": "Resolution", "resolution": "UI Looks Like", "ndrvs": "Connected Displays",
+        "display-product-id": "Display Product ID", "display-vendor-id": "Display Vendor ID",
+        "display-week": "Manufacture Week", "display-year": "Manufacture Year", "displayID": "Display ID",
+        "battery_pcb_lot_code": "Battery PCB Lot Code", "os_loader_version": "OS Loader Version", "bsd_name": "BSD Name",
+        "iocontent": "I/O Content", "ip_address": "IP Address", "platform_UUID": "Platform UUID",
+        "USBDeviceKeyPowerAllocation": "Power Allocation", "SPMemoryDataType": "Size", "trim_support": "TRIM Support",
+        "model-id": "Model ID", "UserVisible": "User Visible", "appPID": "App PID",
     ]
 
     /// A value for display: `spdisplays_supported` becomes "Supported", `true` becomes "Yes".
     static func text(_ value: Any) -> String {
         switch value {
         case let s as String:
+            switch s {
+            case "yes", "TRUE": return "Yes"
+            case "no", "FALSE": return "No"
+            default: break
+            }
+            // A raw token ("spdisplays_metal4", "ssd") has the system's word; a name ("Apple M5 Pro") stays as it is.
+            if s.range(of: "^[a-z0-9_]+$", options: .regularExpression) != nil, let shown = systemText(s) { return shown }
             let (rest, hadPrefix) = stripped(s)
             return hadPrefix ? capitalized(spaced(rest)) : spaced(rest)
         case let n as NSNumber:
@@ -222,11 +293,29 @@ public enum HardwareInventory {
 
     private static func capitalized(_ s: String) -> String { s.prefix(1).uppercased() + s.dropFirst() }
 
-    /// One `system_profiler` run for every section. Output is read on background tasks while the process runs.
+    /// Title Case as System Information writes its labels: "free space" is "Free Space", "sleep on power button" is
+    /// "Sleep on Power Button".
+    private static func titled(_ s: String) -> String {
+        let small: Set = ["a", "an", "and", "at", "by", "for", "in", "of", "on", "or", "the", "to"]
+        return s.split(separator: " ").enumerated().map { i, w in i > 0 && small.contains(String(w)) ? String(w) : capitalized(String(w)) }
+            .joined(separator: " ")
+    }
+
+    /// Two `system_profiler` runs at once: every section at the mini level, but Bluetooth at the basic level, the only
+    /// one that gives a device's address (for its actions).
     public static func capture(timeout: Duration = .seconds(30)) async throws -> [HardwareNode] {
+        let bluetooth = "SPBluetoothDataType"
+        async let mini = run(["-json", "-detailLevel", "mini"] + sections.map(\.type).filter { $0 != bluetooth }, timeout: timeout)
+        async let basic = run(["-json", "-detailLevel", "basic", bluetooth], timeout: timeout)
+        let root = try object(await mini).merging(try object(await basic)) { $1 }
+        return parse(root: root)
+    }
+
+    /// Output is read on background tasks while the process runs.
+    private static func run(_ arguments: [String], timeout: Duration) async throws -> Data {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/system_profiler")
-        p.arguments = ["-json", "-detailLevel", "mini"] + sections.map(\.type)
+        p.arguments = arguments
         let out = Pipe(), err = Pipe()
         p.standardOutput = out
         p.standardError = err
@@ -252,6 +341,6 @@ public enum HardwareInventory {
             let message = String(decoding: await stderr.value, as: UTF8.self)
             throw HardwareError.failed(status, message.split(separator: "\n").first.map(String.init) ?? "")
         }
-        return try parse(await stdout.value)
+        return await stdout.value
     }
 }

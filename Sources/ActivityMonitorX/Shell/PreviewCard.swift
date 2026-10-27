@@ -79,12 +79,12 @@ struct PreviewCard<Chart: View>: View {
         }
         .font(.caption)
         if inPopover {
-            card.padding(12).frame(width: 380).accessibilityElement(children: .contain)
+            card.padding(Layout.padding).frame(width: 380).accessibilityElement(children: .contain)
         } else if size == .large {
-            card.padding(12).frame(width: 380).glassEffect(.regular, in: .rect(cornerRadius: 10))
+            card.padding(Layout.padding).frame(width: 380).glassEffect(.regular, in: .rect(cornerRadius: Layout.corner))
                 .allowsHitTesting(false).accessibilityHidden(true)
         } else {
-            card.fixedSize().padding(8).glassEffect(.regular, in: .rect(cornerRadius: 10))
+            card.fixedSize().padding(Layout.padding).glassEffect(.regular, in: .rect(cornerRadius: Layout.corner))
                 .allowsHitTesting(false).accessibilityHidden(true)
         }
     }

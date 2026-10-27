@@ -172,6 +172,18 @@ extension CalendarPeriod {
 }
 
 extension HistoryReader {
+    /// The buckets of `tracks` over `bounds` (as `CalendarBucket.read`). With every app shown, a CPU total is the Mac's
+    /// recorded CPU where the system tier has it, so a line, its status colour and the level lines are one measure (CB1);
+    /// the recorded processes sum lower (short-lived processes, time between samples). The apps stay as recorded.
+    public func calendarBuckets(_ tracks: [ProcessTrack], metric: Metric, everyApp: Bool, source: HistorySource,
+                                bounds: [Double], bucket: Double) throws -> [CalendarBucket] {
+        let buckets = CalendarBucket.read(tracks, bounds: bounds)
+        guard metric == .cpu, everyApp, bounds.count > 1 else { return buckets }
+        let points = try system(source: source, from: bounds[0], to: bounds[bounds.count - 1], bucket: bucket)
+        let mac = Dictionary(uniqueKeysWithValues: points.map { ($0.bucket, $0.cpu * Double(device.cores)) })
+        return buckets.enumerated().map { i, b in CalendarBucket(total: mac[bounds[i]] ?? b.total, apps: b.apps) }
+    }
+
     /// The status of `metric` for buckets of `bucket` seconds over [from, to) of `source`; memory reads the pressure and CPU
     /// the machine CPU each bucket recorded.
     public func calendarStatus(metric: Metric, rules: AlertRules, source: HistorySource, from: Double, to: Double,

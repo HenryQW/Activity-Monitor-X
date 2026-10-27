@@ -19,6 +19,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let appStatusItem = NSMenuItem()
     private let alertItems = (0..<3).map { _ in NSMenuItem() }
     private let noAlertsItem = NSMenuItem()
+    private let allAlertsItem = NSMenuItem()
     private var top: [LiveTop.Row]?
     private var unreachable = false
     private var poll: Task<Void, Never>?
@@ -35,13 +36,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         unreadItem.action = #selector(showUnread)
         appItems.forEach { $0.action = #selector(showApp) }
         alertItems.forEach { $0.action = #selector(showAlert) }
-        (appItems + alertItems + [unreadItem]).forEach { $0.target = self }
+        allAlertsItem.action = #selector(showAlerts)
+        allAlertsItem.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
+        allAlertsItem.toolTip = "Show all alerts in the Alerts screen"
+        (appItems + alertItems + [unreadItem, allAlertsItem]).forEach { $0.target = self }
         // macOS 27 hides most menu images by default; the severity symbol carries meaning and every action has an icon
         // (user call, D69), so they always show.
-        if #available(macOS 27, *) { (alertItems + [unreadItem]).forEach { $0.preferredImageVisibility = .visible } }
+        if #available(macOS 27, *) { (alertItems + [unreadItem, allAlertsItem]).forEach { $0.preferredImageVisibility = .visible } }
+        // The column headings over the CPU and memory values (MW1).
+        let appsHeader = NSMenuItem.sectionHeader(title: "Top Apps")
+        appsHeader.attributedTitle = Self.columns("Top Apps", "CPU", "Memory", font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
+                                                  bold: true)
         let menu = NSMenu()
-        menu.items = [gauges, unreadItem, .separator(), .sectionHeader(title: "Top Apps")] + appItems
-            + [appStatusItem, .separator(), .sectionHeader(title: "Recent Alerts")] + alertItems + [noAlertsItem, .separator(),
+        menu.items = [gauges, unreadItem, .separator(), appsHeader] + appItems
+            + [appStatusItem, .separator(), .sectionHeader(title: "Alerts")] + alertItems + [noAlertsItem, allAlertsItem, .separator(),
             action("Open Activity Monitor X", "macwindow", #selector(openMain), help: "Open the main window"),
             action("Settings…", "gear", #selector(showSettings), key: ",", help: "Open the Activity Monitor X settings"),
             action("Quit Activity Monitor X", "xmark.circle", #selector(quit), key: "q",
@@ -105,7 +113,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             item.attributedTitle = Self.title(row)
         }
 
-        // The unread row already shows the newest unread alert.
+        // The unread row already shows the newest unread alert. One line each, with its day (MW1); the rest are in Alerts.
         let recent = Array(alerts.alerts.filter { $0.id != unread?.id }.prefix(3))
         noAlertsItem.title = alerts.alerts.isEmpty ? "No alerts" : "No other alerts"
         noAlertsItem.isHidden = !recent.isEmpty
@@ -113,10 +121,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             item.isHidden = i >= recent.count
             guard i < recent.count else { continue }
             let event = recent[i]
-            show(event, in: item, title: event.subject, help: "Show this alert in Apps")
-            let time = Date(timeIntervalSince1970: event.ts).formatted(date: .omitted, time: .shortened)
-            item.subtitle = "\(event.message), \(time)"
+            show(event, in: item, title: Self.fit(event.message, NSFont.menuFont(ofSize: 0), width: 280),
+                 help: "\(event.message). Show this alert in Apps.")
+            item.subtitle = AlertsView.time(event.ts)
         }
+        allAlertsItem.isHidden = alerts.alerts.isEmpty
+        allAlertsItem.attributedTitle = Self.columns("Show All Alerts", nil, alerts.alerts.count.formatted(), font: NSFont.menuFont(ofSize: 0))
     }
 
     private func show(_ event: EventMark, in item: NSMenuItem, title: String, help: String) {
@@ -131,20 +141,29 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// The app name, then CPU and memory right aligned in two columns. No text colour, so the highlight still reads.
     private static func title(_ row: LiveTop.Row) -> NSAttributedString {
-        let font = NSFont.menuFont(ofSize: 0), nameWidth: CGFloat = 160
-        let width = { (s: String) in (s as NSString).size(withAttributes: [.font: font]).width }
-        var name = row.app.name
-        if width(name) > nameWidth {
-            while width(name + "…") > nameWidth { name.removeLast() }
-            name += "…"
-        }
+        columns(fit(row.app.name, NSFont.menuFont(ofSize: 0), width: 160), Metric.cpu.format(row.cpu),
+                Metric.memory.format(Double(row.mem)), font: NSFont.menuFont(ofSize: 0))
+    }
+
+    /// A name, then up to two values right aligned at the Top Apps columns, so a heading and the rows line up.
+    private static func columns(_ name: String, _ first: String?, _ second: String, font: NSFont, bold: Bool = false) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
-        style.tabStops = [NSTextTab(textAlignment: .right, location: nameWidth + 64),
-                          NSTextTab(textAlignment: .right, location: nameWidth + 144)]
-        let title = NSMutableAttributedString(string: name, attributes: [.font: font, .paragraphStyle: style])
-        title.append(NSAttributedString(string: "\t\(Metric.cpu.format(row.cpu))\t\(Metric.memory.format(Double(row.mem)))", attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: .regular), .paragraphStyle: style]))
+        style.tabStops = [NSTextTab(textAlignment: .right, location: 224), NSTextTab(textAlignment: .right, location: 304)]
+        let weight: NSFont.Weight = bold ? .bold : .regular
+        let title = NSMutableAttributedString(string: name, attributes: [.font: bold ? NSFont.boldSystemFont(ofSize: font.pointSize) : font,
+                                                                          .paragraphStyle: style])
+        title.append(NSAttributedString(string: "\t\(first ?? "")\t\(second)", attributes: [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: font.pointSize, weight: weight), .paragraphStyle: style]))
         return title
+    }
+
+    /// `text` cut with "…" to fit `width`.
+    private static func fit(_ text: String, _ font: NSFont, width limit: CGFloat) -> String {
+        let width = { (s: String) in (s as NSString).size(withAttributes: [.font: font]).width }
+        guard width(text) > limit else { return text }
+        var text = text
+        while width(text + "…") > limit { text.removeLast() }
+        return text + "…"
     }
 
     private func action(_ title: String, _ symbol: String, _ selector: Selector, key: String = "", help: String) -> NSMenuItem {
@@ -173,6 +192,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         selection.reveal(sender.representedObject as! EventMark, history: history, rules: alerts.rules)
     }
 
+    @objc private func showAlerts() {
+        selection.sidebar = .alerts
+        selection.openMain?()
+    }
+
     @objc private func openMain() { selection.openMain?() }
 
     /// `openSettings` does not activate the app, so the window would open behind the frontmost app (Task 0).
@@ -189,67 +213,62 @@ private final class LabelHostingView<Content: View>: NSHostingView<Content> {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// The menu's first row, a view with no highlight: CPU with its sparkline and Memory Pressure with its level.
+/// The menu's first row, a view with no highlight: CPU and Memory Pressure, each a gauge ring with its title and level (MW1).
 private struct MenuBarGauges: View {
     @Environment(MenuBarReadout.self) private var readout
     @Environment(AlertsModel.self) private var alerts
 
     var body: some View {
-        HStack(alignment: .top) {
-            ReadoutGauge(title: "CPU", percent: readout.percents?.cpu, tint: cpuTint) {
-                let rule = alerts.rules.systemCPU
-                Sparkline(values: readout.cpuHistory, color: .accentColor, top: 100, threshold: rule.enabled ? Double(rule.warning) : nil,
-                          height: 24, slots: MenuBarReadout.historyLength)
-                    .frame(width: 120)
-            }
-            ReadoutGauge(title: "Memory Pressure", percent: readout.percents?.pressure, tint: pressureTint) {
-                Text(readout.percents?.levelWord ?? "").foregroundStyle(.secondary)
-            }
+        HStack(spacing: Layout.padding) {
+            GaugeReadout(title: "CPU", percent: readout.percents?.cpu, level: cpuLevel)
+            GaugeReadout(title: "Memory Pressure", percent: readout.percents?.pressure, level: pressureLevel)
         }
-        .monospacedDigit()
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
     }
 
-    /// Green, yellow, red as macOS shows memory pressure; the kernel level is 1 normal, 2 warning, 4 critical.
-    private var pressureTint: Color {
-        switch readout.percents?.level {
-        case 2: .yellow
-        case 4: .red
-        default: .green
-        }
+    /// The kernel level (1 normal, 2 warning, 4 critical) as 0, 1, 2.
+    private var pressureLevel: Int? {
+        readout.percents.map { $0.level >= 4 ? 2 : $0.level == 2 ? 1 : 0 }
     }
 
-    /// The system CPU rule (SET-7); green with the rule off.
-    private var cpuTint: Color {
-        let rule = alerts.rules.systemCPU, cpu = readout.percents?.cpu ?? 0
-        guard rule.enabled else { return .green }
-        return cpu >= rule.critical ? .red : cpu >= rule.warning ? .yellow : .green
+    /// The system CPU rule (SET-7); no level with the rule off.
+    private var cpuLevel: Int? {
+        let rule = alerts.rules.systemCPU
+        guard rule.enabled, let cpu = readout.percents?.cpu else { return nil }
+        return cpu >= rule.critical ? 2 : cpu >= rule.warning ? 1 : 0
     }
 }
 
-/// A capacity ring with its percent inside, under its title. CPU is already a share of all cores, so 0 to 100 fits
-/// both. "…" until the first reading.
-private struct ReadoutGauge<Detail: View>: View {
+/// A capacity ring with the percent inside, tinted green, yellow or red by level as macOS shows memory pressure, with the
+/// title and the level word beside it. CPU is already a share of all cores, so 0 to 100 fits both. "…" until the first
+/// reading.
+private struct GaugeReadout: View {
     let title: String
     let percent: Int?
-    let tint: Color
-    @ViewBuilder let detail: Detail
+    /// 0 normal, 1 warning, 2 critical; nil without a level.
+    let level: Int?
+
+    private var word: String? { level.map { ["Normal", "Warning", "Critical"][$0] } }
 
     var body: some View {
-        VStack(spacing: 6) {
-            Text(title).font(.headline).accessibilityHidden(true)
+        HStack(spacing: Layout.inset) {
             Gauge(value: Double(percent ?? 0), in: 0...100) {
                 Text(title)
             } currentValueLabel: {
-                Text(percent.map { "\($0)%" } ?? "…")
-                    .monospacedDigit()
+                Text(percent.map { "\($0)" } ?? "…").monospacedDigit()
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .tint(tint)
-            .accessibilityValue(percent.map { "\($0) percent" } ?? "No reading yet")
-            detail
+            .tint(level == 2 ? .red : level == 1 ? .yellow : .green)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.headline)
+                if let word { Text(word).foregroundStyle(.secondary) }
+            }
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue([percent.map { "\($0) percent" } ?? "No reading yet", word].compactMap { $0 }.joined(separator: ", "))
     }
 }

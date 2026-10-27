@@ -15,12 +15,8 @@ final class MenuBarReadout {
         var levelWord: String { level == 1 ? "Normal" : level == 2 ? "Warning" : "Critical" }
     }
 
-    nonisolated static let historyLength = 60
-
     /// Nil until the second sample: CPU needs two.
     private(set) var percents: Percents?
-    /// The last 60 CPU readings, oldest first: 5 min at the 5 s tick. The menu shows the same buffer.
-    private(set) var cpuHistory: [Double] = []
 
     func run() async {
         let sampler = SystemSampler()
@@ -28,9 +24,7 @@ final class MenuBarReadout {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(5))
             let r = sampler.readout(now: ProcessInfo.processInfo.systemUptime)
-            let new = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
-            cpuHistory.append(r.cpu, keepingLast: Self.historyLength)
-            percents = new
+            percents = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
         }
     }
 }
@@ -51,7 +45,8 @@ struct MenuBarLabel: View {
         let p = readout.percents
         let cpu = p.map { "\($0.cpu)%" } ?? "…", pressure = p.map { "\($0.pressure)%" } ?? "…"
         let unread = alerts.unread > 0
-        let spoken = (p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" } ?? "Activity Monitor X")
+        let spoken = (p.map { "CPU \($0.cpu) percent, memory pressure \($0.pressure) percent" + ($0.level > 1 ? ", \($0.levelWord)" : "") }
+            ?? "Activity Monitor X")
             + (unread ? ", unread alert" : "")
         content(cpu: cpu, pressure: pressure, unread: unread)
             .fixedSize()
@@ -66,29 +61,37 @@ struct MenuBarLabel: View {
             }
     }
 
-    @ViewBuilder private func content(cpu: String, pressure: String, unread: Bool) -> some View {
-        if preferences.menuBarStyle == .chart {
-            Image(nsImage: image(cpu: cpu, pressure: pressure, unread: unread))
-        } else {
-            let glyph = unread ? Text("\(Image(systemName: "exclamationmark.triangle")) ") : Text("")
-            Text("\(Image(systemName: "cpu")) \(cpu) \(glyph)\(Image(systemName: "memorychip")) \(pressure)").monospacedDigit()
+    /// CPU over memory pressure in small type (MB2, D81): a dot for an unread alert keeps its own slot, and each number
+    /// keeps the width of "100%", so nothing in the menu bar moves as the values change. The numbers keep the menu bar's
+    /// own colour; a bar before a number marks a warning (yellow) or critical (red) level (the system CPU rule, the memory
+    /// pressure level), as coloured text on a light menu bar is too faint to read (WL3). In greyscale the bar and the dot
+    /// have the menu bar's colour.
+    private func content(cpu: String, pressure: String, unread: Bool) -> some View {
+        let p = readout.percents, rule = alerts.rules.systemCPU
+        let cpuLevel = p.map { rule.enabled ? ($0.cpu >= rule.critical ? 2 : $0.cpu >= rule.warning ? 1 : 0) : 0 } ?? 0
+        let memoryLevel = p.map { $0.level >= 4 ? 2 : $0.level >= 2 ? 1 : 0 } ?? 0
+        let row = { (label: String, value: String, level: Int) in
+            GridRow {
+                Text(label).font(.system(size: 8, weight: .semibold))
+                HStack(spacing: 2) {
+                    Capsule().fill(color(level)).frame(width: 4, height: 9).opacity(level > 0 ? 1 : 0)
+                    ZStack(alignment: .trailing) { Text("100%").hidden(); Text(value) }
+                }
+            }
         }
+        return HStack(spacing: 4) {
+            Circle().fill(color(alerts.hasUnreadCritical ? 2 : 1)).frame(width: 5, height: 5).opacity(unread ? 1 : 0)
+            Grid(alignment: .trailing, horizontalSpacing: 3, verticalSpacing: -2) {
+                row("CPU", cpu, cpuLevel)
+                row("MEM", pressure, memoryLevel)
+            }
+            .font(.system(size: 9.5, weight: .medium))
+        }
+        .monospacedDigit()
     }
 
-    /// A template image: the menu bar sets the colour from its alpha, so light, dark and tint stay right.
-    private func image(cpu: String, pressure: String, unread: Bool) -> NSImage {
-        let renderer = ImageRenderer(content: HStack(spacing: 3) {
-            Image(systemName: "cpu")
-            Text(cpu)
-            if unread { Image(systemName: "exclamationmark.triangle").imageScale(.small) }
-            SparklineShape(values: readout.cpuHistory).stroke(lineWidth: 1).frame(width: 24, height: 12)
-            Image(systemName: "memorychip")
-            Text(pressure)
-        }
-        .font(.system(size: 13)).monospacedDigit().foregroundStyle(.black))
-        renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
-        let image = renderer.nsImage ?? NSImage()
-        image.isTemplate = true
-        return image
+    private func color(_ level: Int) -> Color {
+        guard preferences.menuBarColor, level > 0 else { return .primary }
+        return level >= 2 ? .red : .yellow
     }
 }

@@ -4,8 +4,9 @@ import SwiftUI
 /// Metric is flipped often, so it is the segmented control in the centre; the range is in `RangeBar` above the
 /// content. Search is the system toolbar field. Capsules: Metric; Live; one action group of Quit, Info, More and Search.
 /// Info and Search are on every screen. More holds the view toggles: Show Chart on Apps, Hide Quiet where Metric filters,
-/// Show Dismissed on Alerts. System screens show no app data: their other items are removed, not disabled; Disk's Space pill
-/// adds its target and Scan, Hardware has Refresh. Calendar keeps Metric only: it has its own periods in place of a range.
+/// Show Dismissed on Alerts. System screens show no app data: their other items are removed, not disabled; on Disk the
+/// Activity | Space segments take Metric's place and Space adds its target and Scan; Hardware has Refresh. Calendar keeps
+/// Metric only: it has its own periods in place of a range.
 struct MainToolbar: CustomizableToolbarContent {
     @Environment(AlertsModel.self) private var alerts
     let history: HistoryModel
@@ -34,6 +35,9 @@ struct MainToolbar: CustomizableToolbarContent {
                 }
             }
         }
+        else if selection.sidebar == .disk {
+            ToolbarItem(id: "diskPane", placement: .principal) { DiskPanePicker() }
+        }
         else {
             // Without Metric and the system title, the action items would follow the title pill: the spacer keeps them at
             // the trailing edge.
@@ -43,7 +47,9 @@ struct MainToolbar: CustomizableToolbarContent {
             ToolbarItem(id: "dismissAll", placement: .primaryAction) {
                 // No confirmation: Show Dismissed and Restore bring the alerts back.
                 let ids = alerts.undismissed(search: selection.search)
-                Button("Dismiss All") { alerts.dismiss(ids) }
+                // Destructive in the system's way: red words with the destructive role, and the margin of a word button.
+                Button(role: .destructive) { alerts.dismiss(ids) } label: { Text("Dismiss All").padding(.horizontal, 6) }
+                    .foregroundStyle(.red)
                     .disabled(ids.isEmpty)
                     .help("Dismiss all alerts shown. Show Dismissed lists them again.")
                     .accessibilityLabel("Dismiss all alerts shown")
@@ -72,9 +78,12 @@ struct MainToolbar: CustomizableToolbarContent {
         // One compact capsule of icon buttons (TB1): Quit, Info, More and Search share a system control group, in the
         // order of use; Live keeps its own round capsule before it.
         ToolbarItem(id: "actions", placement: .primaryAction) {
+            let quit = !selection.isSystem || selection.sidebar == .energy
+            let more = filters || selection.sidebar == .alerts
+            let search = !selection.searchPresented && selection.query.isEmpty
             ControlGroup {
                 // The screens whose inspector is the app's, with its Quit; Force Quit stays there and in the confirmation.
-                if !selection.isSystem || selection.sidebar == .energy {
+                if quit {
                     let request = selection.app.flatMap(selection.quitRequest(of:))
                     let name = selection.signallable?.name ?? selection.app?.name
                     let help = selection.process == nil ? "Quit \(name ?? "the selected app") and close its windows"
@@ -88,7 +97,7 @@ struct MainToolbar: CustomizableToolbarContent {
                 Button("Info", systemImage: "info.circle") { selection.inspectorShown.toggle() }
                     .help(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
                     .accessibilityLabel(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
-                if filters || selection.sidebar == .alerts {
+                if more {
                     Menu("More", systemImage: "ellipsis.circle") {
                         Group {
                             if (selection.sidebar ?? .apps) == .apps {
@@ -110,13 +119,15 @@ struct MainToolbar: CustomizableToolbarContent {
                     .help("Choose what the list and chart show")
                 }
                 // Last, where the search field opens; the field replaces it (`ToolbarSearch` in MainWindow).
-                if !selection.searchPresented && selection.query.isEmpty {
+                if search {
                     Button("Search", systemImage: "magnifyingglass") { selection.searchPresented = true }
                         .help("Search: \(selection.searchPrompt)")
                 }
             }
             .controlGroupStyle(.navigation)
             .labelStyle(.iconOnly)
+            // A new group when its buttons change: the toolbar kept the old capsule width (cramped icons until a resize).
+            .id([quit, more, search])
             .fitItem("actions", fit)
         }
     }

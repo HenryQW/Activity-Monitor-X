@@ -204,6 +204,23 @@ private let testDevice = Device(cores: 10, memory: 17_179_869_184)
         #expect(day[0].cpu == 50 && day[0].swapUsed == 8 && day[0].pressureLevel == 4 && day[0].thermalState == 2)
     }
 
+    /// CB1: with every app shown a CPU total is the Mac's (share of all cores times the cores) where recorded, else the
+    /// processes' sum; with a filter it stays the processes' sum.
+    @Test func calendarCPUTotalsAreTheMacs() throws {
+        let r = try Rig(lastSeen: 600)
+        try r.tier("process_minute", 0, cpu: 100)
+        try r.tier("process_minute", 300, cpu: 50)
+        try r.db.write { try $0.execute(sql: "INSERT INTO system_minute(bucket, samples, cpu_avg) VALUES (0, 12, 30)") }
+        let reader = HistoryReader(pool: r.pool, device: testDevice)
+        let tracks = try reader.tracks(source: .minute, from: 0, to: 600, metric: .cpu)
+        func totals(_ everyApp: Bool) throws -> [Double?] {
+            try reader.calendarBuckets(tracks, metric: .cpu, everyApp: everyApp, source: .minute, bounds: [0, 300, 600], bucket: 300).map(\.total)
+        }
+        let (mac, apps) = (try totals(true), try totals(false))
+        #expect(mac == [300, 50])
+        #expect(apps == [100, 50])
+    }
+
     @Test func systemSeriesCarriesDisk() throws {
         let r = try Rig(lastSeen: 0)
         try r.db.write {

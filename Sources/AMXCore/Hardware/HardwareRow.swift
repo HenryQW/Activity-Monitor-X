@@ -6,9 +6,11 @@ public struct HardwareRow: Identifiable, Sendable, Equatable {
     public let children: [HardwareRow]?
     /// The node's symbol; nil for a property row.
     public let symbol: String?
+    /// A Bluetooth device's address (`HardwareNode.address`).
+    public let address: String?
 
-    public init(id: String, name: String, value: String, children: [HardwareRow]?, symbol: String? = nil) {
-        (self.id, self.name, self.value, self.children, self.symbol) = (id, name, value, children, symbol)
+    public init(id: String, name: String, value: String, children: [HardwareRow]?, symbol: String? = nil, address: String? = nil) {
+        (self.id, self.name, self.value, self.children, self.symbol, self.address) = (id, name, value, children, symbol, address)
     }
 
     /// The toolbar search: a row whose name, or value when it has no children (a parent's value is its count), holds
@@ -25,7 +27,7 @@ public struct HardwareRow: Identifiable, Sendable, Equatable {
                 let children = keep(row.children ?? [])
                 guard !children.isEmpty else { return nil }
                 opened.insert(row.id)
-                return HardwareRow(id: row.id, name: row.name, value: row.value, children: children)
+                return HardwareRow(id: row.id, name: row.name, value: row.value, children: children, symbol: row.symbol, address: row.address)
             }
         }
         return (keep(rows), opened)

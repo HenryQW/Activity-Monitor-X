@@ -4,12 +4,15 @@ import SwiftUI
 /// inspector panels), level 2 the content controls that float inside the content column (range bar, span capsule,
 /// footer, Calendar bar, Space capsules), level 3 the data under both (chart, table, grid, treemap), never glass.
 enum Layout {
-    /// Insets of panels and floating controls from their container, and the gaps between them.
+    /// Insets of panels and floating controls from their container, the gaps between them and between cells, and the
+    /// padding inside a small tile (Calendar's glyph cells).
     static let inset: CGFloat = 8
-    /// Padding inside a capsule.
+    /// Padding inside a capsule, a card, a panel or a cell: no text is nearer the edge than this.
     static let padding: CGFloat = 12
-    /// Panel corners (concentric to the window's).
+    /// Panel and card corners (concentric to the window's).
     static let corner: CGFloat = 16
+    /// The gap between the sections of a page (Disk's charts, disks, volumes and containers).
+    static let section: CGFloat = 16
     /// The height of the toolbar row and of the level 2 bars.
     static let bar: CGFloat = 40
 }
@@ -18,7 +21,7 @@ extension View {
     /// A level 2 control: its own glass capsule of the bar's height, so it floats over the data. Regular glass: with
     /// `.clear` the table rows under the footer showed through its figures and could not be read; the glass has no shadow
     /// setting.
-    func floatingCapsule(padding: CGFloat = Layout.inset) -> some View {
+    func floatingCapsule(padding: CGFloat = Layout.padding) -> some View {
         self.padding(.horizontal, padding)
             .frame(height: Layout.bar)
             .glassEffect(.regular, in: .capsule)
@@ -58,5 +61,21 @@ struct CapsuleChoice<Value: Hashable, Label: View>: View {
         .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityLabel(title)
+    }
+}
+
+/// A figure in a footer strip (Apps, Energy): the value over its label, no box.
+struct Figure<Value: View>: View {
+    let label: String
+    @ViewBuilder let value: Value
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            value.font(.title3.weight(.semibold)).monospacedDigit()
+            Text(label).font(.caption).foregroundStyle(.secondary)
+        }
+        // No fixed size: in a strip's narrowest form the words truncate rather than leave the capsule.
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
     }
 }

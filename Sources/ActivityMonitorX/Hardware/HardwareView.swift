@@ -6,8 +6,12 @@ import SwiftUI
 struct HardwareView: View {
     @Environment(HardwareModel.self) private var hardware
     @Environment(Selection.self) private var selection
+    @Environment(DiskMapModel.self) private var diskMap
+    @Environment(AlertsModel.self) private var alerts
     /// The content column's width, the most the board's chip can take.
     private let _width = State(initialValue: 1000.0)
+    /// The Bluetooth device that Forget asks about.
+    private let _forgetting = State<HardwareRow?>(initialValue: nil)
 
     var body: some View {
         content
@@ -18,6 +22,20 @@ struct HardwareView: View {
             // A drive plugged in or out reads the inventory again, so its part and its rows come and go together.
             .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in Task { await hardware.refresh() } }
             .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in Task { await hardware.refresh() } }
+            .confirmationDialog("Forget “\(_forgetting.wrappedValue?.name ?? "")”?", isPresented: Binding(
+                get: { _forgetting.wrappedValue != nil }, set: { if !$0 { _forgetting.wrappedValue = nil } })) {
+                Button("Forget Device", role: .destructive) {
+                    if let row = _forgetting.wrappedValue, let address = row.address { hardware.bluetooth(.forget, address: address, name: row.name) }
+                }
+            } message: {
+                Text("This Mac removes the pairing. To use the device again, pair it again.")
+            }
+            .alert(hardware.actionFailure?.title ?? "", isPresented: Binding(
+                get: { hardware.actionFailure != nil }, set: { if !$0 { hardware.actionFailure = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(hardware.actionFailure?.message ?? "")
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -62,6 +80,13 @@ struct HardwareView: View {
 
     // MARK: Inventory
 
+    /// A drive row's kind, size and used share in place of its count: "Internal Apple Fabric, 1 TB, 48% used".
+    private func summary(_ row: HardwareRow) -> String? {
+        guard let disk = hardware.drive(row) else { return nil }
+        let share = disk.space(volumes: hardware.allVolumes, containers: hardware.containers, rule: alerts.rules.freeSpace).share
+        return disk.kind + (share.map { ", \(Int(($0 * 100).rounded()))% used" } ?? "")
+    }
+
     private var inventory: some View {
         let rows = HardwareRow.filter(hardware.rows, query: selection.search).rows
         return ScrollViewReader { proxy in
@@ -71,14 +96,28 @@ struct HardwareView: View {
                 TableColumn("Name") { row in
                     HStack(spacing: 4) {
                         Color.clear.frame(width: 18, height: 1)
-                            .overlay { if let symbol = row.symbol { Image(systemName: symbol).foregroundStyle(.secondary).fixedSize() } }
+                            .overlay {
+                                // A drive as the board and the Disk screen draw it (SCR-19), at the symbol's size.
+                                if let disk = hardware.drive(row) {
+                                    let space = disk.space(volumes: hardware.allVolumes, containers: hardware.containers, rule: alerts.rules.freeSpace)
+                                    FlashChips(count: space.startup ? 2 : 1, share: space.share, color: ChipDiagram.status(space.level))
+                                        .scaleEffect(0.6).fixedSize()
+                                } else if let symbol = row.symbol {
+                                    Image(systemName: symbol).foregroundStyle(.secondary).fixedSize()
+                                }
+                            }
                         Text(row.name)
                     }
                 }
                 .width(min: 160, ideal: 280)
-                TableColumn("Value", value: \.value)
+                TableColumn("Value") { row in Text(summary(row) ?? row.value) }
             } rows: {
                 InventoryRows(rows: rows, hardware: hardware)
+            }
+            .contextMenu(forSelectionType: HardwareRow.ID.self) { ids in
+                if ids.count == 1, let row = ids.first.flatMap({ HardwareRow.path(to: $0, in: hardware.rows).last }) {
+                    HardwareMenu(row: row, hardware: hardware, selection: selection, diskMap: diskMap, forgetting: _forgetting.projectedValue)
+                }
             }
             // A part chosen on the board scrolls its row to the top, so its rows show, once the opened rows are in the table.
             .onChange(of: hardware.reveal) { _, id in

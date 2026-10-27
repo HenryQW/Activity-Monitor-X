@@ -21,6 +21,8 @@ public struct CalendarCell: Sendable, Equatable {
     public let top: [CellApp]
     /// The busiest app of each line, as `lines`.
     public let leaders: [CellApp?]
+    /// The mean of the recorded processes' sum; lower than `value` where that is the Mac's CPU (CB1). nil in a row cell.
+    public var recorded: Double? = nil
 
     /// The start of line `index`.
     public func lineStart(_ index: Int) -> Double { start + Double(index) * bucket }
@@ -148,7 +150,8 @@ public enum CalendarPeriod: String, CaseIterable, Sendable {
                     let top = cell.apps.map { CellApp(app: $0.key, value: $0.value / Double(cell.count)) }
                         .sorted { ($1.value, $0.app.key) < ($0.value, $1.app.key) }
                     return CalendarCell(start: cell.start, end: cell.end, value: cell.count > 0 ? cell.sum / Double(cell.count) : nil,
-                                        lines: cell.lines, bucket: bucket, top: Array(top.prefix(5)), leaders: cell.leaders)
+                                        lines: cell.lines, bucket: bucket, top: Array(top.prefix(5)), leaders: cell.leaders,
+                                        recorded: cell.count > 0 ? cell.apps.values.reduce(0, +) / Double(cell.count) : nil)
                 }
             }
         }

@@ -14,6 +14,10 @@ final class HardwareModel {
     /// The startup volume, then the external drives' volumes (no network mounts); read apart from the capture, as the
     /// read can block on a dead network mount.
     private(set) var volumes: [VolumeInfo] = []
+    /// Every volume, the APFS containers and the physical disks, for the Storage drive rows' used share and kind.
+    private(set) var allVolumes: [VolumeInfo] = []
+    private(set) var containers: [APFSContainer] = []
+    private(set) var disks: [PhysicalDisk] = []
     private(set) var state: LoadState = .loading
     private(set) var capturedAt: Date?
     /// Expanded inventory rows; the sections on the first capture.
@@ -28,6 +32,8 @@ final class HardwareModel {
     private(set) var gpuCores: Int?
     private(set) var dimmType: String?
     private(set) var partRows: [(part: BoardPart, row: HardwareRow.ID)] = []
+    /// A menu action that failed (Connect, Eject), for the alert.
+    var actionFailure: (title: String, message: String)?
     /// `expanded` before the search began; nil while there is no search.
     private var expandedBeforeSearch: Set<String>?
 
@@ -135,7 +141,10 @@ final class HardwareModel {
 
     private func readStartup() {
         Task {
-            let all = await volumeSource.read().volumes
+            let read = await volumeSource.read()
+            let all = read.volumes
+            (allVolumes, containers) = read
+            disks = await Task.detached { DiskStatsReader().devices() }.value
             volumes = all.filter { $0.mountPoint == "/" } + all.filter { !$0.isInternal && !$0.bsdName.isEmpty }
             partRows = parts()
         }
@@ -148,18 +157,22 @@ final class HardwareModel {
         let id = count == 0 ? node.id : "\(node.id)#\(count)"
         let properties = node.properties.map { HardwareRow(id: "\(id)=\($0.key)", name: $0.label, value: $0.value, children: nil) }
         let nodes = (node.children ?? []).map { row($0, seen: &seen) }
-        // A group of one child is that child, with the group's symbol where the child has none (a section's one unnamed
-        // item); a group of one property shows the value on its own row.
+        // A group of one thing is that thing; a group of one set of values (Audio's "coreaudio_device") keeps its own name
+        // over the set's rows; a group of one property shows the value on its own row.
         if properties.isEmpty, nodes.count == 1 {
             let child = nodes[0]
-            return HardwareRow(id: child.id, name: child.name, value: child.value, children: child.children, symbol: child.symbol ?? node.symbol)
+            if child.symbol == nil {
+                return HardwareRow(id: child.id, name: title(node.name), value: child.value, children: child.children, symbol: node.symbol)
+            }
+            return HardwareRow(id: child.id, name: child.name, value: child.value, children: child.children, symbol: child.symbol,
+                               address: child.address)
         }
         if nodes.isEmpty, properties.count == 1 {
-            return HardwareRow(id: id, name: title(node.name), value: properties[0].value, children: nil, symbol: node.symbol)
+            return HardwareRow(id: id, name: title(node.name), value: properties[0].value, children: nil, symbol: node.symbol, address: node.address)
         }
         let children = properties + nodes
         return HardwareRow(id: id, name: title(node.name), value: children.isEmpty ? "" : "\(children.count) items",
-                           children: children.isEmpty ? nil : children, symbol: node.symbol)
+                           children: children.isEmpty ? nil : children, symbol: node.symbol, address: node.address)
     }
 
     /// Raw item names (`hardware_overview`) through the inventory's label; device names ("iPhone") as they are. Only

@@ -5,7 +5,7 @@ import SwiftUI
 struct SparklineShape: Shape {
     let values: [Double]
     var top: Double = 100
-    var slots: Int = MenuBarReadout.historyLength
+    let slots: Int
 
     func path(in rect: CGRect) -> Path {
         var path = Path()

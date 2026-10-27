@@ -2,14 +2,12 @@ import AMXCore
 import Charts
 import SwiftUI
 
-/// The Apps screen's footer for the chosen metric: a graph of the system's value and
-/// its figures. Range figures come from the system samples (the span's, when one is selected); Live reads the last
+/// The Apps screen's footer for the chosen metric: one borderless strip on the glass, the system's trend as a small line
+/// and the figures the table does not give, each value over its label (no box, no title: the toolbar names the metric). Range figures come from the system samples (the span's, when one is selected); Live reads the last
 /// 5 min of them. Figures marked "now" the app reads itself every 2 s (`HostReader`, `PowerReader`); none is stored.
 struct MetricFooter: View {
     let metric: Metric
     let live: Bool
-    /// The range's (or span's) ranking: its first app is the busiest.
-    let ranking: [AppRank]
     /// The chart's stacked series: Energy has no system series, so its graph is the apps' total.
     let stacked: [SeriesPoint]
     @Environment(HistoryModel.self) private var history
@@ -51,16 +49,21 @@ struct MetricFooter: View {
     var body: some View {
         let points = live ? _livePoints.wrappedValue : history.system.filter { p in history.span.map { $0.contains(p.bucket) } ?? true }
         let stats = stats(points)
+        // One row with the trend; narrower, the figures alone; narrower still, the figures in two rows.
         ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 10) {
-                graph(points).frame(width: 220)
-                statsBox(stats)
+            HStack(spacing: 18) {
+                graph(points)
+                Divider().frame(height: 30)
+                figures(stats)
             }
-            // Narrow content: the figures alone.
-            statsBox(stats)
+            figures(stats)
+            let half = (stats.count + 1) / 2
+            VStack(alignment: .leading, spacing: 8) {
+                figures(stats[..<half])
+                figures(stats[half...])
+            }
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .font(.callout)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Layout.padding)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(metric.label) summary")
@@ -69,43 +72,38 @@ struct MetricFooter: View {
 
     // MARK: - Graph
 
+    /// The trend with no axes or title; two series (read and write, in and out) are the accent and grey, as the help says.
     private func graph(_ points: [SystemPoint]) -> some View {
         let (title, series, percent) = graphSeries(points)
         let names = series.reduce(into: [String]()) { if !$0.contains($1.series) { $0.append($1.series) } }
-        return GroupBox {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                if series.isEmpty {
-                    Text("No data")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Chart(series) { p in
-                        if names.count == 1 {
-                            AreaMark(x: .value("Time", Date(timeIntervalSince1970: p.bucket)), y: .value(title, p.value))
-                                .foregroundStyle(Color.accentColor.opacity(0.25))
-                        }
-                        LineMark(x: .value("Time", Date(timeIntervalSince1970: p.bucket)), y: .value(title, p.value),
-                                 series: .value("Series", p.series))
-                            .foregroundStyle(by: .value("Series", p.series))
-                    }
-                    .chartForegroundStyleScale(domain: names, range: [Color.accentColor, Color.secondary].prefix(names.count).map { $0 })
-                    .chartLegend(names.count > 1 ? .visible : .hidden)
-                    .chartXAxis(.hidden)
-                    .chartYAxis(.hidden)
-                    .chartYScale(domain: 0...(percent ? 100 : max(series.map(\.value).max() ?? 0, 1)))
-                    .frame(height: 56)
-                }
+        return Group {
+            if series.isEmpty {
+                Text("No data").foregroundStyle(.secondary)
+            } else {
+                chart(series, title: title, names: names, percent: percent)
             }
-            .frame(maxHeight: .infinity, alignment: .top)
         }
-        .frame(maxHeight: .infinity)
-        .accessibilityElement(children: .contain)
+        .frame(width: 140, height: 32)
         .accessibilityLabel("\(title) graph")
-        .help(live ? "\(title) in the last 5 minutes" : "\(title) in the \(history.span == nil ? "range" : "selected span")")
+        .help((live ? "\(title) in the last 5 minutes" : "\(title) in the \(history.span == nil ? "range" : "selected span")")
+              + (names.count > 1 ? ": \(names[0]) in the accent colour, \(names[1]) in grey" : ""))
+    }
+
+    private func chart(_ series: [GraphPoint], title: String, names: [String], percent: Bool) -> some View {
+        Chart(series) { p in
+            if names.count == 1 {
+                AreaMark(x: .value("Time", Date(timeIntervalSince1970: p.bucket)), y: .value(title, p.value))
+                    .foregroundStyle(Color.accentColor.opacity(0.25))
+            }
+            LineMark(x: .value("Time", Date(timeIntervalSince1970: p.bucket)), y: .value(title, p.value),
+                     series: .value("Series", p.series))
+                .foregroundStyle(by: .value("Series", p.series))
+        }
+        .chartForegroundStyleScale(domain: names, range: [Color.accentColor, Color.secondary].prefix(names.count).map { $0 })
+        .chartLegend(.hidden)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartYScale(domain: 0...(percent ? 100 : max(series.map(\.value).max() ?? 0, 1)))
     }
 
     /// The graph's title, its series and whether it is a percentage.
@@ -132,39 +130,20 @@ struct MetricFooter: View {
 
     // MARK: - Figures
 
-    private func statsBox(_ stats: [Stat]) -> some View {
-        let half = (stats.count + 1) / 2
-        return GroupBox {
-            HStack(alignment: .top, spacing: 16) {
-                column(stats[..<half])
-                column(stats[half...])
-            }
-        }
-        .frame(maxWidth: 640, maxHeight: .infinity, alignment: .leading)
-    }
-
-    private func column(_ stats: ArraySlice<Stat>) -> some View {
-        VStack(spacing: 4) {
-            ForEach(Array(stats.enumerated()), id: \.element.id) { i, stat in
-                if i > 0 { Divider() }
-                HStack(spacing: 4) {
-                    Text(stat.label)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if stat.severity > 0 { SeverityIcon(severity: stat.severity) }
-                    Text(stat.value)
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .animation(Motion.smooth(0.25), value: Roll(metric: metric, range: history.range, span: history.span, state: history.state))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+    private func figures(_ stats: some RandomAccessCollection<Stat>) -> some View {
+        HStack(alignment: .top, spacing: 18) {
+            ForEach(stats) { stat in
+                Figure(label: stat.label) {
+                    HStack(spacing: 4) {
+                        Text(stat.value)
+                            .contentTransition(.numericText())
+                            .animation(Motion.smooth(0.25), value: Roll(metric: metric, range: history.range, span: history.span, state: history.state))
+                        if stat.severity > 0 { SeverityIcon(severity: stat.severity) }
+                    }
                 }
-                .accessibilityElement(children: .combine)
                 .help(stat.help)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private func stats(_ points: [SystemPoint]) -> [Stat] {
@@ -194,21 +173,15 @@ struct MetricFooter: View {
         func about(_ value: Double?) -> String { value.map { "About " + Metric.bytes($0) } ?? "No data" }
         let levelLabel = live ? "Now" : "Average"
         let levelHelp = live ? "The latest recorded value" : "The average \(window)"
-        let peakHelp = "The highest chart value \(window)"
-        let busiest = Stat(label: "Busiest app", value: ranking.first.map { "\($0.app.name) \(metric.format($0.average))" } ?? "None",
-                           help: "The app with the highest average \(window)")
         let bytes = Metric.memory.format
 
         switch metric {
         case .cpu:
             return [
                 Stat(label: levelLabel, value: percent(level(\.cpu)), help: levelHelp),
-                Stat(label: "Peak", value: percent(peak(\.cpu)), help: peakHelp),
-                busiest,
                 Stat(label: "CPU temperature", value: temperature(\.tempCPU), help: "The CPU temperature, \(live ? "latest" : "average") \(window)"),
                 current("User", percent(now.cpu?.user), "The share of CPU time in apps"),
                 current("System", percent(now.cpu?.system), "The share of CPU time in the system"),
-                current("Idle", percent(now.cpu?.idle), "The share of CPU time idle"),
                 current("Load average", now.load.map { $0.map { $0.formatted(.number.precision(.fractionLength(2))) }.joined(separator: ", ") } ?? "No data",
                         "The 1, 5 and 15 minute load averages"),
             ]
@@ -237,7 +210,6 @@ struct MetricFooter: View {
                      help: "Read and write operations per second: \(levelHelp.lowercased())"),
                 Stat(label: "Latency", value: text(level(\.diskLatMs)) { "\($0.formatted(.number.precision(.fractionLength(2)))) ms" },
                      help: "The time per operation: \(levelHelp.lowercased())"),
-                busiest,
             ]
         case .network:
             return [
@@ -245,16 +217,11 @@ struct MetricFooter: View {
                 Stat(label: "Out", value: text(level(\.netOut)), help: "Bytes sent per second: \(levelHelp.lowercased())"),
                 Stat(label: "Total received", value: about(total(\.netIn)), help: "An estimate of the bytes received \(window)"),
                 Stat(label: "Total sent", value: about(total(\.netOut)), help: "An estimate of the bytes sent \(window)"),
-                Stat(label: "Peak in", value: text(peak(\.netIn)), help: peakHelp),
-                Stat(label: "Peak out", value: text(peak(\.netOut)), help: peakHelp),
-                busiest,
             ]
         case .gpu:
             let thermal = live ? points.last?.thermalState : points.map(\.thermalState).max()
             return [
                 Stat(label: levelLabel, value: percent(level(\.gpu)), help: levelHelp),
-                Stat(label: "Peak", value: percent(peak(\.gpu)), help: peakHelp),
-                busiest,
                 Stat(label: "GPU temperature", value: temperature(\.tempGPU), help: "The GPU temperature, \(live ? "latest" : "average") \(window)"),
                 Stat(label: "Thermal state", value: thermal.map { SystemState.thermal($0).capitalized } ?? "No data",
                      help: live ? "The latest recorded thermal state" : "The highest thermal state \(window)",
@@ -265,8 +232,6 @@ struct MetricFooter: View {
             let average = live ? totals.last : totals.isEmpty ? nil : totals.reduce(0, +) / Double(totals.count)
             var rows = [
                 Stat(label: levelLabel, value: text(average), help: "All apps' energy impact: \(levelHelp.lowercased())"),
-                Stat(label: "Peak", value: text(totals.max()), help: peakHelp),
-                busiest,
             ]
             guard let power = now.power else { return rows }
             let source = power.adapterConnected ? "Power adapter" + (power.adapterRating.map { ", \(Int($0)) W" } ?? "") : "Battery"

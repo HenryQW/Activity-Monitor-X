@@ -49,6 +49,9 @@ The time the user looks at: Live (last 5 min, 1 s updates), 1H, 24H, 7D, 30D, 90
 **Span**:
 A part of the range the user selected on the chart.
 
+**Usual**:
+An app's typical value for the time shown, as an hourly mean, beside its average; Peak has no usual value, and Live shows none.
+
 **Period**:
 What the Calendar shows at once: a day or a week of hours, or a month of days, each cell the metric summed over all apps.
 _Avoid_: range (that is what Apps shows)
@@ -80,6 +83,9 @@ An event that explains a pattern, such as steady memory growth.
 **Rule**:
 One alert condition with its threshold, hold time and re-alert period.
 
+**System CPU rule**:
+The rule on the CPU of all cores (warning 70 %, critical 90 %, for 5 min by default); it also sets the status colour of CPU in Calendar cells, on the Hardware chip and in the menu bar.
+
 **Preset**:
 A named set of rule thresholds computed for this Mac: Relaxed, Balanced, Strict; Custom when the user edited a value.
 
@@ -89,13 +95,76 @@ Info, warning or critical; only warning and critical use yellow and red.
 ## Window
 
 **Inspector**:
-The trailing pane that shows what the screen has selected: an app or process, a Calendar cell, a disk or volume, a Disk Map item or a Hardware row. With nothing selected it shows a summary or a hint.
+The trailing pane that shows what the screen has selected: an app or process, a Calendar cell, a disk or volume, a Space item or a Hardware row. With nothing selected it shows a summary or a hint.
 
 **Search**:
-The toolbar field. Each screen filters what it lists: apps on Apps, Alerts, Calendar and Energy; disks and volumes on Disk; items on Disk Map; rows on Hardware.
+The toolbar field. Each screen filters what it lists: apps on Apps, Alerts, Calendar and Energy; disks and volumes on Disk Activity; items on Space; rows on Hardware.
 
 **Event lane**:
 The strip above the chart with markers for pressure (▲), thermal (◆) and alert (●) events.
 
 **Energy flow**:
-The Energy screen's band diagram: watts from the adapter and the battery into the Mac, and the Mac's watts split over its top five apps and Other by their share of energy impact right now.
+The Energy screen's band diagram: watts from the adapter and the battery into the Mac, and the Mac's watts split over its top five apps, the apps the user keeps in the flow, and Other, by their share of energy impact right now.
+
+**Level**:
+One of the three layers of the window. Level 1 is the window chrome (the toolbar row, the sidebar and the inspector panels); level 2 is the content controls that float in the content column; level 3 is the data, never glass.
+_Avoid_: layer, z-order
+
+**Title pill**:
+The glass capsule at the leading side of the toolbar with the screen's icon, title and subtitle.
+
+**Range bar**:
+The level 2 capsule above the chart with the range segments (1H to 90D), the shown window as short text, and Custom….
+
+**Zoom pill**:
+The vertical level 2 capsule on a chart's trailing edge with Zoom In and Zoom Out.
+
+**Footer**:
+The level 2 glass strip across the content column with the trend line and the system figures of the metric (Apps), or the power figures (Energy).
+_Avoid_: status bar
+
+**Calendar bar**:
+The level 2 capsules above the Calendar grid: the period choice (Day, Week, Month), the time zone, Show and the steps.
+_Avoid_: Calendar strip
+
+**Card**:
+A titled inspector section that opens and closes, with a summary at the right of its first row.
+
+**Preview card**:
+The one hover readout (`PreviewCard`), compact or large, used by every screen.
+_Avoid_: tooltip (that is a hover hint)
+
+**Hover hint**:
+The system help text of a control, shown after the pointer rests 1 s; it says the action and the result.
+
+**Menu bar item**:
+CPU over memory pressure as two small numbers in the menu bar, with the alert dot at their left; a click opens its system menu.
+
+## Disk and Hardware
+
+**Activity**:
+The Disk pane with the read and write charts, the physical disks as cells, and the volume and APFS container tables.
+
+**Space**:
+The Disk pane that scans a volume or folder and shows what uses its space as a treemap and a table.
+_Avoid_: Disk Map (the old screen name)
+
+**Inventory**:
+The Hardware table of what the Mac has and what is connected, by thing, in the system's own words.
+
+**Thing**:
+An item of the inventory that is a real object (a drive, a device, a display, a volume); only a thing has an icon. A set of values or a group is not a thing.
+
+**Chip**:
+The Hardware drawing of the Mac's chip: a `cpu` symbol per core, GPU cores as lane blocks, and one `memorychip`, each filled to its use.
+_Avoid_: board (the earlier motherboard drawing)
+
+**Part**:
+A piece of hardware the app draws or selects: a CPU cluster, the GPU, memory, a volume, a display, the battery.
+
+**Drawn part**:
+The one shared drawing of a part where no system symbol shows it (flash chips for a drive, the battery, a display); the same on every screen.
+
+**Part cell**:
+The cell (`partCell`) around a drawn part or a fact, with its name and one fact; a light system fill and an accent outline while selected.
+

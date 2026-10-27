@@ -8,11 +8,10 @@ enum CalendarFooter {
 }
 
 /// The inside of one Calendar cell: its value, one line per bucket, and what it names at the foot. Day and week text style
-/// follow the period; a time with no data says so, a time to come stays empty.
+/// follow the period; a time with no data or to come stays empty (the hover preview says "No data").
 struct CalendarCellView: View {
     let cell: CalendarCell
     let page: CalendarPage
-    let colors: [AppKey: Color]
     let footer: CalendarFooter
     /// The zones whose hours a Day cell lists under its own.
     let extras: [TimeZone]
@@ -20,18 +19,13 @@ struct CalendarCellView: View {
     var marked: Int?
     /// The lines the selection covers (Day and Hour).
     var selected: ClosedRange<Int>?
-    /// The width of the cell; a narrow cell drops, in order, the busiest app's name, its value and the counts.
+    /// The width of the cell; a narrow cell drops, in order, its peak, the counts and its value.
     var width: CGFloat = .infinity
 
-    /// The inset of the content; the pointer hit test in `CalendarGrid` reads the same value.
-    static func padding(_ period: CalendarPeriod, width: CGFloat) -> CGFloat { period == .day || width < 64 ? 3 : 5 }
-
-    private var showsName: Bool { width >= 80 }
     private var showsPeak: Bool { width >= 72 }
     private var showsCounts: Bool { width >= 64 }
     private var showsValue: Bool { width >= 56 }
     private var metric: Metric { page.metric }
-    private var future: Bool { cell.start >= Date().timeIntervalSince1970 }
     private var counts: (warning: Int, critical: Int) { page.bucket == 3600 || metric == .memory ? page.counts([cell]) : (0, 0) }
 
     var body: some View {
@@ -44,7 +38,7 @@ struct CalendarCellView: View {
             }
         }
         .font(.caption)
-        .padding(Self.padding(page.period, width: width))
+        .padding(Layout.inset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -58,28 +52,17 @@ struct CalendarCellView: View {
             .frame(maxHeight: .infinity)
     }
 
-    @ViewBuilder private var noData: some View {
-        if !future && showsCounts { Text("No data").font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity) }
-        else { Spacer() }
-    }
-
-    /// The busiest app, or the group, with its colour.
+    /// The busiest app as its icon, or the group as its symbol in its colour: the thing itself names it at any width.
     @ViewBuilder private var named: some View {
         switch footer {
         case .none: EmptyView()
         case .busiest:
-            if let app = cell.top.first?.app { dotted(app.name, colors[app] ?? .secondary) }
+            if let app = cell.top.first?.app {
+                Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 14, height: 14).accessibilityLabel(app.name)
+            }
         case .group(let group):
-            dotted(group.name, group.color.color)
+            Image(systemName: group.symbol).font(.caption2).foregroundStyle(group.color.color).accessibilityLabel(group.name)
         }
-    }
-
-    private func dotted(_ name: String, _ color: Color) -> some View {
-        HStack(spacing: 3) {
-            Circle().fill(color).frame(width: 8, height: 8)
-            if showsName { Text(name).lineLimit(1) }
-        }
-        .font(.caption2)
     }
 
     // MARK: Layouts
@@ -97,7 +80,7 @@ struct CalendarCellView: View {
             value
         }
         if cell.value == nil {
-            noData
+            Spacer()
         } else {
             lines
             HStack(spacing: 4) {
@@ -110,7 +93,7 @@ struct CalendarCellView: View {
 
     @ViewBuilder private var block: some View {
         if cell.value == nil {
-            noData
+            Spacer()
         } else {
             HStack(spacing: 4) {
                 value
@@ -139,7 +122,7 @@ struct CalendarCellView: View {
         ForEach(extras, id: \.identifier) { zone in
             Text(AppTime.namedHour(cell.start, in: zone)).font(.caption2).foregroundStyle(.secondary)
         }
-        if cell.value == nil { noData } else { lines }
+        if cell.value == nil { Spacer() } else { lines }
     }
 
     @ViewBuilder private var big: some View {
@@ -150,7 +133,7 @@ struct CalendarCellView: View {
             value.font(.title3)
         }
         if cell.value == nil {
-            noData
+            Spacer()
         } else {
             lines
             HStack {
@@ -191,7 +174,7 @@ struct CalendarRowView: View {
             }
         }
         .font(.caption)
-        .padding(width < 64 ? 3 : 5)
+        .padding(Layout.inset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

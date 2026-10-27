@@ -77,29 +77,32 @@ struct EnergyDiagram: View {
         .accessibilityLabel(summary)
     }
 
-    /// Sources on the left of their nodes, the Mac above its node and a charging battery below its node, apps and processes
-    /// on the right; app labels are as wide as the space to the process column.
+    /// Each end is the thing it is: the adapter's symbol and the battery as Hardware draws it (SCR-19) left of their nodes,
+    /// the Mac's symbol above its node and a charging battery below its node, each app's icon on the right (processes and
+    /// Other, a group, keep the icon column empty); app labels are as wide as the space to the process column.
     @ViewBuilder private func labels(nodes: [EnergyNode], column: [Int], rects: [CGRect], size: CGSize) -> some View {
         let sources = nodes.indices.filter { column[$0] == 0 }
         let last = flows.columns.count - 1
         let step = (size.width - Self.nodeWidth) / Double(last)
         let sourceY = SankeyLayout.spread(sources.map { rects[$0].midY }, spacing: 40, in: 20...max(20, size.height - 20))
         ForEach(Array(sources.enumerated()), id: \.element) { k, i in
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(name(nodes[i])).fontWeight(.semibold)
-                Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit()
+            HStack(spacing: 6) {
+                Text(value(nodes[i])).fontWeight(.semibold).monospacedDigit()
+                icon(nodes[i]).frame(width: 30)
             }
             .lineLimit(1)
+            .help(name(nodes[i]))
             .frame(width: Self.leading - 8, alignment: .trailing)
             .position(x: rects[i].minX - Self.leading / 2 - 4, y: sourceY[k])
         }
         ForEach(Array(nodes.enumerated()).filter { column[$0.offset] == 1 }, id: \.element) { i, _ in
             HStack(spacing: 6) {
-                Text(name(nodes[i])).fontWeight(.semibold)
-                Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit()
+                icon(nodes[i])
+                Text(value(nodes[i])).fontWeight(.semibold).monospacedDigit()
             }
             .lineLimit(1)
             .fixedSize()
+            .help(name(nodes[i]))
             .position(x: rects[i].midX, y: nodes[i] == .mac ? rects[i].minY - 11 : rects[i].maxY + 11)
         }
         ForEach(2...max(2, last), id: \.self) { c in
@@ -110,6 +113,7 @@ struct EnergyDiagram: View {
                 let i = member.index
                 let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
                 HStack(spacing: 6) {
+                    icon(nodes[i]).frame(width: 16)
                     Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selection.app ? .semibold : nil)
                     Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
                 }
@@ -125,6 +129,21 @@ struct EnergyDiagram: View {
     }
 
     private static let space = "energy"
+
+    /// The thing a node is: the adapter's and the Mac's symbols, the drawn battery, an app's icon; nothing for a process
+    /// or Other.
+    @ViewBuilder private func icon(_ node: EnergyNode) -> some View {
+        switch node {
+        case .adapter: Image(systemName: "powerplug.portrait").imageScale(.large).foregroundStyle(.secondary)
+        case .battery:
+            let battery = power.battery
+            BatteryShape(percent: battery?.percent.map(Double.init), charging: battery?.charging == true,
+                         level: BatteryShape.level(percent: battery?.percent, charging: battery?.charging == true))
+        case .mac: Image(systemName: power.battery == nil ? "desktopcomputer" : "laptopcomputer").imageScale(.large).foregroundStyle(.secondary)
+        case .app(let app): Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 16, height: 16)
+        case .process, .other, .otherProcesses: EmptyView()
+        }
+    }
 
     /// Set once per node, where the pointer entered: a rebuild per mouse move is not needed.
     private func hover(_ node: EnergyNode, _ phase: HoverPhase) {

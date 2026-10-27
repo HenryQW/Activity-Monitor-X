@@ -4,13 +4,21 @@ import SwiftUI
 /// closed card still says what matters. Open or closed is kept per title, for every inspector that shows the card.
 struct CardSection<Content: View>: View {
     let title: String
-    let summary: Text?
+    let summary: AnyView?
+    /// The summary as VoiceOver says it, with the card's state.
+    let spoken: String?
     @ViewBuilder let content: Content
     private let _open: AppStorage<Bool>
 
     init(_ title: String, summary: Text? = nil, @ViewBuilder content: () -> Content) {
+        self.init(title, summary: summary.map { AnyView($0) }, spoken: nil, content: content)
+    }
+
+    /// A summary that is more than text: a number that rolls (INS-9); `spoken` says it to VoiceOver.
+    init(_ title: String, summary: AnyView?, spoken: String?, @ViewBuilder content: () -> Content) {
         self.title = title
         self.summary = summary
+        self.spoken = spoken
         self.content = content()
         _open = AppStorage(wrappedValue: true, "inspectorCard." + title)
     }
@@ -37,7 +45,7 @@ struct CardSection<Content: View>: View {
             .buttonStyle(.plain)
             .help(open ? "Hide the \(title) rows" : "Show the \(title) rows")
             .accessibilityLabel(title)
-            .accessibilityValue(open ? "Open" : "Closed")
+            .accessibilityValue([spoken, open ? "Open" : "Closed"].compactMap { $0 }.joined(separator: ", "))
             .accessibilityHint(open ? "Hides the rows" : "Shows the rows")
             if open { content }
         }

@@ -109,3 +109,29 @@ struct SignalConfirmation: ViewModifier {
         let message: String
     }
 }
+
+/// Quit… and Force Quit… for a row's menu: a process through amxd, an app through AppKit; each asks first.
+struct QuitButtons: View {
+    @Environment(Selection.self) private var selection
+    /// The app to quit when there is no `process`.
+    let app: AppKey?
+    let process: ProcessRank?
+    let name: String
+
+    var body: some View {
+        ForEach([SIGTERM, SIGKILL], id: \.self) { signal in
+            let request = request(signal)
+            let verb = signal == SIGKILL ? "Force Quit" : "Quit"
+            Button("\(verb)…", systemImage: signal == SIGKILL ? "xmark.octagon" : "xmark.circle") { selection.signalRequest = request }
+                .disabled(request == nil)
+                .help(request != nil ? "\(verb) \(name), after you confirm"
+                      : process != nil ? "\(name) has stopped or belongs to another user" : "Select a process of \(name) to quit it")
+        }
+    }
+
+    private func request(_ signal: Int32) -> SignalRequest? {
+        if let process { return Selection.signallable(process).map { SignalRequest(process: $0, signal: signal) } }
+        let running = app.map(InspectorView.running) ?? []
+        return running.isEmpty ? nil : SignalRequest(app: name, running: running, signal: signal)
+    }
+}

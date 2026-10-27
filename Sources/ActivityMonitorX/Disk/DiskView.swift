@@ -1,8 +1,8 @@
 import AMXCore
 import SwiftUI
 
-/// Disk: pills at the top, as in the inspector, switch Activity and Space (the disk map, `DiskMapView`). The toolbar
-/// items, the range bar (Activity only), the search and the inspector follow the pill.
+/// Disk: the toolbar's Activity | Space segments switch the activity and the disk map (`DiskMapView`). The toolbar
+/// items, the range bar (Activity only), the search and the inspector follow the pane.
 struct DiskView: View {
     @Environment(Selection.self) private var selection
 
@@ -13,19 +13,24 @@ struct DiskView: View {
             case .space: DiskMapView()
             }
         }
-        // The pills stay at the top over a centred empty state.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .safeAreaBar(edge: .top, spacing: 0) {
-            Picker("View", selection: Bindable(selection).diskPane) {
-                Text("Activity").tag(DiskPane.activity)
-                Text("Space").tag(DiskPane.space)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .accessibilityLabel("View")
-            .help("Show the disk activity or the space that files use")
-            .padding(Layout.inset)
+    }
+}
+
+/// Activity | Space in the toolbar's centre, where Apps has Metric: the native segments at their own width, as the
+/// screen's main switch.
+struct DiskPanePicker: View {
+    @Environment(Selection.self) private var selection
+
+    var body: some View {
+        Picker("View", selection: Bindable(selection).diskPane) {
+            Text("Activity").tag(DiskPane.activity)
+            Text("Space").tag(DiskPane.space)
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .accessibilityLabel("View")
+        .help("Show the disk activity or the space that files use")
     }
 }
 
@@ -33,6 +38,7 @@ struct DiskView: View {
 /// health, the mounted volumes and the APFS containers. The search filters disks and volumes by name; a click selects one
 /// for the inspector. Content layer: no glass.
 private struct DiskActivityView: View {
+    @Environment(AlertsModel.self) private var alerts
     @Environment(DiskModel.self) private var disk
     @Environment(DiskMapModel.self) private var diskMap
     @Environment(HistoryModel.self) private var history
@@ -51,7 +57,7 @@ private struct DiskActivityView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: Layout.section) {
                 // The pill's column stays free of the charts, so it never covers a y-axis label.
                 charts
                     .padding(.trailing, ChartZoom.width)
@@ -64,10 +70,16 @@ private struct DiskActivityView: View {
         }
         // The charts and lists scroll under the range bar.
         .safeAreaBar(edge: .top, spacing: 0) { RangeBar() }
-        .screenTitle("Disk", subtitle: Text("All physical disks"), icon: .symbol("internaldrive"))
+        .screenTitle("Disk", icon: .symbol("internaldrive"))
         // Stops with the screen: no disk reads while Disk is not shown.
         .task { await disk.run() }
         .onChange(of: selection.refreshes) { Task { await disk.refresh() } }
+        .alert(disk.actionFailure?.title ?? "", isPresented: Binding(
+            get: { disk.actionFailure != nil }, set: { if !$0 { disk.actionFailure = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(disk.actionFailure?.message ?? "")
+        }
     }
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
@@ -161,93 +173,81 @@ private struct DiskActivityView: View {
 
     // MARK: Physical disks
 
+    /// A cell for each disk, at most 3 to a row and more rows as needed; a later row keeps the first row's cell width.
     @ViewBuilder private var disks: some View {
         let disks = NameSearch.filter(disk.disks, query: selection.search) { [$0.model, $0.bsdName].compactMap { $0 } }
         if disks.isEmpty {
             Text(disk.disks.isEmpty ? "No physical disks found." : "No disk matches the search.").foregroundStyle(.secondary)
         } else {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(disks) { d in
-                        if let health = disk.health[d.bsdName] {
-                            DisclosureGroup { healthDetails(health) } label: { diskRow(d) }
-                        } else {
-                            diskRow(d)
-                        }
-                    }
+            let columns = min(disks.count, 3)
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                ForEach(Array(stride(from: 0, to: disks.count, by: columns)), id: \.self) { start in
+                    GridRow { ForEach(disks[start..<min(start + columns, disks.count)]) { diskCell($0) } }
                 }
-                .padding(4)
             }
         }
     }
 
-    /// A click selects the disk; the selected row has the selection background.
-    private func diskRow(_ d: PhysicalDisk) -> some View {
+    /// The drive as Hardware draws it (SCR-19), the name and SMART state, kind and size, the used share and the rates now;
+    /// a click selects the disk for the inspector, which has its SMART details.
+    private func diskCell(_ d: PhysicalDisk) -> some View {
         let selected = disk.selected == .disk(d.bsdName)
-        return HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(d.model ?? d.bsdName).fontWeight(.medium)
-                Text([d.protocolName, d.isInternal ? "Internal" : "External", Metric.bytes(Double(d.sizeBytes))]
-                    .compactMap { $0 }.joined(separator: " · "))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if let rate = disk.perDisk[d.bsdName] {
-                Text("Read \(Metric.disk.format(rate.readBps)) · Write \(Metric.disk.format(rate.writeBps))")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            SmartStatus(health: disk.health[d.bsdName])
-                .frame(minWidth: 110, alignment: .leading)
-        }
-        .padding(4)
-        .background(selected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 6))
-        .contentShape(Rectangle())
-        .onTapGesture { disk.selected = .disk(d.bsdName) }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityAction { disk.selected = .disk(d.bsdName) }
-    }
-
-    /// Three groups side by side, Health, Temperature and Lifetime, from the disk name's leading edge.
-    private func healthDetails(_ h: NVMeHealth) -> some View {
-        let groups = [
-            ("Health", [("Percentage used", Self.percent(h.percentageUsed)), ("Available spare", Self.percent(h.availableSpare)),
-                        ("Media errors", h.mediaErrors.formatted()), ("Unsafe shutdowns", h.unsafeShutdowns.formatted())]),
-            ("Temperature", [("Now", h.temperatureCelsius.map { "\(Int($0.rounded())) °C" } ?? "Unknown")]),
-            ("Lifetime", [("Data read", Metric.bytes(Double(h.dataReadBytes))), ("Data written", Metric.bytes(Double(h.dataWrittenBytes))),
-                          ("Power-on hours", h.powerOnHours.formatted()), ("Power cycles", h.powerCycles.formatted())]),
-        ]
-        return VStack(alignment: .leading, spacing: 6) {
-            Divider()
-            HStack(alignment: .top, spacing: 32) {
-                ForEach(groups, id: \.0) { title, rows in
-                    Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 2) {
-                        Text(title).fontWeight(.semibold)
-                        ForEach(rows, id: \.0) { label, value in
-                            GridRow {
-                                Text(label).foregroundStyle(.secondary)
-                                Text(value).monospacedDigit().gridColumnAlignment(.trailing)
-                            }
-                        }
+        let space = d.space(volumes: disk.volumes, containers: disk.containers, rule: alerts.rules.freeSpace)
+        let name = d.model ?? d.bsdName
+        let kind = d.kind
+        let used = space.share.map { "\(Int(($0 * 100).rounded()))% used" }
+        let rate = disk.perDisk[d.bsdName]
+        let health = disk.health[d.bsdName]?.isHealthy
+        return Button { disk.selected = .disk(d.bsdName) } label: {
+            HStack(spacing: Layout.inset) {
+                FlashChips(count: space.startup ? 2 : 1, share: space.share, color: ChipDiagram.status(space.level)).frame(width: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text(name).fontWeight(.semibold)
+                        if health == true { Image(systemName: "checkmark.seal").foregroundStyle(.secondary) }
+                        if health == false { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
                     }
+                    Text(kind)
+                    HStack {
+                        if let used { Text(used) }
+                        Spacer(minLength: 6)
+                        if let rate { Text("R \(Metric.disk.format(rate.readBps))  W \(Metric.disk.format(rate.writeBps))") }
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .lineLimit(1)
+            }
+            .font(.callout)
+            .monospacedDigit()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .partCell(selected: selected)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show \(name) in the inspector")
+        .contextMenu {
+            Group {
+                Button("Show in Inspector", systemImage: "sidebar.trailing") {
+                    disk.selected = .disk(d.bsdName)
+                    selection.inspectorShown = true
+                }
+                .help("Show \(name) and its SMART details in the inspector")
+                // One volume ejects the drive with all its volumes.
+                if !d.isInternal, let volume = disk.volumes.first(where: { Volumes.wholeDisk(of: $0, containers: disk.containers) == d.bsdName }) {
+                    Button("Eject", systemImage: "eject") { eject(volume) }
+                        .help("Eject \(name) and all its volumes so that you can disconnect it safely")
                 }
             }
-            Text("Available spare threshold \(Self.percent(h.spareThreshold)).").foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
         }
-        .font(.callout)
-        // The disclosure content starts under the chevron (measured); 16 pt puts it on the disk name.
-        .padding(.leading, 16)
-        .padding(.vertical, 4)
+        .accessibilityLabel("Disk, \(name)")
+        .accessibilityValue([kind, used, health == true ? "SMART verified" : health == false ? "SMART failing" : nil,
+                             rate.map { "Read \(Metric.disk.format($0.readBps)), write \(Metric.disk.format($0.writeBps))" }]
+            .compactMap { $0 }.joined(separator: ", "))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func detail(_ label: String, _ value: String) -> some View {
-        GridRow {
-            Text(label).foregroundStyle(.secondary)
-            Text(value).monospacedDigit()
-        }
-    }
+
 
     // MARK: Volumes
 
@@ -267,8 +267,9 @@ private struct DiskActivityView: View {
 
     private func table(_ volumes: [VolumeInfo], selection: Binding<VolumeInfo.ID?>) -> some View {
         Table(volumes, selection: selection, columnCustomization: _columns.projectedValue) {
-            TableColumn("Name", value: \.name)
-            // Ideal widths near the content's, so the Show in Space column stays in view.
+            TableColumn("Name") { volume in
+                Label(volume.name, systemImage: volume.isInternal ? "internaldrive" : "externaldrive")
+            }
             TableColumn("Kind") { Text($0.role ?? $0.fileSystem.uppercased()) }
                 .width(ideal: 80)
             TableColumn("Capacity") { Text(Metric.bytes(Double($0.totalBytes))).monospacedDigit() }
@@ -282,23 +283,43 @@ private struct DiskActivityView: View {
             TableColumn("Mount Point", value: \.mountPoint)
                 .width(ideal: 100)
                 .customizationID("mountPoint")
-            TableColumn("") { volume in
-                Button("Show in Space", systemImage: "internaldrive") { showInSpace(volume) }.labelStyle(.titleAndIcon)
-                    .controlSize(.small)
-                    .help("Show what takes the space on \(volume.name)")
-            }
-            .width(min: 110, ideal: 110)
         }
+        // Show in Space: the menu, or a double-click.
         .contextMenu(forSelectionType: VolumeInfo.ID.self) { ids in
             if ids.count == 1, let volume = volumes.first(where: { $0.id == ids.first }) {
-                Button("Show in Space", systemImage: "internaldrive") { showInSpace(volume) }.labelStyle(.titleAndIcon)
+                Group {
+                    Button("Show in Space", systemImage: "chart.pie") { showInSpace(volume) }
+                        .help("Show what uses the space on \(volume.name)")
+                    Button("Show in Finder", systemImage: "folder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: volume.mountPoint)])
+                    }
+                    .help("Show \(volume.name) in the Finder")
+                    Button("Copy Mount Point", systemImage: "doc.on.doc") { DiskItemMenu.copy(volume.mountPoint) }
+                        .help("Copy \(volume.mountPoint)")
+                    if !volume.isInternal {
+                        Divider()
+                        Button("Eject", systemImage: "eject") { eject(volume) }
+                            .help("Eject \(volume.name) so that you can disconnect it safely")
+                    }
+                }
+                .labelStyle(.titleAndIcon)
             }
+        } primaryAction: { ids in
+            if ids.count == 1, let volume = volumes.first(where: { $0.id == ids.first }) { showInSpace(volume) }
         }
         // Inside the page's scroll view: as tall as its rows, scrolled with the page.
-        .frame(height: CGFloat(volumes.count) * 24 + 32)
+        .frame(height: Self.tableHeight(rows: volumes.count, row: 24))
         .scrollDisabled(true)
         .onChange(of: _columns.wrappedValue) { _, columns in
             UserDefaults.standard.set(Self.hideable.filter { columns[visibility: $0] == .hidden }, forKey: Self.hiddenKey)
+        }
+    }
+
+    /// Reads the disks again at once, so the ejected volume goes.
+    private func eject(_ volume: VolumeInfo) {
+        Task {
+            disk.actionFailure = await volume.eject()
+            await disk.refresh()
         }
     }
 
@@ -310,43 +331,39 @@ private struct DiskActivityView: View {
 
     // MARK: APFS containers
 
+    /// A table as the Volumes table: one row per container, its volumes named once (a role that only repeats the name
+    /// is left out).
     @ViewBuilder private var containers: some View {
         if disk.containers.isEmpty {
             Text("No APFS containers found.").foregroundStyle(.secondary)
         } else {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(disk.containers) { c in
-                        DisclosureGroup {
-                            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 4) {
-                                detail("Size", Metric.bytes(Double(c.sizeBytes)))
-                                detail("Free", c.freeBytes.map { Metric.bytes(Double($0)) } ?? "Unknown")
-                                detail("Physical stores", c.physicalStores.joined(separator: ", "))
-                                GridRow {
-                                    Text("Volumes").foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        ForEach(c.volumes, id: \.bsdName) { m in
-                                            Text(([m.name] + [m.role, m.isEncrypted ? "Encrypted" : nil].compactMap { $0 })
-                                                .joined(separator: " · "))
-                                        }
-                                    }
-                                }
-                            }
-                            .padding(.leading, 4)
-                            .padding(.vertical, 4)
-                        } label: {
-                            Text("\(c.bsdName) · \(Metric.bytes(Double(c.sizeBytes)))").fontWeight(.medium)
-                        }
+            Table(disk.containers) {
+                TableColumn("Name") { Label($0.bsdName, systemImage: "square.stack.3d.up") }
+                    .width(min: 80, ideal: 100, max: 140)
+                TableColumn("Physical Store") { Text($0.physicalStores.joined(separator: ", ")) }
+                    .width(min: 90, ideal: 110, max: 140)
+                TableColumn("Size") { Text(Metric.bytes(Double($0.sizeBytes))).monospacedDigit() }
+                    .width(min: 70, ideal: 90, max: 120)
+                TableColumn("Free") { Text($0.freeBytes.map { Metric.bytes(Double($0)) } ?? "Unknown").monospacedDigit() }
+                    .width(min: 70, ideal: 90, max: 120)
+                TableColumn("Volumes") { c in
+                    let names = c.volumes.map { m in
+                        m.role.map { $0 == m.name ? m.name : "\(m.name) (\($0))" } ?? m.name
                     }
+                    .joined(separator: ", ")
+                    Text(names).help(names)
                 }
-                .padding(4)
             }
+            .frame(height: Self.tableHeight(rows: disk.containers.count, row: 25.5))
+            .scrollDisabled(true)
         }
     }
 
-    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
+    /// The height of a table with no scrolling of its own: the header and its rows (measured: 33 pt for the header,
+    /// 24 pt a volume row, 25.5 pt a container row, whose symbol is taller).
+    private static func tableHeight(rows: Int, row: CGFloat) -> CGFloat { CGFloat(rows) * row + 33 }
 
-    private static func percent(_ value: Int) -> String { (Double(value) / 100).formatted(.percent) }
+    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 }
 
 /// "Verified", "Failing" in red, or "Not available" for a disk without a SMART log.
@@ -362,13 +379,50 @@ struct SmartStatus: View {
     }
 }
 
+extension PhysicalDisk {
+    /// "Internal Apple Fabric, 1 TB": the Disk cell's and the Hardware drive row's.
+    var kind: String { (isInternal ? "Internal" : "External") + (protocolName.map { " \($0)" } ?? "") + ", " + Metric.bytes(Double(sizeBytes)) }
+
+    /// The used share from the disk's volumes: an APFS container once (its size less its free space, as Hardware's
+    /// startup volume; else its largest volume use, which "/" gives for the whole container), another volume by its own
+    /// use; the highest status level of those volumes; and whether it holds "/", which Hardware draws with two chips.
+    /// Nil share with no volume.
+    func space(volumes all: [VolumeInfo], containers: [APFSContainer], rule: AlertRules.FreeSpace) -> (share: Double?, level: Int, startup: Bool) {
+        let volumes = all.filter { Volumes.wholeDisk(of: $0, containers: containers) == bsdName }
+        let startup = volumes.contains { $0.mountPoint == "/" }
+        guard !volumes.isEmpty, sizeBytes > 0 else { return (nil, 0, startup) }
+        let used = Dictionary(grouping: volumes) { $0.container ?? $0.id }.reduce(0.0) { sum, pool in
+            let container = containers.first { $0.bsdName == pool.key }.flatMap { c in c.freeBytes.map { c.sizeBytes - min($0, c.sizeBytes) } }
+            return sum + Double(container ?? pool.value.map { min($0.used, $0.totalBytes) }.max() ?? 0)
+        }
+        return (min(used / Double(sizeBytes), 1), volumes.map { $0.spaceLevel(rule) }.max() ?? 0, startup)
+    }
+}
+
 extension VolumeInfo {
     var used: UInt64 { usedBytes ?? totalBytes - min(freeBytes, totalBytes) }
     var available: UInt64 { availableBytes ?? freeBytes }
+
+    /// Unmounts the volume and ejects its drive, with the drive's other volumes; the failure's title and message, if any.
+    /// Off the main actor: a busy drive can take seconds to flush.
+    func eject() async -> (title: String, message: String)? {
+        let (mount, name) = (mountPoint, self.name)
+        return await Task.detached {
+            do { try NSWorkspace.shared.unmountAndEjectDevice(at: URL(filePath: mount)) } catch {
+                return ("Cannot Eject \(name)", error.localizedDescription)
+            }
+            return nil
+        }.value
+    }
     /// Free space under 15 % of the capacity, or on the startup volume under the Mac's memory (room to swap): the bar is
     /// yellow (warning). A small external drive is not low because it holds less than the memory.
     var lowSpace: Bool {
         Double(available) < Double(totalBytes) * 0.15 || mountPoint == "/" && available < ProcessInfo.processInfo.physicalMemory
+    }
+    /// 2 on the startup volume at the free space alert's level, 1 on low space, else 0: the drawn drive's status colour.
+    func spaceLevel(_ rule: AlertRules.FreeSpace) -> Int {
+        let critical = mountPoint == "/" && rule.enabled && Double(available) <= Double(totalBytes) * Double(rule.percentFree) / 100
+        return critical ? 2 : lowSpace ? 1 : 0
     }
 }
 
@@ -384,6 +438,8 @@ private struct UsedCell: View {
             if total > 0 {
                 ProgressView(value: Double(min(used, total)), total: Double(total))
                     .tint(low ? .yellow : nil)
+                    // The small bar keeps the row at the standard table height that `tableHeight` counts.
+                    .controlSize(.small)
                     .frame(width: 60)
                     .accessibilityLabel(low ? "Low free space" : "Used")
             }

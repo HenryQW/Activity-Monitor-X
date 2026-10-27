@@ -526,3 +526,51 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Built:** the parser sets a symbol only on a thing (an item with a real `_name`, or one of a set named by key); a raw `_name` and an unnamed item are sets of values. The symbol still passes down, so devices in "Not Connected" keep theirs. A section's one unnamed item that stands in for it takes the section's symbol. macOS gives no kind for a phone, so an iPhone keeps the Bluetooth symbol.
 - **Cost if wrong:** about 20 lines in `HardwareInventory.swift`, `HardwareModel.swift` and the Name column.
 
+## D76: Round 17 picks and one design per drawn part (user picks and rule)
+
+- **Goal (user):** apply the Hardware rounds' thinking (the thing itself as the icon, no box on glass, no repeated words, one style for one job) to the other screens, each by its own character; and keep each custom icon one design across screens.
+- **Options:** up to three per element on board round 17 (AL, FT, CT, CC, DT, DL, SP, EF, ER, IN, ST, SB); round 18 revised DT1 and DL2.
+- **Call (user):** AL1 alerts as a table; FT1 one borderless metric strip; CT3 Calendar header as glyph cells; CC1 app icons in day cells, empty days blank; DT1 Activity | Space in the toolbar centre, two equal 84 pt segments; DL2 physical disks as cells, at most 3 in a row and more rows, with the volumes table under them; SP1 the path capsule with symbols, without the two text buttons; EF1 the ends of the flow as the things; ER2 the Energy row as a strip; IN2 the numbers in the inspector's chart card; ST1 alert rules as rows with a summary and a switch; SB1 pinned apps with their icons. Rule: a drawn part has one design on every screen (the Disk cells use the Hardware flash chips).
+- **Cost if wrong:** each element is its own commit on `design/round17`.
+
+## D77: Show Whole Range by the span line; native Disk segments
+
+- **Goal (user):** the chart's lone glass x looked like a bug, far from the span it clears; the Disk segments forced to 168 pt broke the native look.
+- **Options:** SC1 a text button after "Ranked for", SC2 a span token in the range bar, SC3 a tag on the selected band; DP1 native segments at their own width, DP2 icon segments, DP3 equal halves (custom).
+- **Call (user):** SC1 and DP1.
+- **Cost if wrong:** one commit each on `design/round17`.
+
+## D78: Context menus on list items; Forget by a private call
+
+- **Goal (user):** Bluetooth items offer Forget, Reconnect and more on a right click; every list item offers its useful actions.
+- **Options:** a proposed list of menus per list (approved by the user); for Forget, a private IOBluetooth call (`remove`) or only a link to Bluetooth settings, as no public call removes a pairing.
+- **Call (user):** the proposed list; Forget by the private call. Copy IP Address was dropped: the inventory has no address for an interface.
+- **Cost if wrong:** a macOS update can remove the private call; Forget then shows an alert that sends the user to Bluetooth settings.
+
+## D79: Hardware by thing (SG3)
+
+- **Goal (user):** the physical drive under Storage; two monitors are wrongly folded under the GPU.
+- **Options:** SG1 drives in Storage with their volumes, SG2 Drives and Volumes groups, SG3 SG1 with the drive drawing and used share.
+- **Call (user):** SG3, and the same hierarchy elsewhere: a display is beside its GPU.
+- **Cost if wrong:** the regroup is one function (`HardwareInventory.byThing`) over the raw output.
+
+## D81: Menu bar item as two stacked numbers (MB2)
+
+- **Goal (user):** improve the menu bar status display: it was about 150 pt wide, mixed two kinds of reading in one row, and the alert glyph moved the numbers.
+- **Options:** MB1 two bars with no numbers, MB2 CPU over memory as small labelled numbers, MB3 a CPU line with its number and a memory bar.
+- **Call (user):** MB2, with the alert dot in a fixed slot. The Text only and Text + chart setting goes; the CPU line stays in the menu.
+- **Cost if wrong:** one view (`MenuBarLabel.image`).
+
+## D82: Warning levels in the menu bar as coloured bars (WL3)
+
+- **Goal (user):** warning numbers must be legible on a light menu bar: system yellow on it is 1.3:1 and system red 3:1, under the 4.5:1 that small text needs.
+- **Options:** WL1 deeper amber and red on a light menu bar, WL2 a yellow or red badge behind the number, WL3 numbers in the menu bar's colour with a coloured bar before them.
+- **Call (user):** WL3, with bars wide enough to read (4 pt).
+- **Cost if wrong:** one view (`MenuBarLabel.content`).
+
+## D83: Calendar CPU lines from the Mac's CPU (CB1)
+
+- **Goal (user):** a line's height and its colour must agree. The height was the sum of the recorded processes; the colour was the Mac's CPU against the system CPU rule. The processes sum 15 to 45 % lower (short-lived processes, time between samples), so a short line was yellow and a taller one blue (27 Oct: 10:55 PM yellow at 585 %, 5:45 PM blue at 672 %).
+- **Options:** CB1 lines from the Mac's CPU with every app shown; CB2 colour from the line's own height (a CPU alert can then have no yellow line); CB3 the processes as a solid line with a pale cap up to the Mac's CPU.
+- **Call (user):** CB1. With a search or group the lines stay the apps shown (CAL-5). The preview shows the difference as "Not in any process".
+- **Cost if wrong:** `HistoryReader.calendarBuckets` and its three callers in `CalendarModel`.

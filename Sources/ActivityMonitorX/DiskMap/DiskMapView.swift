@@ -92,10 +92,11 @@ struct DiskMapView: View {
             banners(tree)
             // Above the split view, not a safe area bar: its treemap and table sit in AppKit panes that take no safe
             // area, so a bar would put the treemap labels and the table header under the capsules.
-            HStack(spacing: Layout.inset) {
+            // The path is the one capsule: Show in Finder is in the item menu and the inspector's Path card, the details
+            // are behind the toolbar's Info button.
+            HStack {
                 pathBar(tree, folder: folder)
                 Spacer(minLength: 0)
-                actions(focus: focus)
             }
             .padding(Layout.inset)
             HSplitView {
@@ -153,6 +154,11 @@ struct DiskMapView: View {
 
     /// One button per level from the scanned root to the focus, then the folder's size: a level 2 capsule that fits its
     /// content; a path too long for the column scrolls inside it.
+    /// The scanned volume's drive by its kind, or a folder.
+    private var rootSymbol: String {
+        if case .volume(let volume)? = model.target { volume.isInternal ? "internaldrive" : "externaldrive" } else { "folder" }
+    }
+
     private func pathBar(_ tree: DiskTree, folder: DiskTree.Node) -> some View {
         let focus = model.focus
         let path = HStack(spacing: Layout.inset) {
@@ -163,9 +169,12 @@ struct DiskMapView: View {
                         .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                 }
-                Button(level == 0 ? model.title : tree[Array(focus.prefix(level))].name) {
+                // Each step is the thing it names, as a path control: the drive, then folders.
+                Button(level == 0 ? model.title : tree[Array(focus.prefix(level))].name,
+                       systemImage: level > 0 ? "folder" : rootSymbol) {
                     model.focus = Array(focus.prefix(level))
                 }
+                .labelStyle(.titleAndIcon)
                 .buttonStyle(.borderless)
                 .fontWeight(level == focus.count ? .semibold : nil)
                 .help("Show this folder")
@@ -176,34 +185,12 @@ struct DiskMapView: View {
                 path.fixedSize()
                 ScrollView(.horizontal) { path }.scrollIndicators(.never)
             }
+            Divider().padding(.vertical, Layout.padding)
             Text("\(folder.items.formatted()) items · \(Metric.bytes(Double(folder.size)))")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .fixedSize()
         }
-        .floatingCapsule(padding: Layout.padding)
-    }
-
-    /// Show the selected item, else the shown folder, in Finder; open the inspector with its details.
-    private func actions(focus: [Int]) -> some View {
-        // Grouped small items have no one path: their folder shows.
-        let path = model.selected.flatMap(model.path) ?? model.path(focus)
-        return HStack(spacing: Layout.inset) {
-            if let path {
-                let url = URL(filePath: path)
-                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .help("Show \(url.lastPathComponent) in Finder")
-            }
-            if !selection.inspectorShown {
-                // Without bezels, a line keeps the two buttons apart.
-                if path != nil { Divider().padding(.vertical, Layout.padding) }
-                Button("Show in Inspector") { selection.inspectorShown = true }
-                    .help("Show the details of the selection in the inspector")
-            }
-        }
-        // The capsule is the buttons' one glass: no bezel on it (D71).
-        .buttonStyle(.borderless)
-        .fixedSize()
         .floatingCapsule()
     }
 

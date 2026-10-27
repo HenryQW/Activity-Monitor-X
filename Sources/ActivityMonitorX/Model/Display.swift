@@ -48,9 +48,7 @@ extension Metric {
 extension GroupColor {
     var color: Color {
         switch self {
-        case .red: .red
         case .orange: .orange
-        case .yellow: .yellow
         case .green: .green
         case .mint: .mint
         case .teal: .teal

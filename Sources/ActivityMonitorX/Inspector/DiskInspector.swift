@@ -66,7 +66,23 @@ struct DiskInspector: View {
             LabeledContent("Location", value: physical.isInternal ? "Internal" : "External")
             health(physical)
         }
+        if let h = disk.health[physical.bsdName] {
+            CardSection("SMART") {
+                LabeledContent("Percentage used", value: Self.percent(h.percentageUsed))
+                LabeledContent("Available spare", value: "\(Self.percent(h.availableSpare)), threshold \(Self.percent(h.spareThreshold))")
+                LabeledContent("Media errors", value: h.mediaErrors.formatted())
+                LabeledContent("Unsafe shutdowns", value: h.unsafeShutdowns.formatted())
+                LabeledContent("Temperature", value: h.temperatureCelsius.map { "\(Int($0.rounded())) °C" } ?? "Unknown")
+                LabeledContent("Data read", value: Metric.bytes(Double(h.dataReadBytes)))
+                LabeledContent("Data written", value: Metric.bytes(Double(h.dataWrittenBytes)))
+                LabeledContent("Power-on hours", value: h.powerOnHours.formatted())
+                LabeledContent("Power cycles", value: h.powerCycles.formatted())
+            }
+            .monospacedDigit()
+        }
     }
+
+    private static func percent(_ value: Int) -> String { (Double(value) / 100).formatted(.percent) }
 
     /// SMART state and the read and write rates now.
     @ViewBuilder private func health(_ physical: PhysicalDisk) -> some View {

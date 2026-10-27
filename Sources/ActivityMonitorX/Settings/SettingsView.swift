@@ -82,10 +82,12 @@ private struct GeneralSettings: View {
             }
             Section {
                 Toggle("Show in Menu Bar", isOn: prefs.menuBarShown)
-                Picker("Menu Bar", selection: prefs.menuBarStyle) {
-                    Text("Text only").tag(MenuBarStyle.text)
-                    Text("Text + chart").tag(MenuBarStyle.chart)
+                Picker("Menu Bar Colours", selection: prefs.menuBarColor) {
+                    Text("Colour").tag(true)
+                    Text("Greyscale").tag(false)
                 }
+                .disabled(!preferences.menuBarShown)
+                .help("Show warning and critical numbers in yellow and red, or keep the item in the menu bar's own colour")
             } footer: {
                 Text("While it is shown, closing the window keeps Activity Monitor X running, so new alerts still notify.")
             }
@@ -148,111 +150,157 @@ private struct AlertSettings: View {
                 } footer: {
                     Text("Relaxed, Balanced and Strict set the values of every rule below for this Mac's cores and memory, and keep each rule on or off. A change to a value makes it Custom.")
                 }
-                Section {
-                    Toggle(RuleName.title(RuleName.sustainedCPU), isOn: model.binding(\.rules.sustainedCPU.enabled, custom: false))
-                    AlertRuleRows.sustainedCPU(model.binding(\.rules.sustainedCPU), machine)
-                        .disabled(!rules.sustainedCPU.enabled)
-                } footer: {
-                    Text("An app stays above this CPU for this long. Then that app is quiet for 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.memoryGrowth), isOn: model.binding(\.rules.memoryGrowth.enabled, custom: false))
-                    AlertRuleRows.memoryGrowth(model.binding(\.rules.memoryGrowth), machine)
-                        .disabled(!rules.memoryGrowth.enabled)
-                } footer: {
-                    Text("A process grows steadily by this much over this time. Once per process.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.memoryJump), isOn: model.binding(\.rules.memoryJump.enabled, custom: false))
-                    AlertRuleRows.memoryJump(model.binding(\.rules.memoryJump), machine)
-                        .disabled(!rules.memoryJump.enabled)
-                } footer: {
-                    Text("A process grows by this much in under a minute. Then it is quiet for 30 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.pressure), isOn: model.binding(\.rules.pressure.enabled, custom: false))
-                    Picker("At", selection: model.binding(\.rules.pressure.level)) {
-                        ForEach(AlertRules.Pressure.Level.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                ForEach([("App Rules", true), ("System Rules", false)], id: \.0) { title, app in
+                    Section(title) {
+                        ForEach(specs(rules, machine).filter { RuleName.system.contains($0.id) != app }) { row($0) }
                     }
-                    .disabled(!rules.pressure.enabled)
-                } footer: {
-                    Text("Memory pressure reaches this level. At most once per 60 min.")
-                }
-                Section {
-                    Toggle("Sustained Thermal State", isOn: model.binding(\.rules.thermal.enabled, custom: false))
-                    Group {
-                        Picker("At or above", selection: model.binding(\.rules.thermal.state)) {
-                            ForEach(AlertRules.Thermal.State.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
-                        }
-                        NumberRow(title: "For", value: model.binding(\.rules.thermal.minutes),
-                                  range: AlertRules.Thermal.minutesRange, unit: "min")
-                    }
-                    .disabled(!rules.thermal.enabled)
-                } footer: {
-                    Text("The Mac stays at or above this thermal state for this long.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.diskWrites), isOn: model.binding(\.rules.diskWrites.enabled, custom: false))
-                    AlertRuleRows.diskWrites(model.binding(\.rules.diskWrites))
-                        .disabled(!rules.diskWrites.enabled)
-                } footer: {
-                    Text("An app writes this much to disk in one hour. Then that app is quiet for 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.network), isOn: model.binding(\.rules.network.enabled, custom: false))
-                    AlertRuleRows.network(model.binding(\.rules.network))
-                        .disabled(!rules.network.enabled)
-                } footer: {
-                    Text("An app receives and sends more than this for this long. Then that app is quiet for 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.energy), isOn: model.binding(\.rules.energy.enabled, custom: false))
-                    AlertRuleRows.energy(model.binding(\.rules.energy))
-                        .disabled(!rules.energy.enabled)
-                } footer: {
-                    Text("An app stays above this energy impact for this long. Then that app is quiet for 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.gpu), isOn: model.binding(\.rules.gpu.enabled, custom: false))
-                    AlertRuleRows.gpu(model.binding(\.rules.gpu))
-                        .disabled(!rules.gpu.enabled)
-                } footer: {
-                    Text("An app stays above this GPU use for this long. Then that app is quiet for 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.systemCPU), isOn: model.binding(\.rules.systemCPU.enabled, custom: false))
-                    Group {
-                        NumberRow(title: "Warning at", value: model.binding(\.rules.systemCPU.warning),
-                                  range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
-                        NumberRow(title: "Critical at", value: model.binding(\.rules.systemCPU.critical),
-                                  range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
-                        NumberRow(title: "For", value: model.binding(\.rules.systemCPU.minutes),
-                                  range: R.SystemCPU.minutesRange, unit: "min")
-                    }
-                    .disabled(!rules.systemCPU.enabled)
-                } footer: {
-                    Text("The Mac's CPU stays above a level for this long. A new spell alerts at most once per 60 min; a rise to critical alerts again.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.swap), isOn: model.binding(\.rules.swap.enabled, custom: false))
-                    NumberRow(title: "Above", value: model.binding(\.rules.swap.percentOfMemory),
-                              range: R.Swap.percentOfMemoryRange, step: 5, unit: "% of RAM")
-                        .disabled(!rules.swap.enabled)
-                } footer: {
-                    Text("Swap reaches this share of memory. At most once per 60 min.")
-                }
-                Section {
-                    Toggle(RuleName.title(RuleName.freeSpace), isOn: model.binding(\.rules.freeSpace.enabled, custom: false))
-                    NumberRow(title: "Below", value: model.binding(\.rules.freeSpace.percentFree),
-                              range: R.FreeSpace.percentFreeRange, unit: "% free")
-                        .disabled(!rules.freeSpace.enabled)
-                } footer: {
-                    Text("Free space on the startup disk falls to this share. At most once per 24 h.")
                 }
             }
             .disabled(model.settings == nil)
         }
         .formStyle(.grouped)
+        .sheet(item: _open.projectedValue) { open in
+            if let spec = specs(rules, machine).first(where: { $0.id == open.id }) { detail(spec) }
+        }
+    }
+
+    /// A rule as Settings lists it: what it watches, its values in a few words, its switch, and its value rows and footer
+    /// for the sheet.
+    private struct Spec: Identifiable {
+        let id: String
+        let enabled: WritableKeyPath<DaemonSettings, Bool>
+        let summary: String
+        let footer: String
+        let rows: () -> AnyView
+    }
+
+    private struct Open: Identifiable { let id: String }
+
+    private let _open = State<Open?>(initialValue: nil)
+
+    private func specs(_ r: AlertRules, _ machine: Machine) -> [Spec] {
+        let cores = Double(machine.cores)
+        func pct(_ value: Double) -> String { (value / 100).formatted(.percent.precision(.fractionLength(0...1))) }
+        return [
+            Spec(id: RuleName.sustainedCPU, enabled: \.rules.sustainedCPU.enabled,
+                 summary: "\(pct(r.sustainedCPU.percent / cores)) of all cores for \(r.sustainedCPU.minutes) min",
+                 footer: "An app stays above this CPU for this long. Then that app is quiet for 60 min.") {
+                AnyView(AlertRuleRows.sustainedCPU(model.binding(\.rules.sustainedCPU), machine)) },
+            Spec(id: RuleName.memoryGrowth, enabled: \.rules.memoryGrowth.enabled,
+                 summary: "\(r.memoryGrowth.megabytes.formatted()) MB in \(r.memoryGrowth.minutes) min",
+                 footer: "A process grows steadily by this much over this time. Once per process.") {
+                AnyView(AlertRuleRows.memoryGrowth(model.binding(\.rules.memoryGrowth), machine)) },
+            Spec(id: RuleName.memoryJump, enabled: \.rules.memoryJump.enabled,
+                 summary: "\(r.memoryJump.megabytes.formatted()) MB at once",
+                 footer: "A process grows by this much in under a minute. Then it is quiet for 30 min.") {
+                AnyView(AlertRuleRows.memoryJump(model.binding(\.rules.memoryJump), machine)) },
+            Spec(id: RuleName.diskWrites, enabled: \.rules.diskWrites.enabled,
+                 summary: "\((r.diskWrites.bytesPerHour >> 30).formatted()) GB per hour",
+                 footer: "An app writes this much to disk in one hour. Then that app is quiet for 60 min.") {
+                AnyView(AlertRuleRows.diskWrites(model.binding(\.rules.diskWrites))) },
+            Spec(id: RuleName.network, enabled: \.rules.network.enabled,
+                 summary: "\((r.network.bytesPerSecond >> 20).formatted()) MB/s for \(r.network.minutes) min",
+                 footer: "An app receives and sends more than this for this long. Then that app is quiet for 60 min.") {
+                AnyView(AlertRuleRows.network(model.binding(\.rules.network))) },
+            Spec(id: RuleName.energy, enabled: \.rules.energy.enabled,
+                 summary: "\(r.energy.impact.formatted()) impact for \(r.energy.minutes) min",
+                 footer: "An app stays above this energy impact for this long. Then that app is quiet for 60 min.") {
+                AnyView(AlertRuleRows.energy(model.binding(\.rules.energy))) },
+            Spec(id: RuleName.gpu, enabled: \.rules.gpu.enabled,
+                 summary: "\(pct(Double(r.gpu.percent))) for \(r.gpu.minutes) min",
+                 footer: "An app stays above this GPU use for this long. Then that app is quiet for 60 min.") {
+                AnyView(AlertRuleRows.gpu(model.binding(\.rules.gpu))) },
+            Spec(id: RuleName.pressure, enabled: \.rules.pressure.enabled,
+                 summary: "At \(r.pressure.level.rawValue.capitalized)",
+                 footer: "Memory pressure reaches this level. At most once per 60 min.") {
+                AnyView(Picker("At", selection: model.binding(\.rules.pressure.level)) {
+                    ForEach(AlertRules.Pressure.Level.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                }) },
+            Spec(id: RuleName.thermal, enabled: \.rules.thermal.enabled,
+                 summary: "\(r.thermal.state.rawValue.capitalized) or above for \(r.thermal.minutes) min",
+                 footer: "The Mac stays at or above this thermal state for this long.") {
+                AnyView(Group {
+                    Picker("At or above", selection: model.binding(\.rules.thermal.state)) {
+                        ForEach(AlertRules.Thermal.State.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
+                    }
+                    NumberRow(title: "For", value: model.binding(\.rules.thermal.minutes), range: AlertRules.Thermal.minutesRange, unit: "min")
+                }) },
+            Spec(id: RuleName.systemCPU, enabled: \.rules.systemCPU.enabled,
+                 summary: "\(r.systemCPU.warning)% warning, \(r.systemCPU.critical)% critical, \(r.systemCPU.minutes) min",
+                 footer: "The Mac's CPU stays above a level for this long. A new spell alerts at most once per 60 min; a rise to critical alerts again.") {
+                AnyView(Group {
+                    NumberRow(title: "Warning at", value: model.binding(\.rules.systemCPU.warning),
+                              range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
+                    NumberRow(title: "Critical at", value: model.binding(\.rules.systemCPU.critical),
+                              range: R.SystemCPU.percentRange, step: 5, unit: "% of all cores")
+                    NumberRow(title: "For", value: model.binding(\.rules.systemCPU.minutes), range: R.SystemCPU.minutesRange, unit: "min")
+                }) },
+            Spec(id: RuleName.swap, enabled: \.rules.swap.enabled,
+                 summary: "Above \(r.swap.percentOfMemory)% of RAM",
+                 footer: "Swap reaches this share of memory. At most once per 60 min.") {
+                AnyView(NumberRow(title: "Above", value: model.binding(\.rules.swap.percentOfMemory),
+                                  range: R.Swap.percentOfMemoryRange, step: 5, unit: "% of RAM")) },
+            Spec(id: RuleName.freeSpace, enabled: \.rules.freeSpace.enabled,
+                 summary: "Below \(r.freeSpace.percentFree)% free",
+                 footer: "Free space on the startup disk falls to this share. At most once per 24 h.") {
+                AnyView(NumberRow(title: "Below", value: model.binding(\.rules.freeSpace.percentFree),
+                                  range: R.FreeSpace.percentFreeRange, unit: "% free")) },
+        ]
+    }
+
+    /// As a row in Notifications settings: the symbol of what the rule watches, its name and values, its switch; a click
+    /// on the row or its arrow opens the values.
+    private func row(_ spec: Spec) -> some View {
+        let title = RuleName.title(spec.id)
+        return HStack(spacing: 8) {
+            Image(systemName: RuleName.symbol(spec.id)).foregroundStyle(.secondary).frame(width: 18)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(spec.summary).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            Spacer(minLength: 8)
+            Toggle(title, isOn: model.binding(spec.enabled, custom: false)).labelsHidden().toggleStyle(.switch)
+            Button("Edit \(title) Values", systemImage: "chevron.right") { _open.wrappedValue = Open(id: spec.id) }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Change the values of \(title)")
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { _open.wrappedValue = Open(id: spec.id) }
+        .contextMenu {
+            let on = model.binding(spec.enabled, custom: false)
+            Group {
+                Button(on.wrappedValue ? "Turn Off" : "Turn On", systemImage: on.wrappedValue ? "bell.slash" : "bell") { on.wrappedValue.toggle() }
+                    .help(on.wrappedValue ? "Turn off alerts for \(title)" : "Turn on alerts for \(title)")
+                Button("Edit Values…", systemImage: "slider.horizontal.3") { _open.wrappedValue = Open(id: spec.id) }
+                    .help("Change the values of \(title)")
+            }
+            .labelStyle(.titleAndIcon)
+        }
+    }
+
+    /// The rule's switch and values, with the footer that says what it watches.
+    private func detail(_ spec: Spec) -> some View {
+        let enabled = (model.settings ?? DaemonSettings())[keyPath: spec.enabled]
+        return VStack(spacing: 0) {
+            Form {
+                Section {
+                    Toggle(RuleName.title(spec.id), isOn: model.binding(spec.enabled, custom: false))
+                    spec.rows().disabled(!enabled)
+                } footer: {
+                    Text(spec.footer)
+                }
+            }
+            .formStyle(.grouped)
+            HStack {
+                Spacer()
+                Button("Done") { _open.wrappedValue = nil }.keyboardShortcut(.defaultAction)
+            }
+            .padding()
+        }
+        .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -347,6 +395,13 @@ private struct RecordingSettings: View {
                             }
                             .labelStyle(.iconOnly)
                             .buttonStyle(.borderless)
+                            .help("Remove this app from the list")
+                        }
+                        .contextMenu {
+                            Button("Remove", systemImage: "minus.circle") {
+                                Task { await model.apply { $0.terminalBundleIDs.removeAll { $0 == id } } }
+                            }
+                            .labelStyle(.titleAndIcon)
                             .help("Remove this app from the list")
                         }
                     }

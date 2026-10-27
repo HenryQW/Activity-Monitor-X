@@ -1,20 +1,15 @@
 import AMXCore
 import SwiftUI
 
-/// The strip above the cells: the period, the time zone, the title, what the cells show, and the steps.
+/// The strip above the cells: the period, the time zone, what the cells show, and the steps. The title pill names the
+/// period, so the strip does not.
 struct CalendarHeader: View {
     @Environment(CalendarModel.self) private var model
     @Environment(GroupsModel.self) private var groups
     @Environment(Preferences.self) private var preferences
-    /// The period's title in full, shortened ("Oct 2026") and as the narrow forms show it.
-    let title: String
-    let shortTitle: String
-
-    /// What a form keeps of the bar. The first form that fits the column is shown, so nothing is cut: the title shortens,
-    /// then goes (the title pill names the period), then Show is an icon, then the period is a pop-up, then the pop-ups
-    /// lose their indicator.
+    /// What a form keeps of the bar. The first form that fits the column is shown, so nothing is cut: Show is an icon,
+    /// then the period is a pop-up, then the pop-ups lose their indicator.
     private struct Fit {
-        var title: String?
         var showName = true
         var segments = true
         /// Pop-ups lose their indicator.
@@ -23,8 +18,6 @@ struct CalendarHeader: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            bar(Fit(title: title))
-            bar(Fit(title: shortTitle))
             bar(Fit())
             bar(Fit(showName: false))
             bar(Fit(showName: false, segments: false))
@@ -35,13 +28,12 @@ struct CalendarHeader: View {
 
     private func bar(_ form: Fit) -> some View {
         let name = model.period.rawValue.capitalized
-        // Level 2 capsules: the period, the zone and the title, then what the cells show and the steps. The controls have
+        // Level 2 capsules: the period and the zone, then what the cells show and the steps. The controls have
         // no bezel or track of their own: the capsule is their one glass (D71).
         return HStack(spacing: Layout.inset) {
             HStack(spacing: Layout.padding) {
                 period(segments: form.segments, compact: form.compact)
                 zoneMenu(compact: form.compact)
-                if let title = form.title { Text(title).font(.headline).lineLimit(1).fixedSize() }
             }
             .floatingCapsule()
             Spacer(minLength: 0)

@@ -54,7 +54,7 @@ private struct TitlePill: View {
                 .frame(maxWidth: 240, alignment: .leading)
             }
         }
-        .floatingCapsule(padding: Layout.padding)
+        .floatingCapsule()
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { if abs(fit.pill - $0) >= 1 { fit.pill = $0 } }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
