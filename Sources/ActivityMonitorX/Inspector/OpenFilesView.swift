@@ -76,7 +76,7 @@ private struct ItemRow: View {
             Text(path).lineLimit(1).truncationMode(.middle).help(path)
                 .contextMenu {
                     Group {
-                        Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
+                        ShowInFinderButton(path: path)
                         Button("Copy Path", systemImage: "doc.on.doc") { copy(path) }
                     }
                         .labelStyle(.titleAndIcon)

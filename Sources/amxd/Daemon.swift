@@ -88,7 +88,7 @@ final class Daemon: @unchecked Sendable {
         sigterm = term
 
         let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: AMX.tick)
+        t.schedule(deadline: .now(), repeating: AMX.tick, leeway: .milliseconds(500))
         t.setEventHandler { [self] in tick() }
         t.resume()
         timer = t
@@ -221,7 +221,7 @@ final class Daemon: @unchecked Sendable {
         liveDemand.requested(at: uptime)
         if liveTimer == nil {
             let t = DispatchSource.makeTimerSource(queue: queue)
-            t.schedule(deadline: .now(), repeating: 1)
+            t.schedule(deadline: .now(), repeating: 1, leeway: .milliseconds(100))
             t.setEventHandler { [self] in liveTick() }
             t.resume()
             liveTimer = t

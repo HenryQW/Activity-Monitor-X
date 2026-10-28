@@ -65,6 +65,7 @@ enum AppIcon {
     static func image(for app: AppKey) -> NSImage {
         if let image = cache[app.key] { return image }
         let image = app.key.hasSuffix(".app") ? NSWorkspace.shared.icon(forFile: app.key) : NSWorkspace.shared.icon(for: .unixExecutable)
+        if cache.count >= 512 { cache.removeAll() }
         cache[app.key] = image
         return image
     }

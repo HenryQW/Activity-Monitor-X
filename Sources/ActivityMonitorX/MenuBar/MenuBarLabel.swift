@@ -24,7 +24,8 @@ final class MenuBarReadout {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(5))
             let r = sampler.readout(now: ProcessInfo.processInfo.systemUptime)
-            percents = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
+            let next = Percents(cpu: Int(r.cpu.rounded()), pressure: Int(r.pressurePct.rounded()), level: r.pressureLevel)
+            if next != percents { percents = next }
         }
     }
 }
@@ -68,8 +69,8 @@ struct MenuBarLabel: View {
     /// have the menu bar's colour.
     private func content(cpu: String, pressure: String, unread: Bool) -> some View {
         let p = readout.percents, rule = alerts.rules.systemCPU
-        let cpuLevel = p.map { rule.enabled ? ($0.cpu >= rule.critical ? 2 : $0.cpu >= rule.warning ? 1 : 0) : 0 } ?? 0
-        let memoryLevel = p.map { $0.level >= 4 ? 2 : $0.level >= 2 ? 1 : 0 } ?? 0
+        let cpuLevel = p.map { rule.level(Double($0.cpu)) } ?? 0
+        let memoryLevel = p.map { SystemState.pressureSeverity($0.level) } ?? 0
         let row = { (label: String, value: String, level: Int) in
             GridRow {
                 Text(label).font(.system(size: 8, weight: .semibold))

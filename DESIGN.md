@@ -39,7 +39,7 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 ## Levels
 
 - **Level 1, the window chrome:** the toolbar row and the panels (sidebar, inspector).
-- **Level 2, the content controls that belong to the data:** range bar, zoom pill, metric footer, Calendar bar, Space path. Each floats in the content column as its own glass capsule or bar (`floatingCapsule`, `floatingBar`). The time range is never in the toolbar (WIN-11).
+- **Level 2, the content controls that belong to the data:** range bar, zoom pill, screen footer, Calendar bar, Space path. Each floats in the content column as its own glass capsule or bar (`floatingCapsule`, `floatingBar`). The time range is never in the toolbar (WIN-11).
 - **Level 3, the data:** chart, table, grid, treemap, board. It runs edge to edge under levels 1 and 2 with the scroll edge effect, and is never glass. Nothing important sits under a capsule at rest: a chart keeps room for its zoom pill (`ChartZoom.width`).
 
 ## Materials
@@ -129,7 +129,7 @@ Rules:
 
 ### Footer strips
 
-- One borderless glass strip across the content column (WIN-13, SCR-22): the trend as a small line with no title, then each figure as its value over its label (`Figure`). Only the figures the table does not give. The table scrolls under it.
+- Every screen has one borderless glass strip across the content column (`ScreenFooter`, WIN-13): one visual that is the screen's own (a trend, the month, the drive, the chip, the battery), then each figure as its value over its label (`Figure`) in equal columns. Only the figures the screen does not already give. The content scrolls under it.
 
 ### Charts
 

@@ -198,10 +198,7 @@ struct AppTable: View {
                             Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: row.app, history: history) }
                                 .help("Choose the colour that shows \(row.name)")
                             if row.app.key.hasPrefix("/") {
-                                Button("Show in Finder", systemImage: "folder") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: row.app.key)])
-                                }
-                                .help("Show \(row.name) in the Finder")
+                                ShowInFinderButton(path: row.app.key, help: "Show \(row.name) in the Finder")
                             }
                         }
                         if let pid = row.pid {

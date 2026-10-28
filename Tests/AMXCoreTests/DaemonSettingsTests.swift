@@ -254,4 +254,11 @@ import Testing
         defer { try? FileManager.default.removeItem(at: bare) }
         #expect(throws: SettingsError.invalid("\(bare.lastPathComponent) has no bundle ID")) { try settings.addTerminal(appAt: bare) }
     }
+
+    @Test func systemCPULevelBoundaries() {
+        var rule = AlertRules.SystemCPU()
+        #expect([rule.warning - 1, rule.warning, rule.critical].map { rule.level(Double($0)) } == [0, 1, 2])
+        rule.enabled = false
+        #expect(rule.level(100) == 0)
+    }
 }

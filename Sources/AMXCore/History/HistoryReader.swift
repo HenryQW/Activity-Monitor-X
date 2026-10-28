@@ -188,6 +188,11 @@ public enum SystemState {
         let words = ["nominal", "fair", "serious", "critical"]
         return words.indices.contains(state) ? words[state] : "state \(state)"
     }
+
+    /// 0 normal, 1 warning, 2 critical, for the status colours.
+    public static func pressureSeverity(_ level: Int) -> Int { level >= 4 ? 2 : level >= 2 ? 1 : 0 }
+
+    public static func thermalSeverity(_ state: Int) -> Int { state >= 3 ? 2 : state >= 2 ? 1 : 0 }
 }
 
 public struct EventMark: Sendable, Identifiable {

@@ -71,11 +71,10 @@ public final class DaemonClient: @unchecked Sendable {
     private func call<T: Sendable>(_ body: (DaemonXPC, @escaping @Sendable (T) -> Void) -> Void) async throws -> T {
         let c = currentConnection()
         return try await withCheckedThrowingContinuation { continuation in
-            let once = Once(continuation)
+            let once = Once(continuation, timeout: 3)
             let proxy = c.remoteObjectProxyWithErrorHandler { error in
                 once.resume(.failure(DaemonClientError.unreachable(error.localizedDescription)))
             } as! DaemonXPC
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { once.resume(.failure(DaemonClientError.timeout)) }
             body(proxy) { once.resume(.success($0)) }
         }
     }
@@ -101,16 +100,25 @@ public final class DaemonClient: @unchecked Sendable {
 }
 
 /// Resumes its continuation once; later calls (error handler, reply, timeout) are ignored.
+/// Fails with `timeout` after `timeout` seconds; the first resume cancels that timer.
 private final class Once<T: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<T, Error>?
+    private var timer: DispatchWorkItem?
 
-    init(_ continuation: CheckedContinuation<T, Error>) { self.continuation = continuation }
+    init(_ continuation: CheckedContinuation<T, Error>, timeout: Double) {
+        self.continuation = continuation
+        let item = DispatchWorkItem { [self] in resume(.failure(DaemonClientError.timeout)) }
+        timer = item
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: item)
+    }
 
     func resume(_ result: Result<T, Error>) {
         lock.lock()
         let c = continuation
         continuation = nil
+        timer?.cancel()
+        timer = nil  // breaks the item's hold on self
         lock.unlock()
         c?.resume(with: result)
     }

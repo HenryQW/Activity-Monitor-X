@@ -45,10 +45,15 @@ public enum Rollup {
         // Raw rows from 65 s before the oldest unrolled bucket still feed a tier: never delete them.
         let rawBound = try db.read { try min(meta($0, "minute_watermark"), meta($0, "hour_watermark")) } - 65
         do {
-            let windows = [policy.raw, policy.raw, policy.minute, policy.minute, policy.hour, policy.hour, policy.hour]
-            for (tier, window) in zip(tiers + [events], windows) {
-                let cutoff = tier.isRaw ? min(now - window, rawBound) : now - window
-                while try db.write({ try deleteOldest($0, tier, before: cutoff) }) == batch {}
+            // Like the prune, at most every 600 s; the size cap still runs every time.
+            let trimmed = try db.read { try meta($0, "trim_at") }
+            if now - trimmed >= 600 || now < trimmed {
+                let windows = [policy.raw, policy.raw, policy.minute, policy.minute, policy.hour, policy.hour, policy.hour]
+                for (tier, window) in zip(tiers + [events], windows) {
+                    let cutoff = tier.isRaw ? min(now - window, rawBound) : now - window
+                    while try db.write({ try deleteOldest($0, tier, before: cutoff) }) == batch {}
+                }
+                try db.write { try setMeta($0, "trim_at", now) }
             }
             try db.write { try pruneIfDue($0, now: now, cutoff: now - policy.hour) }
             // Retention frees about as many pages as the next ticks need. Vacuuming those would move the pages the

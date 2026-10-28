@@ -14,8 +14,6 @@ struct CalendarGrid: View {
     @Environment(\.colorScheme) private var scheme
     let page: CalendarPage
     let footer: CalendarFooter
-    /// Told the width the cells take, so the Month tiles above line up with them.
-    var onWidth: (CGFloat) -> Void = { _ in }
 
     /// What the pointer is on: a cell, or the week cell at the end of a row.
     private struct Hit: Equatable {
@@ -70,7 +68,6 @@ struct CalendarGrid: View {
                     cells(layout, colors: colors)
                 }
             }
-            .onGeometryChange(for: CGFloat.self, of: \.size.width) { onWidth($0) }
             .padding(.leading, layout.origin)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }

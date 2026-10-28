@@ -68,9 +68,7 @@ struct ChipDiagram: View {
 
     /// Cores and the GPU follow the system CPU rule (SET-7); the accent while the rule is off.
     private func cpuLevel(_ usage: Double?) -> Int {
-        let rule = alerts.rules.systemCPU
-        guard rule.enabled, let usage else { return 0 }
-        return usage >= Double(rule.critical) ? 2 : usage >= Double(rule.warning) ? 1 : 0
+        usage.map { alerts.rules.systemCPU.level($0) } ?? 0
     }
 
     /// A part as a button, with the accent outline while it shows the selected row.
@@ -156,7 +154,7 @@ struct ChipDiagram: View {
     /// system's memory pressure, as the menu bar dial shows it.
     private func memory(slot: Double, selected: Bool) -> some View {
         let usage = hardware.memoryUsage
-        let color = Self.status(readout.percents.map { $0.level == 4 ? 2 : $0.level == 2 ? 1 : 0 } ?? 0)
+        let color = Self.status(readout.percents.map { SystemState.pressureSeverity($0.level) } ?? 0)
         let value = [hardware.memory(chip), usage.map { "\(Self.percent($0)) used" }].compactMap { $0 }.joined(separator: ", ")
         return button(.memory, label: "Unified memory", value: value, hint: "Show the memory in the list", selected: selected) {
             VStack(alignment: .leading, spacing: 4) {

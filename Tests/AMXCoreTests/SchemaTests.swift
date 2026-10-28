@@ -26,7 +26,7 @@ private let tables = ["processes", "process_samples", "process_minute", "process
         }
         #expect(mode == "wal")
         #expect(vacuum == 2)
-        #expect(applied == ["v1", "v2", "v3"])
+        #expect(applied == ["v1", "v2", "v3", "v4"])
     }
 
     @Test func v2KeepsRawAndTierRows() throws {
@@ -88,7 +88,7 @@ private let tables = ["processes", "process_samples", "process_minute", "process
         let path = tempDB()
         try Data(repeating: 0x41, count: 8192).write(to: URL(fileURLWithPath: path))
         let writer = try Store.openWriter(path: path)
-        #expect(try writer.read { try Schema.migrator.appliedIdentifiers($0) } == ["v1", "v2", "v3"])
+        #expect(try writer.read { try Schema.migrator.appliedIdentifiers($0) } == ["v1", "v2", "v3", "v4"])
         let name = (path as NSString).lastPathComponent
         let aside = try FileManager.default.contentsOfDirectory(atPath: NSTemporaryDirectory()).filter { $0.hasPrefix(name + ".corrupt-") }
         #expect(aside.count == 1)

@@ -32,6 +32,7 @@ struct AlertsView: View {
         // A new row, a dismissed row and a restored row fade in or out; a search filters the rows with no fade.
         .animation(Motion.fade(), value: alerts.alerts.map(\.id))
         .animation(Motion.fade(), value: alerts.dismissed)
+        .screenFooter(rows.isEmpty ? nil : AlertsFacts(rows: rows))
         .screenTitle("Alerts", icon: .symbol("exclamationmark.triangle"))
         .onAppear { show(appearsActive) }
         .onChange(of: appearsActive) { _, active in show(active) }
@@ -120,5 +121,57 @@ struct SeverityIcon: View {
             .foregroundStyle(severity >= 2 ? Color.red : .yellow)
             .accessibilityLabel(label)
             .help(label)
+    }
+}
+
+/// The listed alerts at a glance in the screen's footer (FT2): the last 7 days as bars by severity, then today's count,
+/// the 7 days' critical and warning counts and the subject that alerted most.
+private struct AlertsFacts: View {
+    let rows: [EventMark]
+
+    var body: some View {
+        let calendar = AppTime.calendar
+        let today = calendar.startOfDay(for: Date())
+        let days = (0..<7).reversed().map { calendar.date(byAdding: .day, value: -$0, to: today)! }
+        let week = rows.filter { Date(timeIntervalSince1970: $0.ts) >= days[0] }
+        let critical = week.count { $0.severity >= 2 }
+        let frequent = Dictionary(grouping: week, by: \.subject).max { ($0.value.count, $1.key) < ($1.value.count, $0.key) }
+        ScreenFooter(figures: [
+            FooterFigure(label: "Today", value: rows.count { Date(timeIntervalSince1970: $0.ts) >= today }.formatted(), help: "The alerts listed today"),
+            FooterFigure(label: "Critical, 7 days", value: critical.formatted(), help: "The critical alerts listed in the last 7 days",
+                         severity: critical > 0 ? 2 : 0),
+            FooterFigure(label: "Warnings, 7 days", value: (week.count - critical).formatted(), help: "The warnings listed in the last 7 days",
+                         severity: week.count > critical ? 1 : 0),
+            FooterFigure(label: frequent.map { "Most frequent, \($0.value.count)" } ?? "Most frequent", value: frequent?.key ?? "None",
+                         help: "The subject with the most alerts in the last 7 days"),
+        ]) {
+            AlertDays(counts: days.map { day in
+                let end = calendar.date(byAdding: .day, value: 1, to: day)!
+                let on = week.filter { (day..<end).contains(Date(timeIntervalSince1970: $0.ts)) }
+                return (on.count { $0.severity < 2 }, on.count { $0.severity >= 2 })
+            })
+        }
+        .accessibilityLabel("Alerts summary")
+    }
+}
+
+/// One bar per day, oldest first: warnings in yellow under criticals in red, on one scale.
+private struct AlertDays: View {
+    let counts: [(warning: Int, critical: Int)]
+
+    var body: some View {
+        let top = Double(max(counts.map { $0.warning + $0.critical }.max() ?? 0, 1))
+        Canvas { context, size in
+            let slot = size.width / Double(counts.count), width = slot * 0.6
+            for (i, day) in counts.enumerated() {
+                let x = Double(i) * slot + (slot - width) / 2
+                let warning = size.height * Double(day.warning) / top, critical = size.height * Double(day.critical) / top
+                context.fill(Path(CGRect(x: x, y: size.height - warning, width: width, height: warning)), with: .color(.yellow))
+                context.fill(Path(CGRect(x: x, y: size.height - warning - critical, width: width, height: critical)), with: .color(.red))
+            }
+            context.fill(Path(CGRect(x: 0, y: size.height - 0.5, width: size.width, height: 0.5)), with: .color(Color(nsColor: .separatorColor)))
+        }
+        .frame(width: 112)
+        .accessibilityHidden(true)
     }
 }

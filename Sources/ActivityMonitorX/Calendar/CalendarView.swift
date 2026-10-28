@@ -56,6 +56,7 @@ struct CalendarView: View {
             .safeAreaBar(edge: .top, spacing: 0) {
                 CalendarHeader().padding(Layout.inset)
             }
+            .screenFooter(model.state == .ready ? model.page.map(CalendarFacts.init) : nil)
         .screenTitle("Calendar", subtitle: Text(subtitle), icon: .symbol("calendar"))
         // Outside the title pill's toolbar, so Back sits between the Sidebar button and the pill.
         .toolbar { ToolbarItem(placement: .navigation) { CalendarBackButton().fitBack(fit) } }
@@ -109,8 +110,6 @@ struct CalendarView: View {
     /// The content's coordinate space: a zoom grows from the double-click in it.
     nonisolated static let contentSpace = "calendarContent"
     private let _size = State(initialValue: CGSize(width: 1, height: 1))
-    /// The width the Month cells take: the tiles take the same.
-    private let _gridWidth = State(initialValue: 0.0)
     /// Read here, not per call, so the transition follows a change of the setting at once.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -137,12 +136,7 @@ struct CalendarView: View {
                                    description: Text("No history was recorded in this \(model.period.rawValue)."))
         case .ready:
             if let page = model.page {
-                VStack(spacing: 8) {
-                    if page.period == .month {
-                        CalendarTiles(page: page).frame(width: _gridWidth.wrappedValue > 0 ? _gridWidth.wrappedValue : nil).padding(.horizontal)
-                    }
-                    CalendarGrid(page: page, footer: footer) { if abs($0 - _gridWidth.wrappedValue) >= 1 { _gridWidth.wrappedValue = $0 } }
-                }
+                CalendarGrid(page: page, footer: footer)
                 .coordinateSpace(.named(Self.contentSpace))
                 .onGeometryChange(for: CGSize.self, of: \.size) { _size.wrappedValue = CGSize(width: max(1, $0.width), height: max(1, $0.height)) }
                 .transition(zoomTransition)
@@ -151,10 +145,9 @@ struct CalendarView: View {
     }
 }
 
-/// The month at a glance as cells of one height, each with the thing it is about, as Hardware's cells: the metric's
-/// symbol and its mean, a clock and the busiest hour, the top app's icon and its share, the alert symbols and their counts.
-/// Four in a row, two rows of two where the column is narrow.
-private struct CalendarTiles: View {
+/// The page at a glance in the screen's footer (FT2): the page's cells as a heat grid, then the mean, the busiest bucket,
+/// the top app with its share and the alert counts.
+private struct CalendarFacts: View {
     let page: CalendarPage
 
     var body: some View {
@@ -164,51 +157,53 @@ private struct CalendarTiles: View {
         let leader = CalendarPeriod.leader(of: cells)
         let critical = page.alerts.count { $0.severity >= 2 }, warning = page.alerts.count - critical
         let label = page.metric.label
-        let tiles = [
-            tile(Image(systemName: page.metric.symbol).font(.title3).foregroundStyle(.secondary),
-                 values.isEmpty ? "No data" : "\(page.metric.format(values.reduce(0, +) / Double(values.count))) average", label),
-            tile(Image(systemName: "clock").font(.title3).foregroundStyle(.secondary),
-                 peak.map { "\(page.metric.format($0.1)) at \(Date(timeIntervalSince1970: $0.0).formatted(.dateTime.hour()))" } ?? "No data",
-                 peak.map { "Busiest: \(Date(timeIntervalSince1970: $0.0).formatted(.dateTime.weekday(.abbreviated).day()))" } ?? "Busiest hour"),
-            tile(leader.map { Image(nsImage: AppIcon.image(for: $0.app)).resizable().frame(width: 22, height: 22) },
-                 leader?.app.name ?? "No data",
-                 leader.map { "\($0.share.formatted(.percent.precision(.fractionLength(0)))) of all \(label)" } ?? "Top app"),
-            tile(HStack(spacing: 1) {
-                    if critical > 0 { SeverityIcon(severity: 2) }
-                    if warning > 0 { SeverityIcon(severity: 1) }
-                    if page.alerts.isEmpty { Image(systemName: "bell").font(.title3).foregroundStyle(.secondary) }
-                 },
-                 page.alerts.isEmpty ? "None" : [critical > 0 ? "\(critical) critical" : nil, warning > 0 ? "\(warning) warning\(warning == 1 ? "" : "s")" : nil]
-                    .compactMap { $0 }.joined(separator: ", "),
-                 "Alerts"),
-        ]
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Layout.inset) { ForEach(tiles.indices, id: \.self) { tiles[$0].frame(minWidth: 150) } }
-            Grid(horizontalSpacing: Layout.inset, verticalSpacing: Layout.inset) {
-                GridRow { tiles[0]; tiles[1] }
-                GridRow { tiles[2]; tiles[3] }
-            }
+        // The day with the hour across days, the time within one.
+        let when = page.period == .month || page.period == .week
+            ? Date.FormatStyle.dateTime.weekday(.abbreviated).day().hour() : Date.FormatStyle.dateTime.hour().minute()
+        ScreenFooter(figures: [
+            FooterFigure(label: "Average \(label)", value: values.isEmpty ? "No data" : page.metric.format(values.reduce(0, +) / Double(values.count)),
+                         help: "The mean of the \(page.period.rawValue)'s buckets"),
+            FooterFigure(label: peak.map { "Busiest, " + Date(timeIntervalSince1970: $0.0).formatted(when) } ?? "Busiest",
+                         value: peak.map { page.metric.format($0.1) } ?? "No data", help: "The highest bucket of the \(page.period.rawValue)"),
+            FooterFigure(label: leader.map { "\($0.share.formatted(.percent.precision(.fractionLength(0)))) of all \(label)" } ?? "Top app",
+                         value: leader?.app.name ?? "No data", help: "The app with the largest share of the \(page.period.rawValue)"),
+            FooterFigure(label: "Alerts",
+                         value: page.alerts.isEmpty ? "None" : [critical > 0 ? "\(critical) critical" : nil,
+                                                                warning > 0 ? "\(warning) warning\(warning == 1 ? "" : "s")" : nil]
+                            .compactMap { $0 }.joined(separator: ", "),
+                         help: "The alerts in the \(page.period.rawValue)", severity: critical > 0 ? 2 : warning > 0 ? 1 : 0),
+        ]) {
+            CalendarHeat(page: page)
         }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func tile(_ icon: (some View)?, _ value: String, _ note: String) -> AnyView {
-        AnyView(HStack(spacing: 8) {
-            icon.frame(width: 28)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(value).fontWeight(.semibold).monospacedDigit()
-                Text(note).foregroundStyle(.secondary)
-            }
-            .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .font(.callout)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .partCell(padding: Layout.inset)
-        .accessibilityElement(children: .combine))
+        .accessibilityLabel("\(page.period.rawValue.capitalized) summary")
     }
 }
 
+/// The page's cells as a heat grid in the grid's own rows and columns: each cell the accent at its mean's share of the
+/// highest cell, a cell with no data the empty fill, nothing outside the month.
+private struct CalendarHeat: View {
+    let page: CalendarPage
+
+    var body: some View {
+        let grid = page.grid
+        let top = grid.joined().compactMap { $0?.value }.max() ?? 0
+        Canvas { context, size in
+            let rows = grid.count, columns = grid.map(\.count).max() ?? 1
+            let gap = 2.0, w = (size.width - gap * Double(columns - 1)) / Double(columns), h = (size.height - gap * Double(rows - 1)) / Double(rows)
+            for (r, row) in grid.enumerated() {
+                for (c, cell) in row.enumerated() {
+                    guard let cell else { continue }
+                    let rect = CGRect(x: Double(c) * (w + gap), y: Double(r) * (h + gap), width: w, height: h)
+                    let shape = Path(roundedRect: rect, cornerRadius: 1.5)
+                    context.fill(shape, with: .color(PartStyle.package))
+                    if let value = cell.value, top > 0 { context.fill(shape, with: .color(.accentColor.opacity(0.2 + 0.8 * value / top))) }
+                }
+            }
+        }
+        .frame(width: Double(page.grid.map(\.count).max() ?? 1) * 12, height: 32)
+        .accessibilityHidden(true)
+    }
+}
 
 /// The standard toolbar Back: one level up with the parent's selection. Always there on this screen and disabled at Month,
 /// so nothing appears or moves.

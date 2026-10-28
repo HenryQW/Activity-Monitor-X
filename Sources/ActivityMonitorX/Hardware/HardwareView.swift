@@ -15,6 +15,7 @@ struct HardwareView: View {
 
     var body: some View {
         content
+            .screenFooter(hardware.cpuUsage.isEmpty ? nil : HardwareFacts())
             .screenTitle("Hardware", subtitle: Text(subtitle), icon: .symbol("cpu"))
             .task { await hardware.loadOnce() }
             .task { await hardware.sampleLive() }
@@ -153,5 +154,54 @@ private struct InventoryRows: TableRowContent {
     private func expanded(_ id: String) -> Binding<Bool> {
         Binding(get: { hardware.expanded.contains(id) },
                 set: { if $0 { hardware.expanded.insert(id) } else { hardware.expanded.remove(id) } })
+    }
+}
+
+/// The Mac now in the screen's footer (FT2): each CPU core filled to its use, then the uptime, the thermal state and the
+/// CPU, GPU and memory use, all from the screen's 2 s readings.
+private struct HardwareFacts: View {
+    @Environment(HardwareModel.self) private var hardware
+    @Environment(AlertsModel.self) private var alerts
+
+    var body: some View {
+        let cores = hardware.cpuUsage
+        let thermal = ProcessInfo.processInfo.thermalState
+        let percent = { (value: Double?) in value.map { "\(Int($0.rounded()))%" } ?? "Not available" }
+        ScreenFooter(figures: [
+            FooterFigure(label: "Uptime", value: Duration.seconds(ProcessInfo.processInfo.systemUptime)
+                            .formatted(.units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 2)),
+                         help: "The time since this Mac started"),
+            FooterFigure(label: "Thermal state", value: ["Nominal", "Fair", "Serious", "Critical"][thermal.rawValue],
+                         help: "How hard this Mac works to stay cool", severity: thermal == .critical ? 2 : thermal == .serious ? 1 : 0),
+            FooterFigure(label: "CPU now", value: percent(cores.reduce(0, +) / Double(cores.count)), help: "The use of all CPU cores"),
+            FooterFigure(label: "GPU now", value: percent(hardware.gpuUsage), help: "The use of the GPU"),
+            FooterFigure(label: "Memory now", value: percent(hardware.memoryUsage), help: "The memory used, of the memory installed"),
+        ]) {
+            CoreGrid(usage: cores, rule: alerts.rules.systemCPU)
+        }
+        .accessibilityLabel("Hardware summary")
+    }
+}
+
+/// The CPU cores as blocks in up to two rows, each filled from the bottom to its use in the status colour of the system
+/// CPU rule (SET-7), as the chip draws them.
+private struct CoreGrid: View {
+    let usage: [Double]
+    let rule: AlertRules.SystemCPU
+
+    var body: some View {
+        let columns = (usage.count + 1) / 2
+        Canvas { context, size in
+            let gap = 2.0, w = (size.width - gap * Double(columns - 1)) / Double(columns), h = (size.height - gap) / 2
+            for (i, use) in usage.enumerated() {
+                let rect = CGRect(x: Double(i % columns) * (w + gap), y: Double(i / columns) * (h + gap), width: w, height: h)
+                context.fill(Path(roundedRect: rect, cornerRadius: 1.5), with: .color(PartStyle.package))
+                let level = rule.level(use)
+                let fill = h * min(max(use, 0), 100) / 100
+                context.fill(Path(CGRect(x: rect.minX, y: rect.maxY - fill, width: w, height: fill)), with: .color(ChipDiagram.status(level)))
+            }
+        }
+        .frame(width: Double(columns) * 11, height: 32)
+        .accessibilityHidden(true)
     }
 }

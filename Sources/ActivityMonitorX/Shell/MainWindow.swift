@@ -189,6 +189,8 @@ struct MainWindow: View {
         .alert("Cannot Delete Group",
                isPresented: Binding(get: { _deleteError.wrappedValue != nil }, set: { if !$0 { _deleteError.wrappedValue = nil } }),
                presenting: _deleteError.wrappedValue) { _ in } message: { Text($0) }
+        // Hardware and Calendar read none of the loaded history: it does not reload under them, also at launch.
+        .onChange(of: appSelection.sidebar, initial: true) { _, item in history.paused = item == .hardware || item == .calendar }
         .onChange(of: appSelection.sidebar) { old, item in
             if case .pinned(let app) = item { appSelection.app = app }
             scope(item)

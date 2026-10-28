@@ -14,16 +14,16 @@ struct SystemHealthCard: View {
         let thermal = info.thermalState.rawValue
         let pressure = isLive ? nil : points.map(\.pressureLevel).filter({ $0 > 0 }).max()
         // The worst state shown, so the closed card still warns.
-        let worst = max(pressure.map { $0 >= 4 ? 2 : $0 >= 2 ? 1 : 0 } ?? 0, thermal >= 3 ? 2 : thermal >= 2 ? 1 : 0)
+        let worst = max(pressure.map(SystemState.pressureSeverity) ?? 0, SystemState.thermalSeverity(thermal))
         CardSection("System Health", summary: Text(worst == 2 ? "Critical" : worst == 1 ? "Warning" : "Normal")) {
             if let pressure {
-                row("Memory Pressure", SystemState.pressure(pressure), severity: pressure >= 4 ? 2 : pressure >= 2 ? 1 : 0)
+                row("Memory Pressure", SystemState.pressure(pressure), severity: SystemState.pressureSeverity(pressure))
                     .help("The highest memory pressure in the range")
                 LabeledContent("Swap Used", value: Metric.memory.format(points.map(\.swapUsed).max() ?? 0))
                     .monospacedDigit()
                     .help("The most swap used in the range")
             }
-            row("Thermal State", SystemState.thermal(thermal), severity: thermal >= 3 ? 2 : thermal >= 2 ? 1 : 0)
+            row("Thermal State", SystemState.thermal(thermal), severity: SystemState.thermalSeverity(thermal))
                 .help("The thermal state now")
             LabeledContent("Uptime", value: Duration.seconds(info.systemUptime)
                 .formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2)))

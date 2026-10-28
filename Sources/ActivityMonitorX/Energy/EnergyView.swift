@@ -35,7 +35,7 @@ struct EnergyView: View {
                         }
                     }
                     .padding()
-                PowerStrip(model: model)
+                PowerStrip(model: model, top: shares.first { $0.app != nil })
                     .floatingBar()
                     .padding(Layout.inset)
             }
@@ -60,10 +60,13 @@ struct EnergyView: View {
     }
 }
 
-/// One strip under the flow, as the Apps footer: system power for the last 5 min as a small line with no title, now,
-/// the average and the peak, then Sort. A second without a value breaks the line.
+/// The screen's footer (FT2): the battery as Hardware draws it (on a Mac without one, system power for the last 5 min as a
+/// small line; a second without a value breaks it), then power now, the power source, the battery and the app that uses
+/// the most, then Sort.
 private struct PowerStrip: View {
     let model: EnergyModel
+    /// The app with the largest share now.
+    let top: EnergyShare?
 
     /// The points with a value, numbered by line segment: a missing value or a pause over 2 s starts a new one.
     private var drawn: [(date: Date, watts: Double, segment: Int)] {
@@ -77,36 +80,36 @@ private struct PowerStrip: View {
     }
 
     var body: some View {
-        let drawn = drawn
-        let watts = drawn.map(\.watts)
-        let figures = HStack(alignment: .top, spacing: 18) {
-            Figure(label: "Now") { Text(model.points.last?.watts.map { EnergyDiagram.watts($0) } ?? "Not available") }
-            // The points start when the screen opens, so the window is up to 5 min: the hint says so, not the label.
-            Figure(label: "Average") { Text(watts.isEmpty ? "No data" : EnergyDiagram.watts(watts.reduce(0, +) / Double(watts.count))) }
-                .help("The average since the screen opened, up to the last 5 minutes")
-            Figure(label: "Peak") { Text(watts.max().map { EnergyDiagram.watts($0) } ?? "No data") }
-                .help("The highest value since the screen opened, up to the last 5 minutes")
+        let power = model.power
+        let battery = power?.battery
+        var figures = [
+            FooterFigure(label: "Power now", value: model.points.last?.watts.map { EnergyDiagram.watts($0) } ?? "Not available",
+                         help: "The watts this Mac uses"),
+            FooterFigure(label: "Power source", value: power.map { $0.adapterConnected ? "Adapter" + ($0.adapterRating.map { ", \(Int($0)) W" } ?? "") : "Battery" }
+                            ?? "Not available", help: "What powers this Mac"),
+        ]
+        if let battery {
+            figures.append(FooterFigure(label: battery.charging ? "Battery, charging" : "Battery", value: battery.percent.map { "\($0)%" } ?? "No data",
+                                        help: "The battery charge"))
         }
-        let sort = CapsuleChoice(title: "Sort", values: [false, true],
-                                 selection: Binding(get: { model.sortsByName }, set: { if let byName = $0 { model.sortsByName = byName } })) {
-            Text($0 ? "Name" : "Watts")
-        }
-        .help("Sort the apps by watts or by name")
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 18) {
+        figures.append(FooterFigure(label: top.map { "Most energy, \($0.share.formatted(.percent.precision(.fractionLength(0))))" } ?? "Most energy",
+                                    value: top?.app?.name ?? "None", help: "The app with the largest share of energy now"))
+        return ScreenFooter(figures: figures) {
+            if let battery {
+                let charging = battery.charging
+                BatteryShape(percent: battery.percent.map(Double.init), charging: charging,
+                             level: BatteryShape.level(percent: battery.percent, charging: charging))
+                    .scaleEffect(1.6)
+            } else {
                 chart(drawn)
-                Divider().frame(height: 30)
-                figures
-                Spacer(minLength: 0)
-                sort
             }
-            HStack(spacing: 18) {
-                figures
-                Spacer(minLength: 0)
-                sort
+        } trailing: {
+            CapsuleChoice(title: "Sort", values: [false, true],
+                          selection: Binding(get: { model.sortsByName }, set: { if let byName = $0 { model.sortsByName = byName } })) {
+                Text($0 ? "Name" : "Watts")
             }
+            .help("Sort the apps by watts or by name")
         }
-        .padding(Layout.padding)
     }
 
     @ViewBuilder private func chart(_ drawn: [(date: Date, watts: Double, segment: Int)]) -> some View {

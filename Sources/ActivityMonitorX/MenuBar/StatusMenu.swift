@@ -229,14 +229,14 @@ private struct MenuBarGauges: View {
 
     /// The kernel level (1 normal, 2 warning, 4 critical) as 0, 1, 2.
     private var pressureLevel: Int? {
-        readout.percents.map { $0.level >= 4 ? 2 : $0.level == 2 ? 1 : 0 }
+        readout.percents.map { SystemState.pressureSeverity($0.level) }
     }
 
     /// The system CPU rule (SET-7); no level with the rule off.
     private var cpuLevel: Int? {
         let rule = alerts.rules.systemCPU
         guard rule.enabled, let cpu = readout.percents?.cpu else { return nil }
-        return cpu >= rule.critical ? 2 : cpu >= rule.warning ? 1 : 0
+        return rule.level(Double(cpu))
     }
 }
 

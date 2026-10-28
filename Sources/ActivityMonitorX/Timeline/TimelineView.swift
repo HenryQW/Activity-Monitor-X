@@ -87,14 +87,7 @@ struct TimelineView: View {
                 // Live and a range are different charts: the identity makes Start and Pause Live cross-fade, not morph.
                 .id(isLive)
                 // The table scrolls under the footer, and its last row can scroll clear of it.
-                .safeAreaBar(edge: .bottom, spacing: 0) {
-                    if footer {
-                        MetricFooter(metric: history.metric, live: isLive, stacked: points)
-                            .frame(maxWidth: .infinity)
-                            .floatingBar()
-                            .padding(Layout.inset)
-                    }
-                }
+                .screenFooter(footer ? MetricFooter(metric: history.metric, live: isLive, stacked: points) : nil)
                 .onGeometryChange(for: Bool.self) { $0.size.height >= 640 } action: { _tall.wrappedValue = $0 }
             }
         }

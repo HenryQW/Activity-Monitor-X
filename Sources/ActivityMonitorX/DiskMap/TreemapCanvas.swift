@@ -29,7 +29,7 @@ struct TreemapCanvas: View {
 
     /// Cells come parent first, so a stack of names gives each cell its folders. A folder's largest items come first
     /// among its children (size descending).
-    private static func kinds(_ cells: [Treemap.Cell], node: DiskTree.Node, baseNames: [String]) -> [FileKind] {
+    static func kinds(_ cells: [Treemap.Cell], node: DiskTree.Node, baseNames: [String]) -> [FileKind] {
         var names: [String] = []
         return cells.map { cell in
             names = Array(names.prefix(cell.depth - 1)) + [cell.name]
@@ -42,7 +42,7 @@ struct TreemapCanvas: View {
         }
     }
 
-    private static func draw(_ cells: [Treemap.Cell], kinds: [FileKind], in context: inout GraphicsContext) {
+    static func draw(_ cells: [Treemap.Cell], kinds: [FileKind], labels: Bool = true, in context: inout GraphicsContext) {
         for (i, cell) in cells.enumerated() {
             let rect = cell.rect.insetBy(dx: 0.5, dy: 0.5)
             // Only cells with nothing drawn inside get a label, so labels never overlap.
@@ -57,7 +57,7 @@ struct TreemapCanvas: View {
             case .smaller: context.fill(Path(rect), with: .color(color.opacity(0.18)))
             case .refused: context.fill(Path(rect), with: .color(.primary.opacity(0.04)))
             }
-            if !inner, rect.width >= 60, rect.height >= 20 {
+            if labels, !inner, rect.width >= 60, rect.height >= 20 {
                 context.draw(Text(cell.name).font(.caption).foregroundStyle(.primary), in: rect.insetBy(dx: 4, dy: 3))
             }
         }

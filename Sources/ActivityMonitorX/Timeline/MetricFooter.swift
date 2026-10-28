@@ -2,7 +2,7 @@ import AMXCore
 import Charts
 import SwiftUI
 
-/// The Apps screen's footer for the chosen metric: one borderless strip on the glass, the system's trend as a small line
+/// The Apps screen's footer for the chosen metric, in the shared `ScreenFooter`: the system's trend as a small line
 /// and the figures the table does not give, each value over its label (no box, no title: the toolbar names the metric). Range figures come from the system samples (the span's, when one is selected); Live reads the last
 /// 5 min of them. Figures marked "now" the app reads itself every 2 s (`HostReader`, `PowerReader`); none is stored.
 struct MetricFooter: View {
@@ -19,15 +19,6 @@ struct MetricFooter: View {
         var load: [Double]?
         var memory: HostReader.Memory?
         var power: PowerReading?
-    }
-
-    private struct Stat: Identifiable {
-        var id: String { label }
-        let label: String
-        let value: String
-        let help: String
-        /// 1 warning, 2 critical: the value shows `SeverityIcon`.
-        var severity = 0
     }
 
     /// The numbers roll for a change the user made (metric, range, span), once its data has loaded; a Live tick, a reload
@@ -48,24 +39,9 @@ struct MetricFooter: View {
 
     var body: some View {
         let points = live ? _livePoints.wrappedValue : history.system.filter { p in history.span.map { $0.contains(p.bucket) } ?? true }
-        let stats = stats(points)
-        // One row with the trend; narrower, the figures alone; narrower still, the figures in two rows.
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 18) {
-                graph(points)
-                Divider().frame(height: 30)
-                figures(stats)
-            }
-            figures(stats)
-            let half = (stats.count + 1) / 2
-            VStack(alignment: .leading, spacing: 8) {
-                figures(stats[..<half])
-                figures(stats[half...])
-            }
+        ScreenFooter(figures: stats(points), roll: Roll(metric: metric, range: history.range, span: history.span, state: history.state)) {
+            graph(points)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Layout.padding)
-        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(metric.label) summary")
         .task(id: "\(live) \(metric.label)") { await read() }
     }
@@ -130,23 +106,7 @@ struct MetricFooter: View {
 
     // MARK: - Figures
 
-    private func figures(_ stats: some RandomAccessCollection<Stat>) -> some View {
-        HStack(alignment: .top, spacing: 18) {
-            ForEach(stats) { stat in
-                Figure(label: stat.label) {
-                    HStack(spacing: 4) {
-                        Text(stat.value)
-                            .contentTransition(.numericText())
-                            .animation(Motion.smooth(0.25), value: Roll(metric: metric, range: history.range, span: history.span, state: history.state))
-                        if stat.severity > 0 { SeverityIcon(severity: stat.severity) }
-                    }
-                }
-                .help(stat.help)
-            }
-        }
-    }
-
-    private func stats(_ points: [SystemPoint]) -> [Stat] {
+    private func stats(_ points: [SystemPoint]) -> [FooterFigure] {
         let now = _now.wrappedValue
         let window = live ? "in the last 5 minutes" : history.span == nil ? "in the range" : "in the selected span"
         let bucket = live ? 5 : history.loadedBucket
@@ -165,8 +125,8 @@ struct MetricFooter: View {
         }
         func text(_ value: Double?, _ format: (Double) -> String = metric.format) -> String { value.map(format) ?? "No data" }
         /// A figure the app reads now: "now" in its label outside Live.
-        func current(_ label: String, _ value: String, _ help: String) -> Stat {
-            Stat(label: live ? label : "\(label) now", value: value, help: "\(help) now, read by this app; not recorded")
+        func current(_ label: String, _ value: String, _ help: String) -> FooterFigure {
+            FooterFigure(label: live ? label : "\(label) now", value: value, help: "\(help) now, read by this app; not recorded")
         }
         func percent(_ value: Double?) -> String { text(value, Metric.cpu.format) }
         /// A total from bucket means times the full bucket width: a partly recorded bucket counts too much.
@@ -178,60 +138,60 @@ struct MetricFooter: View {
         switch metric {
         case .cpu:
             return [
-                Stat(label: levelLabel, value: percent(level(\.cpu)), help: levelHelp),
-                Stat(label: "CPU temperature", value: temperature(\.tempCPU), help: "The CPU temperature, \(live ? "latest" : "average") \(window)"),
+                FooterFigure(label: levelLabel, value: percent(level(\.cpu)), help: levelHelp),
+                FooterFigure(label: "CPU temperature", value: temperature(\.tempCPU), help: "The CPU temperature, \(live ? "latest" : "average") \(window)"),
                 current("User", percent(now.cpu?.user), "The share of CPU time in apps"),
                 current("System", percent(now.cpu?.system), "The share of CPU time in the system"),
-                current("Load average", now.load.map { $0.map { $0.formatted(.number.precision(.fractionLength(2))) }.joined(separator: ", ") } ?? "No data",
+                current("Load average", now.load.map { $0.map { $0.formatted(.number.precision(.fractionLength(1))) }.joined(separator: ", ") } ?? "No data",
                         "The 1, 5 and 15 minute load averages"),
             ]
         case .memory:
             let pressure = live ? points.last?.pressureLevel : points.map(\.pressureLevel).filter { $0 > 0 }.max()
             return [
-                Stat(label: "Physical Memory", value: bytes(Double(ProcessInfo.processInfo.physicalMemory)), help: "The memory installed in this Mac"),
-                Stat(label: "Memory Used", value: text(level(\.memUsed), bytes), help: "App, wired and compressed memory: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Physical Memory", value: bytes(Double(ProcessInfo.processInfo.physicalMemory)), help: "The memory installed in this Mac"),
+                FooterFigure(label: "Memory Used", value: text(level(\.memUsed), bytes), help: "App, wired and compressed memory: \(levelHelp.lowercased())"),
                 current("Cached Files", text(now.memory.map { Double($0.cached) }, bytes), "Memory that holds recently used files"),
-                Stat(label: "Swap Used", value: text(live ? points.last?.swapUsed : peak(\.swapUsed), bytes),
+                FooterFigure(label: "Swap Used", value: text(live ? points.last?.swapUsed : peak(\.swapUsed), bytes),
                      help: live ? "The latest recorded swap used" : "The most swap used \(window)"),
                 current("App Memory", text(now.memory.map { Double($0.app) }, bytes), "Memory that apps use"),
                 current("Wired Memory", text(now.memory.map { Double($0.wired) }, bytes), "Memory that the system keeps in RAM"),
-                Stat(label: "Compressed", value: text(level(\.memCompressed), bytes), help: "Compressed memory: \(levelHelp.lowercased())"),
-                Stat(label: "Pressure", value: pressure.map { SystemState.pressure($0).capitalized } ?? "No data",
+                FooterFigure(label: "Compressed", value: text(level(\.memCompressed), bytes), help: "Compressed memory: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Pressure", value: pressure.map { SystemState.pressure($0).capitalized } ?? "No data",
                      help: live ? "The latest recorded memory pressure" : "The highest memory pressure \(window)",
-                     severity: pressure.map { $0 >= 4 ? 2 : $0 >= 2 ? 1 : 0 } ?? 0),
+                     severity: pressure.map(SystemState.pressureSeverity) ?? 0),
             ]
         case .disk:
             return [
-                Stat(label: "Read", value: text(level(\.diskR)), help: "Bytes read per second: \(levelHelp.lowercased())"),
-                Stat(label: "Write", value: text(level(\.diskW)), help: "Bytes written per second: \(levelHelp.lowercased())"),
-                Stat(label: "Total read", value: about(total(\.diskR)), help: "An estimate of the bytes read \(window)"),
-                Stat(label: "Total written", value: about(total(\.diskW)), help: "An estimate of the bytes written \(window)"),
-                Stat(label: "Operations", value: text(level(\.diskIOPS)) { "\($0.formatted(.number.precision(.fractionLength(0))))/s" },
+                FooterFigure(label: "Read", value: text(level(\.diskR)), help: "Bytes read per second: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Write", value: text(level(\.diskW)), help: "Bytes written per second: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Total read", value: about(total(\.diskR)), help: "An estimate of the bytes read \(window)"),
+                FooterFigure(label: "Total written", value: about(total(\.diskW)), help: "An estimate of the bytes written \(window)"),
+                FooterFigure(label: "Operations", value: text(level(\.diskIOPS)) { "\($0.formatted(.number.precision(.fractionLength(0))))/s" },
                      help: "Read and write operations per second: \(levelHelp.lowercased())"),
-                Stat(label: "Latency", value: text(level(\.diskLatMs)) { "\($0.formatted(.number.precision(.fractionLength(2)))) ms" },
+                FooterFigure(label: "Latency", value: text(level(\.diskLatMs)) { "\($0.formatted(.number.precision(.fractionLength(2)))) ms" },
                      help: "The time per operation: \(levelHelp.lowercased())"),
             ]
         case .network:
             return [
-                Stat(label: "In", value: text(level(\.netIn)), help: "Bytes received per second: \(levelHelp.lowercased())"),
-                Stat(label: "Out", value: text(level(\.netOut)), help: "Bytes sent per second: \(levelHelp.lowercased())"),
-                Stat(label: "Total received", value: about(total(\.netIn)), help: "An estimate of the bytes received \(window)"),
-                Stat(label: "Total sent", value: about(total(\.netOut)), help: "An estimate of the bytes sent \(window)"),
+                FooterFigure(label: "In", value: text(level(\.netIn)), help: "Bytes received per second: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Out", value: text(level(\.netOut)), help: "Bytes sent per second: \(levelHelp.lowercased())"),
+                FooterFigure(label: "Total received", value: about(total(\.netIn)), help: "An estimate of the bytes received \(window)"),
+                FooterFigure(label: "Total sent", value: about(total(\.netOut)), help: "An estimate of the bytes sent \(window)"),
             ]
         case .gpu:
             let thermal = live ? points.last?.thermalState : points.map(\.thermalState).max()
             return [
-                Stat(label: levelLabel, value: percent(level(\.gpu)), help: levelHelp),
-                Stat(label: "GPU temperature", value: temperature(\.tempGPU), help: "The GPU temperature, \(live ? "latest" : "average") \(window)"),
-                Stat(label: "Thermal state", value: thermal.map { SystemState.thermal($0).capitalized } ?? "No data",
+                FooterFigure(label: levelLabel, value: percent(level(\.gpu)), help: levelHelp),
+                FooterFigure(label: "GPU temperature", value: temperature(\.tempGPU), help: "The GPU temperature, \(live ? "latest" : "average") \(window)"),
+                FooterFigure(label: "Thermal state", value: thermal.map { SystemState.thermal($0).capitalized } ?? "No data",
                      help: live ? "The latest recorded thermal state" : "The highest thermal state \(window)",
-                     severity: thermal.map { $0 >= 3 ? 2 : $0 >= 2 ? 1 : 0 } ?? 0),
+                     severity: thermal.map(SystemState.thermalSeverity) ?? 0),
             ]
         default:  // Energy; Score has no footer
             let totals = energyTotals.map(\.value)
             let average = live ? totals.last : totals.isEmpty ? nil : totals.reduce(0, +) / Double(totals.count)
             var rows = [
-                Stat(label: levelLabel, value: text(average), help: "All apps' energy impact: \(levelHelp.lowercased())"),
+                FooterFigure(label: levelLabel, value: text(average), help: "All apps' energy impact: \(levelHelp.lowercased())"),
             ]
             guard let power = now.power else { return rows }
             let source = power.adapterConnected ? "Power adapter" + (power.adapterRating.map { ", \(Int($0)) W" } ?? "") : "Battery"
@@ -263,9 +223,13 @@ struct MetricFooter: View {
         while !Task.isCancelled {
             if MainWindowRef.windowShown {
                 if live, let pool = try? history.openPool() {
-                    let end = Date().timeIntervalSince1970
+                    // On the 5 s bucket grid, so a read with no new rows returns the same buckets and draws nothing; rounded up,
+                    // so the newest row is in.
+                    let end = (Date().timeIntervalSince1970 / 5).rounded(.up) * 5
                     let points = await Task.detached { try? HistoryReader(pool: pool).system(source: .raw, from: end - 300, to: end, bucket: 5) }.value
-                    if let points { _livePoints.wrappedValue = points }
+                    if let points, points.count != _livePoints.wrappedValue.count || points.last?.bucket != _livePoints.wrappedValue.last?.bucket {
+                        _livePoints.wrappedValue = points
+                    }
                 }
                 // Only what the metric shows.
                 switch metric {

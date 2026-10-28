@@ -273,6 +273,22 @@ private struct Rig {
         }
     }
 
+    @Test func trimRunsAtMostEvery600s() throws {
+        let r = try Rig()
+        let now = 2_000_000_030.0
+        func addExpired(at t: Double) throws {
+            try r.exec("INSERT INTO system_minute(bucket, samples) VALUES (\(t - RetentionPolicy().minute - 1), 1)")
+        }
+        try addExpired(at: now)
+        try r.run(now)
+        #expect(try r.count("system_minute") == 0)
+        try addExpired(at: now + 599)
+        try r.run(now + 599)
+        #expect(try r.count("system_minute") == 1)
+        try r.run(now + 600)
+        #expect(try r.count("system_minute") == 0)
+    }
+
     @Test func pruneDropsStaleProcessesWithoutRows() throws {
         let r = try Rig()
         let now = 2_000_000_030.0

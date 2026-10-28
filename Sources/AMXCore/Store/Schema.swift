@@ -131,6 +131,11 @@ public enum Schema {
                 try db.execute(sql: "ALTER TABLE \(tier) ADD COLUMN disk_free_avg REAL; ALTER TABLE \(tier) ADD COLUMN disk_free_max REAL")
             }
         }
+        // Deleting a process sets its events' process_id to NULL: without this index each pruned process scans
+        // all events. Events are few, so the index costs inserts little.
+        m.registerMigration("v4") { db in
+            try db.create(index: "idx_events_process_id", on: "events", columns: ["process_id"])
+        }
         return m
     }
 }

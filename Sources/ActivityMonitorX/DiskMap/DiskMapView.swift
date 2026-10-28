@@ -95,7 +95,7 @@ struct DiskMapView: View {
             // The path is the one capsule: Show in Finder is in the item menu and the inspector's Path card, the details
             // are behind the toolbar's Info button.
             HStack {
-                pathBar(tree, folder: folder)
+                pathBar(tree)
                 Spacer(minLength: 0)
             }
             .padding(Layout.inset)
@@ -112,7 +112,42 @@ struct DiskMapView: View {
                 table(NameSearch.filter(rows, query: selection.search) { [$0.node.name] }, total: folder.size)
                     .frame(minWidth: 340, idealWidth: 420, maxHeight: .infinity)
             }
+            // The screen's footer (WIN-13) in its own row: the AppKit panes above take no safe area, so a bar would cover
+            // the table's last rows and the treemap's labels.
+            footer(tree, folder: folder)
+                .frame(maxWidth: .infinity)
+                .floatingBar()
+                .padding(Layout.inset)
         }
+    }
+
+    /// The shown folder in small as the treemap draws it (one level, no labels), then its size, its items, its largest
+    /// item and its share of the volume's used space, or of the scan for a folder (SP1).
+    private func footer(_ tree: DiskTree, folder: DiskTree.Node) -> some View {
+        let focus = model.focus
+        let name = focus.isEmpty ? model.title : folder.name
+        let largest = folder.children.first
+        let whole: (size: Double, label: String) = if case .volume(let volume)? = model.target {
+            (Double(volume.totalBytes - min(volume.freeBytes, volume.totalBytes)), "Of the volume used")
+        } else {
+            (Double(tree.root.size), "Of \(model.title)")
+        }
+        return ScreenFooter(figures: [
+            FooterFigure(label: name, value: Metric.bytes(Double(folder.size)), help: "The size of \(name)"),
+            FooterFigure(label: "Items", value: folder.items.formatted(), help: "The files and folders in \(name)"),
+            FooterFigure(label: largest.map { "Largest, \(Metric.bytes(Double($0.size)))" } ?? "Largest", value: largest?.name ?? "None",
+                         help: "The largest item in \(name)"),
+            FooterFigure(label: whole.label, value: whole.size > 0 ? min(Double(folder.size) / whole.size, 1).formatted(.percent.precision(.fractionLength(0))) : "–",
+                         help: "The share of \(name) in the space used"),
+        ]) {
+            GeometryReader { geometry in
+                let cells = Treemap.cells(folder, in: CGRect(origin: .zero, size: geometry.size), depth: 1, minArea: 4)
+                let kinds = TreemapCanvas.kinds(cells, node: folder, baseNames: focus.indices.map { tree[Array(focus.prefix($0 + 1))].name })
+                Canvas { context, _ in TreemapCanvas.draw(cells, kinds: kinds, labels: false, in: &context) }
+            }
+            .accessibilityHidden(true)
+        }
+        .accessibilityLabel("\(name) summary")
     }
 
     @ViewBuilder private func banners(_ tree: DiskTree) -> some View {
@@ -152,14 +187,14 @@ struct DiskMapView: View {
         }
     }
 
-    /// One button per level from the scanned root to the focus, then the folder's size: a level 2 capsule that fits its
-    /// content; a path too long for the column scrolls inside it.
     /// The scanned volume's drive by its kind, or a folder.
     private var rootSymbol: String {
         if case .volume(let volume)? = model.target { volume.isInternal ? "internaldrive" : "externaldrive" } else { "folder" }
     }
 
-    private func pathBar(_ tree: DiskTree, folder: DiskTree.Node) -> some View {
+    /// One button per level from the scanned root to the focus: a level 2 capsule that fits its content; a path too long
+    /// for the column scrolls inside it.
+    private func pathBar(_ tree: DiskTree) -> some View {
         let focus = model.focus
         let path = HStack(spacing: Layout.inset) {
             ForEach(0...focus.count, id: \.self) { level in
@@ -180,16 +215,10 @@ struct DiskMapView: View {
                 .help("Show this folder")
             }
         }
-        return HStack(spacing: Layout.padding) {
-            ViewThatFits(in: .horizontal) {
-                path.fixedSize()
-                ScrollView(.horizontal) { path }.scrollIndicators(.never)
-            }
-            Divider().padding(.vertical, Layout.padding)
-            Text("\(folder.items.formatted()) items · \(Metric.bytes(Double(folder.size)))")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .fixedSize()
+        // The folder's size and items are in the footer.
+        return ViewThatFits(in: .horizontal) {
+            path.fixedSize()
+            ScrollView(.horizontal) { path }.scrollIndicators(.never)
         }
         .floatingCapsule()
     }

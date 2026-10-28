@@ -70,6 +70,7 @@ private struct DiskActivityView: View {
         }
         // The charts and lists scroll under the range bar.
         .safeAreaBar(edge: .top, spacing: 0) { RangeBar() }
+        .screenFooter(disk.volumes.contains { $0.mountPoint == "/" } ? DiskFacts() : nil)
         .screenTitle("Disk", icon: .symbol("internaldrive"))
         // Stops with the screen: no disk reads while Disk is not shown.
         .task { await disk.run() }
@@ -290,10 +291,7 @@ private struct DiskActivityView: View {
                 Group {
                     Button("Show in Space", systemImage: "chart.pie") { showInSpace(volume) }
                         .help("Show what uses the space on \(volume.name)")
-                    Button("Show in Finder", systemImage: "folder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: volume.mountPoint)])
-                    }
-                    .help("Show \(volume.name) in the Finder")
+                    ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in the Finder")
                     Button("Copy Mount Point", systemImage: "doc.on.doc") { DiskItemMenu.copy(volume.mountPoint) }
                         .help("Copy \(volume.mountPoint)")
                     if !volume.isInternal {
@@ -445,5 +443,32 @@ private struct UsedCell: View {
             }
             Text(Metric.bytes(Double(used))).monospacedDigit()
         }
+    }
+}
+
+/// The startup disk at a glance in the screen's footer (FT2): its drawing filled to its use, then the startup volume's
+/// free space, the read and write rates now and its SMART health.
+private struct DiskFacts: View {
+    @Environment(AlertsModel.self) private var alerts
+    @Environment(DiskModel.self) private var disk
+
+    var body: some View {
+        let startup = disk.volumes.first { $0.mountPoint == "/" }!
+        let drive = disk.disks.first { Volumes.wholeDisk(of: startup, containers: disk.containers) == $0.bsdName }
+        let space = drive?.space(volumes: disk.volumes, containers: disk.containers, rule: alerts.rules.freeSpace)
+        let rate = disk.live.last?.total
+        let health = drive.flatMap { disk.health[$0.bsdName]?.isHealthy }
+        let bytes = Metric.memory.format
+        ScreenFooter(figures: [
+            FooterFigure(label: "Free of \(bytes(Double(startup.totalBytes)))", value: bytes(Double(startup.freeBytes)),
+                         help: "The free space on \(startup.name), purgeable space not included", severity: startup.spaceLevel(alerts.rules.freeSpace)),
+            FooterFigure(label: "Read now", value: rate.map { Metric.disk.format($0.readBps) } ?? "Reading…", help: "Bytes read per second by all disks"),
+            FooterFigure(label: "Write now", value: rate.map { Metric.disk.format($0.writeBps) } ?? "Reading…", help: "Bytes written per second by all disks"),
+            FooterFigure(label: "Drive health", value: health.map { $0 ? "Verified" : "Failing" } ?? "Not available",
+                         help: "The startup disk's SMART status", severity: health == false ? 2 : 0),
+        ]) {
+            FlashChips(count: 2, share: space?.share, color: ChipDiagram.status(space?.level ?? 0)).frame(height: 32)
+        }
+        .accessibilityLabel("Startup disk summary")
     }
 }

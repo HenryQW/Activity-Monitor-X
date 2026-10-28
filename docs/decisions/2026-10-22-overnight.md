@@ -574,3 +574,18 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Options:** CB1 lines from the Mac's CPU with every app shown; CB2 colour from the line's own height (a CPU alert can then have no yellow line); CB3 the processes as a solid line with a pale cap up to the Mac's CPU.
 - **Call (user):** CB1. With a search or group the lines stay the apps shown (CAL-5). The preview shows the difference as "Not in any process".
 - **Cost if wrong:** `HistoryReader.calendarBuckets` and its three callers in `CalendarModel`.
+
+## D84: One footer on every screen (FT2)
+
+- **Goal (user):** the glass strip at the bottom of Apps and Energy becomes a shared part of every screen, with a better layout.
+- **Options:** FT1 the same system strip on every screen; FT2 the same strip with each screen's own figures, led by one visual that is the screen's own; FT3 FT2 plus CPU and memory now at the trailing end.
+- **Call (user):** FT2, with an iconic visual per screen: Apps' trend, Calendar's heat grid, Alerts' 7 days by severity, the startup disk's chips, the chip's cores, the battery. The figures take equal columns, so no strip leaves an empty half. Calendar's fact cells move into the footer; Energy's Average and Peak give way to the power source, the battery and the top app.
+- **Cost if wrong:** `ScreenFooter` and one small view per screen.
+
+## D85: No incremental history reload on the Apps screen
+
+- **Goal (user):** use less CPU on the Apps screen, where each timed reload reads the full range again.
+- **Options:** read only the rows that are new since the last read (`docs/plans/2026-10-28-incremental-apps-reload.md`); keep the full read.
+- **Evidence:** step 0 on a copy of the live database. The charts, ranking and sparklines cost 3 to 5 times the read and stay full. Release estimate of the saving: 0.27% of one core at 1H, 0.1% at 24H, 0.04% at 7D, and only while the window shows.
+- **Call (user):** keep the full read. The saving is too small for a second read path that must give the same slices as the first.
+- **Cost if wrong:** none now; the plan has the design and the risks if it is needed later.

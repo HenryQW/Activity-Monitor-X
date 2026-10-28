@@ -199,6 +199,11 @@ public struct AlertRules: Codable, Sendable, Equatable {
         public static let percentRange = 10...100, minutesRange = 1...60
         public init() {}
 
+        /// 0 normal (also with the rule off), 1 at the warning level, 2 at the critical level.
+        public func level(_ usage: Double) -> Int {
+            !enabled ? 0 : usage >= Double(critical) ? 2 : usage >= Double(warning) ? 1 : 0
+        }
+
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
             (enabled, warning, critical, minutes) = try (c.decode(.enabled, or: d.enabled), c.decode(.warning, or: d.warning),

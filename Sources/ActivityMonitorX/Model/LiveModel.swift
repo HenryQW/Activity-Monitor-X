@@ -48,12 +48,12 @@ final class LiveModel {
             let polling = appData && MainWindowRef.windowShown
             if polling {
                 await poll()
-            } else {
+            } else if live.latest != nil || live.metric != history.metric || state != .loading || lostAt != nil {
                 live = LiveTracks(metric: history.metric)
                 (state, lostAt) = (.loading, nil)
             }
-            // Off the screen, a short wait lets the return to it poll at once.
-            try? await Task.sleep(for: polling ? .seconds(1) : .milliseconds(250))
+            // Off the screen, the return to it polls within 1 s.
+            try? await Task.sleep(for: .seconds(1))
         }
         // A later visit starts from its own data, not this visit's. A visit that started while this one finished its last
         // poll owns the data now.

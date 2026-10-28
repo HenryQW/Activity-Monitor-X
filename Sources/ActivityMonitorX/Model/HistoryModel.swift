@@ -156,6 +156,12 @@ final class HistoryModel {
     private var requestedAt = 0.0
     private var spanGeneration = 0
     private var loading: Task<Void, Never>?
+    /// True on screens that read none of the loaded history (Hardware, Calendar): the interval reload waits. Leaving such a
+    /// screen reloads at once when the data is older than the range's reload interval.
+    @ObservationIgnored var paused = false {
+        didSet { if !paused, oldValue, isStale { reload() } }
+    }
+    private var isStale: Bool { custom == nil && Date().timeIntervalSince1970 - requestedAt >= range.source.reloadInterval }
 
     /// Runs while a window is open: reload now, then as often as the range's source gains rows while the window ends now
     /// and shows on screen. Checks every 15 s, so a range change (which reloads at once) restarts the interval.
@@ -163,7 +169,7 @@ final class HistoryModel {
         reload()
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(15))
-            if custom == nil, MainWindowRef.windowShown, Date().timeIntervalSince1970 - requestedAt >= range.source.reloadInterval { reload() }
+            if !paused, MainWindowRef.windowShown, isStale { reload() }
         }
         loading?.cancel()
     }

@@ -29,10 +29,7 @@ struct HardwareMenu: View {
                 Divider()
             }
             if let volume {
-                Button("Show in Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: volume.mountPoint)])
-                }
-                .help("Show \(volume.name) in the Finder")
+                ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in the Finder")
                 Button("Show in Space", systemImage: "chart.pie") {
                     diskMap.open(.volume(volume))
                     selection.sidebar = .disk

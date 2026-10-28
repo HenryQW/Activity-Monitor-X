@@ -38,12 +38,9 @@ struct PinnedRow: View {
                     selection.inspectorShown = true
                 }
                 .help("Show \(name) in the inspector")
-                Button("Show in Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: app.key)])
-                }
                 // A bare executable name has no path to show.
-                .disabled(!app.key.hasPrefix("/"))
-                .help(app.key.hasPrefix("/") ? "Show \(name) in the Finder" : "\(name) has no app bundle to show")
+                ShowInFinderButton(path: app.key, help: app.key.hasPrefix("/") ? "Show \(name) in the Finder" : "\(name) has no app bundle to show")
+                    .disabled(!app.key.hasPrefix("/"))
                 Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: app, history: history) }
                     .help("Choose the colour that shows \(name)")
                 Button("Alert Rules…", systemImage: "bell") { rulesApp = app }

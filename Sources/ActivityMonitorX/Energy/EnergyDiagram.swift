@@ -24,10 +24,6 @@ struct EnergyDiagram: View {
         let byName: Bool
     }
 
-    private struct LinkID: Hashable {
-        let from, to: EnergyNode
-    }
-
     var body: some View {
         GeometryReader { proxy in
             let size = CGSize(width: max(0, proxy.size.width - Self.leading - Self.trailing),

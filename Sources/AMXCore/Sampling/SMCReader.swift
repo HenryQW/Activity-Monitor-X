@@ -22,10 +22,12 @@ final class SMCReader {
         if connection != 0 { IOServiceClose(connection) }
     }
 
-    /// Hottest sensor per group; keys rediscovered every 300 s.
+    /// Hottest sensor per group; keys rediscovered every hour once the SSD's is found, else every 5 minutes (a failed key
+    /// list or an SSD sensor that reads 0 at boot finds nothing on the first pass).
     func read(now: Double) -> Temperatures {
         guard open() else { return Temperatures() }
-        if lastDiscovery.map({ !(0..<300).contains(now - $0) }) ?? true {
+        let every = keys.contains { $0.group == .ssd } ? 3600.0 : 300
+        if lastDiscovery.map({ !(0..<every).contains(now - $0) }) ?? true {
             discover()
             lastDiscovery = now
         }

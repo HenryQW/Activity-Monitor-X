@@ -54,7 +54,7 @@ struct ValueLines: View {
                 }
                 let peak = y(value)
                 let severity = severities.indices.contains(i) ? severities[i] ?? 0 : 0
-                line(x, from: size.height, to: peak, severity >= 2 ? .red : severity == 1 ? .yellow : .accentColor)
+                line(x, from: size.height, to: peak, ChipDiagram.status(severity))
             }
         }
         .accessibilityHidden(true)
