@@ -23,7 +23,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - `make app`: builds and signs `.build/Activity Monitor X.app` (needs `make cert` once).
 - Signing runs without a prompt (D52): `codesign` has standing access to the key, so builds and installs run unattended. If macOS ever asks, click "Always Allow" once.
 - `make install-app`: copies the app to `/Applications`, no root.
-- `make install`: daemon + CLI + app; needs the user's sudo password. Agents never run it; ask the user.
+- `make install`: the app (with the helper and `amx` inside) to `/Applications` and the `amx` link; no sudo. The app registers the helper at its first launch and the user allows it in Login Items. Agents never run it; ask the user.
 - Linker "search path ... not found" warnings are harmless toolchain noise.
 
 ## Toolchain traps (Command Line Tools only, no Xcode)
@@ -54,7 +54,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 
 ## Running and checking the app
 
-- To launch a build for a check, run `make run-dev` in the background: it builds "Activity Monitor X Dev" (bundle ID `com.henryqw.activitymonitorx.dev`, so the Dock and Spotlight never open it instead of the installed app), waits until no other dev build runs, and unregisters it when it quits. Quit it by PID (`pgrep -f "Activity Monitor X Dev.app"`), never `pkill -x`. The daemon accepts the dev ID only after the next `make install`; before that a dev build gets no live data.
+- To launch a build for a check, run `make run-dev` in the background: it builds "Activity Monitor X Dev" (bundle ID `com.henryqw.activitymonitorx.dev`, so the Dock and Spotlight never open it instead of the installed app), waits until no other dev build runs, and unregisters it when it quits. Quit it by PID (`pgrep -f "Activity Monitor X Dev.app"`), never `pkill -x`. A dev build gets live data only when the installed helper has the same signing identity (a `make install` build, not a release).
 - Drive the app through System Events accessibility (`AXPress`, `selected` of outline rows, `size of window 1`); it works in the background. CGEvent clicks do not land. Re-resolve `window 1 of process` each time: stored references break when the title changes.
 - Screenshots: window only (`screencapture -x -o -l <window id>`, id from `CGWindowListCopyWindowInfo`); never the full screen; delete after review.
 - Dark mode check: relaunch with `--args -AppleInterfaceStyle Dark`; never change the system appearance.

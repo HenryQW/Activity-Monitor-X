@@ -4,9 +4,11 @@
 <dict>
 	<key>Label</key>
 	<string>com.henryqw.activitymonitorx.daemon</string>
-	<key>ProgramArguments</key>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/amxd</string>
+	<key>AssociatedBundleIdentifiers</key>
 	<array>
-		<string>/usr/local/libexec/amxd</string>
+		<string>com.henryqw.activitymonitorx</string>
 	</array>
 	<key>MachServices</key>
 	<dict>
@@ -19,7 +21,5 @@
 	<true/>
 	<key>ProcessType</key>
 	<string>Background</string>
-	<key>StandardErrorPath</key>
-	<string>/Library/Logs/ActivityMonitorX/amxd.log</string>
 </dict>
 </plist>

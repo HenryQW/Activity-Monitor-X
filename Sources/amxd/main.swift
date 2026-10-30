@@ -1,5 +1,6 @@
 import AMXCore
 import Foundation
+import os
 
 var dbPath = AMX.databasePath
 var xpc = true
@@ -24,6 +25,8 @@ func usage() -> Never {
 do {
     try Daemon(dbPath: dbPath, xpc: xpc).run()
 } catch {
+    // launchd keeps no standard error for the bundled helper (D91): the unified log has the reason.
+    Logger(subsystem: AMX.daemonLabel, category: "main").fault("amxd: \(String(describing: error), privacy: .public)")
     FileHandle.standardError.write(Data("amxd: \(error)\n".utf8))
     exit(1)
 }

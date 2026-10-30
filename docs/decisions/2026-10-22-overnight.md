@@ -623,3 +623,10 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Options:** A, a cluster as wide as its marker (32 pt); B, the count as a badge on the symbol, 20 pt clusters; C, fixed 40 pt slots.
 - **Call (user):** A. The gap was 12 pt, but a marker with its count is about 30 pt wide.
 - **Cost if wrong:** one value; fewer, larger clusters at wide ranges.
+
+## D91: Release path, bundled helper and release signing (user picks)
+
+- **Goal (user):** release Activity Monitor X as a DMG and a Homebrew cask, with the same process as the reference app, and install without sudo.
+- **Options:** helper, A, `make install` copies `amxd` and a LaunchDaemon plist with sudo (as before); B, the app bundles `amxd` and registers it with `SMAppService.daemon(plistName:)`. Signing, A, one self-signed identity on every Mac; B, a second self-signed release identity, imported in CI from secrets into a temporary keychain.
+- **Call (user):** helper B and signing B. A probe on this Mac showed that a self-signed app can register a daemon: `register()` throws "Operation not permitted" and the status is `requiresApproval` until the owner allows it in Login Items, so the app shows that step with "Open Login Items Settings". The XPC pin compares leaf certificates, so it needs no change: the app, `amxd` and `amx` in one bundle have the same signature. `VERSION` is the one place for the version; `make app` writes it into the bundle. The plist has no `StandardErrorPath`: no installer makes its folder now, and `amxd` writes a fatal error to the unified log.
+- **Cost if wrong:** the Makefile, the plist and one small model; a dev build talks to the installed helper only when both have the same signing identity, so on the development Mac `make install` replaces a release install.

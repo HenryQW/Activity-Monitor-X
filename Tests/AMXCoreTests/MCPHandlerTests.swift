@@ -30,7 +30,10 @@ private func toolResult(_ name: String, _ arguments: String) throws -> (text: St
         let result = try #require(out["result"] as? [String: Any])
         #expect(result["protocolVersion"] as? String == answered)
         #expect((result["capabilities"] as? [String: [String: Bool]]) == ["tools": ["listChanged": false]])
-        #expect((result["serverInfo"] as? [String: String]) == ["name": "amx", "version": "0.5.0"])
+        // The release version is `VERSION`, the one place it lives.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let version = try String(contentsOf: root.appendingPathComponent("VERSION"), encoding: .utf8)
+        #expect((result["serverInfo"] as? [String: String]) == ["name": "amx", "version": version.trimmingCharacters(in: .newlines)])
     }
 
     @Test func toolsList() throws {

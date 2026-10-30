@@ -1,0 +1,66 @@
+@import "@henryqw/theme/tokens.css";
+@import "@henryqw/theme/blume.css";
+
+/* Home page sections: one content width and side gutters. */
+.homepage-container {
+  box-sizing: border-box;
+  margin: 0 auto;
+  max-width: 1440px;
+  padding: 32px 24px;
+}
+
+@media (min-width: 768px) {
+  .homepage-container {
+    padding: 40px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .homepage-container {
+    padding: 72px 64px;
+  }
+}
+
+/* The footer's About Henry link shows the author's picture. */
+footer a[href="https://henry.wang"]::before {
+  background: url("/henry.png") center / cover;
+  border-radius: 50%;
+  content: "";
+  display: inline-block;
+  height: 20px;
+  margin-right: 6px;
+  vertical-align: middle;
+  width: 20px;
+}
+
+/* How It Works: the four steps as boxes in a row, one under the other on a narrow screen. */
+.flow {
+  counter-reset: step;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  list-style: none;
+  margin: 1.5rem 0;
+  padding: 0;
+}
+
+.flow li {
+  border: 1px solid var(--blume-border);
+  border-radius: 8px;
+  color: var(--blume-muted-foreground);
+  counter-increment: step;
+  font-size: 0.875rem;
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.flow li b {
+  color: var(--blume-foreground);
+  display: block;
+  font-weight: 600;
+}
+
+.flow li b::before {
+  color: var(--blume-muted-foreground);
+  content: counter(step) ". ";
+}

@@ -1,7 +1,7 @@
 import Foundation
 
 public enum AMX {
-    /// The release version. The MCP server reports it; `Packaging/Info.plist` has the same `CFBundleShortVersionString`.
+    /// The release version. The MCP server reports it; it equals `VERSION`, which `make app` writes into the bundle.
     public static let version = "0.5.0"
     public static let bundleID = "com.henryqw.activitymonitorx"
     public static let cliID = "com.henryqw.activitymonitorx.amx"

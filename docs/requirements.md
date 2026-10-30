@@ -155,3 +155,7 @@ Rules:
 
 - **BLD-1** (user) Build, sign and install run without prompts (D52).
 - **BLD-2** Scroll bars are stock and follow the system "Show scroll bars" setting, except the inspector panel, whose scroll bars are always overlay (INS-2) (D54, D66).
+- **BLD-3** (user) The app bundles `amxd` and `amx` and registers the helper with `SMAppService` at launch; dev builds do not. While macOS waits for the owner to allow it, the main window's helper problem and Settings > Helper say so and have "Open Login Items Settings". `make install` copies the app and links `amx` without sudo (D91).
+- **BLD-4** (user) Local builds sign with "Activity Monitor X Local Signing" (`make cert`); releases sign in CI with a second self-signed identity, "Activity Monitor X Release Signing", from the secrets `RELEASE_CERT_P12` and `RELEASE_CERT_PASSWORD` in a temporary keychain. `Scripts/make-release-cert.sh` makes that identity (D91).
+- **BLD-5** (user) `VERSION` holds the version: `make app` writes it into the bundle as `CFBundleShortVersionString` and `CFBundleVersion`, and `AMX.version` (what `amx mcp` reports) must equal it (D91).
+- **BLD-6** (user) A tag `v<VERSION>` runs the release workflow on the `xcode-27` runner: test, build, `make dmg`, then a GitHub release with `AMX-<version>.dmg`, its `.sha256` and `AMX.dmg`, and, with `TAP_TOKEN`, the `amx` cask in HenryQW/homebrew-tap (D91).

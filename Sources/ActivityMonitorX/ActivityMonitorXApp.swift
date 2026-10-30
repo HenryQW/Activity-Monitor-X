@@ -20,6 +20,7 @@ struct ActivityMonitorXApp: App {
     private let calendar: CalendarModel
     private let readout = MenuBarReadout()
     private let settings: SettingsModel
+    private let helper = HelperService()
     /// Kept here: the notification center holds its delegate weakly. Nil outside the bundle (`swift run`).
     private let notifier: Notifier?
 
@@ -48,6 +49,7 @@ struct ActivityMonitorXApp: App {
             notifier = nil
             Logger(subsystem: AMX.bundleID, category: "notifications").notice("notifications off: not running from the app bundle")
         }
+        helper.register()
         // App level, not the window's .task: the badge and notifications keep up with the window closed.
         Task { await alerts.run() }
         // Runs while the menu bar item is hidden too; two cheap reads every 5 s.
@@ -86,6 +88,7 @@ struct ActivityMonitorXApp: App {
                 .environment(calendar)
                 .environment(readout)
                 .environment(settings)
+                .environment(helper)
                 .environment(appDelegate.preferences)
                 .task { await history.run() }
                 .task { if history.glossary == nil { history.glossary = await Self.loadGlossary() } }
@@ -112,6 +115,7 @@ struct ActivityMonitorXApp: App {
         Settings {
             SettingsView()
                 .environment(settings)
+                .environment(helper)
                 .environment(appDelegate.preferences)
                 .environment(notifier)
         }

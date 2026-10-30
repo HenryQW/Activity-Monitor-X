@@ -14,3 +14,7 @@ xcuserdata/
 /*.png
 /*.mov
 .env
+# Docs site build output
+website/node_modules/
+website/.blume/
+website/dist/

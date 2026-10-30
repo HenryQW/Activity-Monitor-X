@@ -446,13 +446,15 @@ private struct RecordingSettings: View {
 
 private struct HelperSettings: View {
     @Environment(SettingsModel.self) private var model
+    @Environment(HelperService.self) private var helper
 
     var body: some View {
         let ping = model.ping
         let current = ping.map { $0.version >= DaemonPing.protocolVersion } ?? false
         Form {
             Section {
-                LabeledContent("Status", value: ping == nil ? "Not reachable" : current ? "Running" : "Out of date")
+                LabeledContent("Status", value: ping == nil ? helper.needsApproval ? "Waits for approval" : "Not reachable"
+                                                : current ? "Running" : "Out of date")
                 if let ping {
                     LabeledContent("Protocol version", value: String(ping.version))
                     LabeledContent("Uptime", value: Units.uptime(Double(ping.uptime)))
@@ -464,11 +466,12 @@ private struct HelperSettings: View {
             }
             if !current {
                 Section {
-                    Text("make install").font(.body.monospaced()).textSelection(.enabled)
-                } header: {
-                    Text("Install Command")
+                    Button("Open Login Items Settings") { SMAppService.openSystemSettingsLoginItems() }
+                        .help("Open Login Items in System Settings to allow or restart the helper")
                 } footer: {
-                    Text("Run it in the Activity Monitor X repository. It asks for an administrator password and restarts the helper.")
+                    Text(helper.needsApproval
+                         ? "The helper waits for your approval. Turn on Activity Monitor X under Allow in the Background to start the recording."
+                         : "To restart the helper, turn Activity Monitor X off and on again under Allow in the Background.")
                 }
             }
             Section {
