@@ -42,6 +42,15 @@ final class DiskMapModel {
     private(set) var progressTotal: UInt64?
     /// Index path of the shown folder in `tree`.
     var focus: [Int] = []
+    /// The system's folder dialog shows (`DiskMapView`).
+    var choosing = false
+
+    /// Up one folder (Escape, View > Zoom Out): the folder left becomes the selection, so the table and ⌘C agree.
+    func up() {
+        guard !focus.isEmpty else { return }
+        selected = focus
+        focus.removeLast()
+    }
     /// Index path of the table's selected item in `tree`, which the inspector shows.
     var selected: [Int]?
     private(set) var error: String?

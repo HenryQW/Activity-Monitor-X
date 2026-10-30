@@ -33,7 +33,7 @@ struct ChipDiagram: View {
         let font = NSFont.preferredFont(forTextStyle: .caption1)
         let textWidth = { (text: String) in (text as NSString).size(withAttributes: [.font: font]).width }
         // Every cluster has its name and the percent on one line, or every cluster has two lines, so the cores line up.
-        let oneLine = chip.clusters.allSatisfy { Double($0.cores) * (slot + Self.gap) - Self.gap >= textWidth($0.name) + textWidth("100 %") + 6 }
+        let oneLine = chip.clusters.allSatisfy { Double($0.cores) * (slot + Self.gap) - Self.gap >= textWidth($0.name) + textWidth(Units.percent(100)) + 6 }
         HStack(alignment: .top, spacing: Self.spacing) {
             // A taller chip (beside more cells) puts the space between the CPU and the GPU rows.
             VStack(alignment: .leading, spacing: 0) {
@@ -42,7 +42,7 @@ struct ChipDiagram: View {
                     ForEach(chip.clusters.indices, id: \.self) { cluster($0, slot: slot, oneLine: oneLine, selected: selected.contains(.cluster($0))) }
                 }
                 if let gpuCores, gpuCores > 0 {
-                    Spacer(minLength: 10)
+                    Spacer(minLength: Layout.inset)
                     gpu(gpuCores, columns: columns, slot: slot, selected: selected.contains(.gpu))
                 }
             }
@@ -58,8 +58,6 @@ struct ChipDiagram: View {
         .font(.caption)
         .monospacedDigit()
     }
-
-    private static func percent(_ value: Double) -> String { "\(Int(value.rounded())) %" }
 
     private var increased: Bool { contrast == .increased }
 
@@ -85,10 +83,10 @@ struct ChipDiagram: View {
 
     /// The name, and the percent at the right edge of the cores under it.
     private func header(_ name: String, _ usage: Double?) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Layout.gap) {
             Text(name)
-            Spacer(minLength: 2)
-            if let usage { Text(Self.percent(usage)).foregroundStyle(.secondary) }
+            Spacer(minLength: Layout.gap)
+            if let usage { Text(Units.percent(usage)).foregroundStyle(.secondary) }
         }
         .lineLimit(1)
     }
@@ -99,16 +97,16 @@ struct ChipDiagram: View {
         let usage = hardware.cpuUsage.count == chip.clusters.reduce(0) { $0 + $1.cores }
             ? Array(hardware.cpuUsage[chip.cpuIndexes(cluster: index)]) : []
         let average = usage.isEmpty ? nil : usage.reduce(0, +) / Double(usage.count)
-        return button(.cluster(index), label: "\(cluster.name), \(cluster.cores) cores", value: average.map { "\(Self.percent($0)) busy" } ?? "",
+        return button(.cluster(index), label: "\(cluster.name), \(cluster.cores) cores", value: average.map { "\(Units.percent($0)) busy" } ?? "",
                       hint: "Show the \(cluster.name) cores in the list", selected: selected) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Layout.gap) {
                 if oneLine {
                     header(cluster.name, average)
                 } else {
                     // A narrow cluster ("Efficiency" over two cores): the name may run into the empty column after it.
                     VStack(alignment: .leading, spacing: 0) {
                         Text(cluster.name)
-                        Text(average.map(Self.percent) ?? " ").foregroundStyle(.secondary)
+                        Text(average.map(Units.percent) ?? " ").foregroundStyle(.secondary)
                     }
                     .fixedSize()
                     .frame(width: Double(cluster.cores) * (slot + Self.gap) - Self.gap, alignment: .leading)
@@ -119,7 +117,7 @@ struct ChipDiagram: View {
                         Glyph(name: "cpu", level: usage.isEmpty ? 0 : usage[i] / 100, color: Self.status(cpuLevel(usage.isEmpty ? 0 : usage[i])),
                               size: slot * 0.88)
                             .frame(width: slot, height: slot)
-                            .help(usage.isEmpty ? name : "\(name): \(Self.percent(usage[i]))")
+                            .help(usage.isEmpty ? name : "\(name): \(Units.percent(usage[i]))")
                     }
                 }
             }
@@ -131,10 +129,10 @@ struct ChipDiagram: View {
     private func gpu(_ count: Int, columns: Int, slot: Double, selected: Bool) -> some View {
         let usage = hardware.gpuUsage
         let perRow = min(count, columns), color = Self.status(cpuLevel(usage))
-        return button(.gpu, label: "GPU, \(count) cores", value: usage.map { "\(Self.percent($0)) busy" } ?? "",
-                      hint: usage.map { "Show the GPU in the list. GPU: \(Self.percent($0)); macOS gives one total for all GPU cores." }
+        return button(.gpu, label: "GPU, \(count) cores", value: usage.map { "\(Units.percent($0)) busy" } ?? "",
+                      hint: usage.map { "Show the GPU in the list. GPU: \(Units.percent($0)); macOS gives one total for all GPU cores." }
                           ?? "Show the GPU in the list", selected: selected) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Layout.gap) {
                 header("GPU", usage)
                 VStack(alignment: .leading, spacing: Self.gap) {
                     ForEach(0..<(count + perRow - 1) / perRow, id: \.self) { row in
@@ -155,12 +153,12 @@ struct ChipDiagram: View {
     private func memory(slot: Double, selected: Bool) -> some View {
         let usage = hardware.memoryUsage
         let color = Self.status(readout.percents.map { SystemState.pressureSeverity($0.level) } ?? 0)
-        let value = [hardware.memory(chip), usage.map { "\(Self.percent($0)) used" }].compactMap { $0 }.joined(separator: ", ")
+        let value = [hardware.memory(chip), usage.map { "\(Units.percent($0)) used" }].compactMap { $0 }.joined(separator: ", ")
         return button(.memory, label: "Unified memory", value: value, hint: "Show the memory in the list", selected: selected) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: Layout.gap) {
+                HStack(spacing: Layout.gap) {
                     Text("Memory")
-                    if let usage { Text(Self.percent(usage)).foregroundStyle(.secondary) }
+                    if let usage { Text(Units.percent(usage)).foregroundStyle(.secondary) }
                 }
                 .fixedSize()
                 Glyph(name: "memorychip", level: (usage ?? 0) / 100, color: color, size: slot * 2.6, fromLeft: true)

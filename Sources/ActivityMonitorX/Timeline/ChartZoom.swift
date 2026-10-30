@@ -11,7 +11,7 @@ struct ChartZoom: View {
     var body: some View {
         VStack(spacing: 0) {
             button("Zoom In", "plus.magnifyingglass", hint: zoomInHint, enabled: history.canZoomIn, action: history.zoomIn)
-            Divider().padding(.horizontal, 6)
+            Divider().padding(.horizontal, Layout.gap)
             button("Zoom Out", "minus.magnifyingglass", hint: zoomOutHint, enabled: history.widerRange != nil, action: history.zoomOut)
         }
         .frame(width: 32)

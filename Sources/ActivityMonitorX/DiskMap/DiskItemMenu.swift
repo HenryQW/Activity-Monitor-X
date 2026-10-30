@@ -11,7 +11,7 @@ enum TerminalApp {
     static func url(_ id: String) -> URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) }
 
     static var installed: [(id: String, name: String)] {
-        known.compactMap { id in url(id).map { (id, FileManager.default.displayName(atPath: $0.path).replacingOccurrences(of: ".app", with: "")) } }
+        known.compactMap { id in url(id).map { (id, FileManager.default.displayName(atPath: $0.path)) } }
     }
 }
 
@@ -38,7 +38,7 @@ struct DiskItemMenu: View {
                 Menu("Open With", systemImage: "app.badge") {
                     ForEach(apps, id: \.self) { app in
                         Button { NSWorkspace.shared.open([url], withApplicationAt: app, configuration: .init()) } label: {
-                            Text(FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: ""))
+                            Text(FileManager.default.displayName(atPath: app.path))
                             Image(nsImage: Self.icon(app))
                         }
                     }
@@ -48,16 +48,15 @@ struct DiskItemMenu: View {
             Button("Quick Look", systemImage: "eye") { model.quickLook = url }
                 .help("Preview the item")
             Divider()
-            Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                .help("Show the item in Finder")
+            ShowInFinderButton(path: path, help: "Show the item in Finder")
             Button("Get Info", systemImage: "info.circle") { Self.getInfo(path) }
                 .help("Open the Finder info window of the item")
             Button("Open in Terminal", systemImage: "terminal") { openInTerminal(isFolder ? url : url.deletingLastPathComponent()) }
                 .help(isFolder ? "Open the folder in the terminal app chosen in Settings" : "Open the folder of the file in the terminal app chosen in Settings")
             Divider()
-            Button("Copy Path", systemImage: "doc.on.doc") { Self.copy(path) }
+            Button("Copy Path", systemImage: "doc.on.doc") { Pasteboard.copy(path) }
                 .help("Copy the path of the item")
-            Button("Copy Name", systemImage: "textformat") { Self.copy(url.lastPathComponent) }
+            Button("Copy Name", systemImage: "textformat") { Pasteboard.copy(url.lastPathComponent) }
                 .help("Copy the name of the item")
             Divider()
             Button("Rename…", systemImage: "pencil") { model.renaming = id }
@@ -65,11 +64,6 @@ struct DiskItemMenu: View {
             Button("Move to Trash", systemImage: "trash") { model.trash(id) }
                 .help("Move the item to the Trash. The Trash can put it back.")
         }
-    }
-
-    static func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 
     private static func icon(_ app: URL) -> NSImage {
@@ -116,7 +110,7 @@ struct DiskRenameSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Layout.padding) {
             Text("Rename").font(.headline)
             TextField("Name", text: Binding(get: { _name.wrappedValue }, set: { _name.wrappedValue = $0 }))
                 .frame(width: 320)

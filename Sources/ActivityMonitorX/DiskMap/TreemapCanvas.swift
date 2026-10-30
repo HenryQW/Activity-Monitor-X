@@ -91,9 +91,9 @@ extension FileKind {
 /// The treemap's colours under it, with the round dot of the app list.
 struct FileKindLegend: View {
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Layout.padding) {
             ForEach(FileKind.allCases, id: \.self) { kind in
-                HStack(spacing: 4) {
+                HStack(spacing: Layout.gap) {
                     Circle().fill(kind.color).frame(width: 8, height: 8)
                     Text(kind.label).lineLimit(1)
                 }
@@ -119,13 +119,16 @@ private struct Hover: View {
 
     var body: some View {
         let hovered = _location.wrappedValue.flatMap(cell(at:))
-        let highlight = hovered ?? selected.flatMap { s in
+        let chosen = selected.flatMap { s in
             s.starts(with: base) ? cells.first { $0.path == Array(s.dropFirst(base.count)) } : nil
         }
+        let highlight = hovered ?? chosen
+        // Hover is grey and selection the accent, and both show (S9), as in the Calendar.
+        let tone = hovered == nil ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary)
         // The highlighted item's folders, outermost first.
         let folders = highlight.map { h in cells.filter { $0.path.count < h.path.count && h.path.starts(with: $0.path) } } ?? []
         GeometryReader { geometry in
-            ZStack(alignment: (_location.wrappedValue?.y ?? 0) > geometry.size.height * 0.66 ? .topLeading : .bottomLeading) {
+            ZStack {
                 Color.clear.contentShape(.rect)
                 if let highlight {
                     // The rest dims, so the item's top folder stands out.
@@ -134,11 +137,13 @@ private struct Hover: View {
                         dim.addRect((folders.first ?? highlight).rect)
                     }
                     .fill(.background.opacity(0.45), style: FillStyle(eoFill: true))
-                    ForEach(folders, id: \.path) { Path($0.rect.insetBy(dx: 1, dy: 1)).stroke(.tint, lineWidth: 1) }
-                    Path(highlight.rect.insetBy(dx: 1, dy: 1)).stroke(.tint, lineWidth: 2)
+                    ForEach(folders, id: \.path) { Path($0.rect.insetBy(dx: 1, dy: 1)).stroke(tone, lineWidth: 1) }
                 }
-                if let hovered { card(hovered).padding(8) }
+                if let hovered { Path(hovered.rect.insetBy(dx: 1, dy: 1)).stroke(.secondary, lineWidth: 2) }
+                if let chosen { Path(chosen.rect.insetBy(dx: 1, dy: 1)).stroke(.tint, lineWidth: 2) }
             }
+            // Inside the treemap: past its edge the table pane would cover the card.
+            .previewBeside(_location.wrappedValue, within: CGRect(origin: .zero, size: geometry.size)) { if let hovered { card(hovered) } }
         }
         // The treemap itself is not read item by item; the item under the pointer is its value.
         .accessibilityElement(children: .ignore)

@@ -71,18 +71,21 @@ private struct GeneralSettings: View {
                 .help("Choose the app that Open in Terminal uses in the Disk Space menu")
             }
             Section {
-                Toggle("Launch at Login", isOn: prefs.launchAtLogin)
+                Toggle("Launch at login", isOn: prefs.launchAtLogin)
+                    .help("Open Activity Monitor X when you log in")
                 if preferences.loginNeedsApproval {
                     LabeledContent("Needs approval") {
                         Button("Open Login Items Settings") { SMAppService.openSystemSettingsLoginItems() }
+                            .help("Open Login Items in System Settings to approve the app")
                     }
                 }
             } footer: {
                 if let error = preferences.loginError { Text(error) }
             }
             Section {
-                Toggle("Show in Menu Bar", isOn: prefs.menuBarShown)
-                Picker("Menu Bar Colours", selection: prefs.menuBarColor) {
+                Toggle("Show in menu bar", isOn: prefs.menuBarShown)
+                    .help("Show CPU and memory pressure in the menu bar")
+                Picker("Menu bar colours", selection: prefs.menuBarColor) {
                     Text("Colour").tag(true)
                     Text("Greyscale").tag(false)
                 }
@@ -100,6 +103,7 @@ private struct GeneralSettings: View {
                             let url = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(AMX.bundleID)"
                             NSWorkspace.shared.open(URL(string: url)!)
                         }
+                        .help("Open the app's notification settings in System Settings")
                     }
                 }
             } footer: {
@@ -147,6 +151,7 @@ private struct AlertSettings: View {
                     })) {
                         ForEach(AlertPreset.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                     }
+                    .help("Set the values of every rule below")
                 } footer: {
                     Text("Relaxed, Balanced and Strict set the values of every rule below for this Mac's cores and memory, and keep each rule on or off. A change to a value makes it Custom.")
                 }
@@ -195,11 +200,11 @@ private struct AlertSettings: View {
                  footer: "A process grows by this much in under a minute. Then it is quiet for 30 min.") {
                 AnyView(AlertRuleRows.memoryJump(model.binding(\.rules.memoryJump), machine)) },
             Spec(id: RuleName.diskWrites, enabled: \.rules.diskWrites.enabled,
-                 summary: "\((r.diskWrites.bytesPerHour >> 30).formatted()) GB per hour",
+                 summary: "\((r.diskWrites.bytesPerHour / 1_000_000_000).formatted()) GB per hour",
                  footer: "An app writes this much to disk in one hour. Then that app is quiet for 60 min.") {
                 AnyView(AlertRuleRows.diskWrites(model.binding(\.rules.diskWrites))) },
             Spec(id: RuleName.network, enabled: \.rules.network.enabled,
-                 summary: "\((r.network.bytesPerSecond >> 20).formatted()) MB/s for \(r.network.minutes) min",
+                 summary: "\((r.network.bytesPerSecond / 1_000_000).formatted()) MB/s for \(r.network.minutes) min",
                  footer: "An app receives and sends more than this for this long. Then that app is quiet for 60 min.") {
                 AnyView(AlertRuleRows.network(model.binding(\.rules.network))) },
             Spec(id: RuleName.energy, enabled: \.rules.energy.enabled,
@@ -226,7 +231,7 @@ private struct AlertSettings: View {
                     NumberRow(title: "For", value: model.binding(\.rules.thermal.minutes), range: AlertRules.Thermal.minutesRange, unit: "min")
                 }) },
             Spec(id: RuleName.systemCPU, enabled: \.rules.systemCPU.enabled,
-                 summary: "\(r.systemCPU.warning)% warning, \(r.systemCPU.critical)% critical, \(r.systemCPU.minutes) min",
+                 summary: "\(Units.percent(Double(r.systemCPU.warning))) warning, \(Units.percent(Double(r.systemCPU.critical))) critical, \(r.systemCPU.minutes) min",
                  footer: "The Mac's CPU stays above a level for this long. A new spell alerts at most once per 60 min; a rise to critical alerts again.") {
                 AnyView(Group {
                     NumberRow(title: "Warning at", value: model.binding(\.rules.systemCPU.warning),
@@ -236,12 +241,12 @@ private struct AlertSettings: View {
                     NumberRow(title: "For", value: model.binding(\.rules.systemCPU.minutes), range: R.SystemCPU.minutesRange, unit: "min")
                 }) },
             Spec(id: RuleName.swap, enabled: \.rules.swap.enabled,
-                 summary: "Above \(r.swap.percentOfMemory)% of RAM",
+                 summary: "Above \(Units.percent(Double(r.swap.percentOfMemory))) of RAM",
                  footer: "Swap reaches this share of memory. At most once per 60 min.") {
                 AnyView(NumberRow(title: "Above", value: model.binding(\.rules.swap.percentOfMemory),
                                   range: R.Swap.percentOfMemoryRange, step: 5, unit: "% of RAM")) },
             Spec(id: RuleName.freeSpace, enabled: \.rules.freeSpace.enabled,
-                 summary: "Below \(r.freeSpace.percentFree)% free",
+                 summary: "Below \(Units.percent(Double(r.freeSpace.percentFree))) free",
                  footer: "Free space on the startup disk falls to this share. At most once per 24 h.") {
                 AnyView(NumberRow(title: "Below", value: model.binding(\.rules.freeSpace.percentFree),
                                   range: R.FreeSpace.percentFreeRange, unit: "% free")) },
@@ -252,14 +257,15 @@ private struct AlertSettings: View {
     /// on the row or its arrow opens the values.
     private func row(_ spec: Spec) -> some View {
         let title = RuleName.title(spec.id)
-        return HStack(spacing: 8) {
+        return HStack(spacing: Layout.inset) {
             Image(systemName: RuleName.symbol(spec.id)).foregroundStyle(.secondary).frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Layout.gap) {
                 Text(title)
                 Text(spec.summary).font(.caption).foregroundStyle(.secondary).monospacedDigit()
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: Layout.inset)
             Toggle(title, isOn: model.binding(spec.enabled, custom: false)).labelsHidden().toggleStyle(.switch)
+                .help("Turn the \(title) rule on or off")
             Button("Edit \(title) Values", systemImage: "chevron.right") { _open.wrappedValue = Open(id: spec.id) }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
@@ -287,6 +293,7 @@ private struct AlertSettings: View {
             Form {
                 Section {
                     Toggle(RuleName.title(spec.id), isOn: model.binding(spec.enabled, custom: false))
+                        .help("Turn the \(RuleName.title(spec.id)) rule on or off")
                     spec.rows().disabled(!enabled)
                 } footer: {
                     Text(spec.footer)
@@ -296,6 +303,7 @@ private struct AlertSettings: View {
             HStack {
                 Spacer()
                 Button("Done") { _open.wrappedValue = nil }.keyboardShortcut(.defaultAction)
+                    .help("Close the rule's values")
             }
             .padding()
         }
@@ -329,12 +337,12 @@ private struct AlertSettings: View {
     }
 
     static func diskWrites(_ r: Binding<R.DiskWrites>) -> some View {
-        NumberRow(title: "Above", value: units(r.bytesPerHour, 1 << 30), range: units(R.DiskWrites.bytesPerHourRange, 1 << 30),
+        NumberRow(title: "Above", value: units(r.bytesPerHour, 1_000_000_000), range: units(R.DiskWrites.bytesPerHourRange, 1_000_000_000),
                   unit: "GB per hour")
     }
 
     @ViewBuilder static func network(_ r: Binding<R.Network>) -> some View {
-        NumberRow(title: "Above", value: units(r.bytesPerSecond, 1 << 20), range: units(R.Network.bytesPerSecondRange, 1 << 20),
+        NumberRow(title: "Above", value: units(r.bytesPerSecond, 1_000_000), range: units(R.Network.bytesPerSecondRange, 1_000_000),
                   unit: "MB/s")
         NumberRow(title: "For", value: r.minutes, range: R.Network.minutesRange, unit: "min")
     }
@@ -367,6 +375,7 @@ private struct RecordingSettings: View {
     @Environment(SettingsModel.self) private var model
     /// A lower cap waits for confirmation: the next rollup deletes the history beyond it.
     private let _lowerCap = State<Int64?>(initialValue: nil)
+    private let _addingTerminal = State(initialValue: false)
 
     var body: some View {
         let settings = model.settings ?? DaemonSettings()
@@ -375,13 +384,14 @@ private struct RecordingSettings: View {
             DaemonProblem()
             Group {
                 Section {
-                    Picker("Size Cap", selection: Binding(get: { cap }, set: { new in
+                    Picker("Size cap", selection: Binding(get: { cap }, set: { new in
                         if new < cap { _lowerCap.wrappedValue = new } else { Task { await model.apply { $0.sizeCapBytes = new } } }
                     })) {
                         // A cap set outside these choices stays selectable, so the picker is never blank.
                         ForEach(DaemonSettings.sizeCapChoices.contains(cap) ? [] : [cap], id: \.self) { Text(gigabytes($0)).tag($0) }
                         ForEach(DaemonSettings.sizeCapChoices, id: \.self) { Text(gigabytes($0)).tag($0) }
                     }
+                    .help("Set the largest size of the history database")
                 } footer: {
                     Text("Past the cap, the oldest history is deleted first.")
                 }
@@ -405,7 +415,13 @@ private struct RecordingSettings: View {
                             .help("Remove this app from the list")
                         }
                     }
-                    Button("Add Terminal App…", systemImage: "plus") { addTerminal() }
+                    Button("Add Terminal App…", systemImage: "plus") { _addingTerminal.wrappedValue = true }
+                        .help("Choose an app to add to the Terminal pop-up")
+                        .fileImporter(isPresented: _addingTerminal.projectedValue, allowedContentTypes: [.application]) { result in
+                            if case .success(let url) = result { Task { await model.apply { try $0.addTerminal(appAt: url) } } }
+                        }
+                        .fileDialogDefaultDirectory(URL(filePath: "/Applications"))
+                        .fileDialogConfirmationLabel("Add")
                 } header: {
                     Text("Terminal Apps")
                 } footer: {
@@ -426,15 +442,6 @@ private struct RecordingSettings: View {
     }
 
     private func gigabytes(_ bytes: Int64) -> String { bytes.formatted(.byteCount(style: .file)) }
-
-    private func addTerminal() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.directoryURL = URL(filePath: "/Applications")
-        panel.prompt = "Add"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        Task { await model.apply { try $0.addTerminal(appAt: url) } }
-    }
 }
 
 private struct HelperSettings: View {
@@ -447,9 +454,8 @@ private struct HelperSettings: View {
             Section {
                 LabeledContent("Status", value: ping == nil ? "Not reachable" : current ? "Running" : "Out of date")
                 if let ping {
-                    LabeledContent("Protocol Version", value: String(ping.version))
-                    LabeledContent("Uptime", value: Duration.seconds(ping.uptime)
-                        .formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated)))
+                    LabeledContent("Protocol version", value: String(ping.version))
+                    LabeledContent("Uptime", value: Units.uptime(Double(ping.uptime)))
                     LabeledContent("Database") {
                         Text(ping.db).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                     }
@@ -467,6 +473,7 @@ private struct HelperSettings: View {
             }
             Section {
                 Button("Check Helper Again") { Task { await model.load() } }
+                    .help("Connect to the helper again and read its settings")
             }
         }
         .formStyle(.grouped)
@@ -483,7 +490,7 @@ struct DaemonProblem: View {
                 Label {
                     Text(error)
                 } icon: {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.yellow)
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
                 }
             }
         }
@@ -501,7 +508,7 @@ struct NumberRow<F: ParseableFormatStyle>: View where F.FormatOutput == String, 
 
     var body: some View {
         LabeledContent(title) {
-            HStack(spacing: 6) {
+            HStack(spacing: Layout.gap) {
                 TextField(title, value: value, format: format)
                     .labelsHidden()
                     .multilineTextAlignment(.trailing)

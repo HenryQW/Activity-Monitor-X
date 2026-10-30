@@ -42,8 +42,8 @@ import Testing
 
     /// Red and yellow were group colours before COL-1 kept them for levels: a saved group reads as blue.
     @Test func retiredColorReadsAsBlue() throws {
-        let colors = try JSONDecoder().decode([GroupColor].self, from: Data(#"["red","yellow","green"]"#.utf8))
-        #expect(colors == [.blue, .blue, .green])
+        let colors = try JSONDecoder().decode([GroupColor].self, from: Data(#"["red","yellow","pink","gray","green"]"#.utf8))
+        #expect(colors == [.blue, .blue, .blue, .blue, .green])
     }
 
     @Test func missingFileIsEmpty() throws {

@@ -3,7 +3,7 @@ import Charts
 import SwiftUI
 
 /// Pressure ▲, thermal ◆ and alert ● markers on the chart's x scale, in the headroom strip at the top of the plot. Events closer
-/// than 12 pt share one marker with a count; shape and colour come from the most severe one: yellow warns, red is
+/// than 32 pt, a marker with a two-digit count, share one marker with a count; shape and colour come from the most severe one: yellow warns, red is
 /// critical (the app palette uses neither); in light mode a warning has a dark outline, as yellow on white is under 3:1.
 /// A hover highlights the marker, shades its span and lists its events, info events included, in a popover; a click
 /// keeps the same popover open and selects their span.
@@ -28,8 +28,8 @@ struct EventLane: View {
     private let _open = State<(ts: Double, click: Bool)?>(initialValue: nil)
 
     /// The chart legend's key to the marker shapes.
-    static let legend = [(symbol: "triangle.fill", name: "Pressure"), (symbol: "diamond.fill", name: "Thermal"),
-                         (symbol: "circle.fill", name: "Alert")]
+    /// A marker's shape is its severity, as in Alerts, so colour is not the only cue; the kind is in its hint and popover.
+    static let legend = [(symbol: "exclamationmark.triangle.fill", name: "Warning"), (symbol: "xmark.octagon.fill", name: "Critical")]
 
     var body: some View {
         GeometryReader { geo in
@@ -37,7 +37,7 @@ struct EventLane: View {
                 let plot = geo[anchor]
                 let clusters = EventClusters.clusters(events.compactMap { event in
                     proxy.position(forX: Date(timeIntervalSince1970: event.ts)).flatMap { (0...plot.width).contains($0) ? (x: $0, event: event) : nil }
-                }, gap: 12)
+                }, gap: 32)
                 let active = clusters.first { $0.lead.ts == hovered.wrappedValue }
                 // A reload can drop the hovered or open cluster: the chart's value bubble must not stay hidden, and a
                 // later click must not find a popover open without its marker.
@@ -58,30 +58,30 @@ struct EventLane: View {
                         _open.wrappedValue = (cluster.lead.ts, true)
                         select?(span(cluster))
                     } label: {
-                        let symbol = Self.symbol(cluster.lead.kind)
                         let warning = cluster.lead.level != 2
+                        let symbol = Self.legend[warning ? 0 : 1].symbol
                         // The count sits beside the symbol, so the symbol stays on the event's x.
                         Image(systemName: symbol)
-                            .font(.system(size: 11))
+                            .font(.subheadline)
                             .foregroundStyle(warning ? Color.yellow : .red)
                             .overlay {
                                 if warning && colorScheme == .light {
                                     Image(systemName: String(symbol.dropLast(".fill".count)))
-                                        .font(.system(size: 11))
+                                        .font(.subheadline)
                                         .foregroundStyle(.black.opacity(0.55))
                                 }
                             }
                             .overlay(alignment: .leading) {
                                 if cluster.events.count > 1 {
                                     Text(String(cluster.events.count))
-                                        .font(.system(size: 10, weight: .semibold))
+                                        .font(.caption2.weight(.semibold))
                                         .monospacedDigit()
                                         .foregroundStyle(.primary)
                                         .fixedSize()
                                         .offset(x: 13)
                                 }
                             }
-                            .padding(3)
+                            .padding(Layout.gap)
                             .background(.primary.opacity(hovered.wrappedValue == cluster.lead.ts ? 0.15 : 0), in: .capsule)
                     }
                     .buttonStyle(.plain)
@@ -178,14 +178,6 @@ struct EventLane: View {
         case EventKind.pressure: "memory pressure"
         case EventKind.thermal: "thermal"
         default: "alert"
-        }
-    }
-
-    private static func symbol(_ kind: String) -> String {
-        switch kind {
-        case EventKind.pressure: "triangle.fill"
-        case EventKind.thermal: "diamond.fill"
-        default: "circle.fill"
         }
     }
 }

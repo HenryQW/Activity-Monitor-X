@@ -102,14 +102,14 @@ public struct EventEngine: Sendable {
         if systemAlert(RuleName.swap, over: rules.swap.enabled && swapPct >= Double(rules.swap.percentOfMemory), now: now,
                        rearm: AlertLimits.swapRearm) {
             out.append(systemDraft(now, RuleName.swap, value: swapPct, cause: memoryCause(processes, now: now),
-                                   "Swap used \(Self.bytes(system.swapUsed)), \(Int(swapPct.rounded())) % of memory"))
+                                   "Swap used \(Self.bytes(system.swapUsed)), \(Int(swapPct.rounded()))% of memory"))
         }
         if let free = system.diskFree {
             let freePct = Double(free) / Double(machine.bootVolumeBytes) * 100
             if systemAlert(RuleName.freeSpace, over: rules.freeSpace.enabled && freePct <= Double(rules.freeSpace.percentFree),
                            now: now, rearm: AlertLimits.freeSpaceRearm) {
                 out.append(systemDraft(now, RuleName.freeSpace, value: freePct, cause: writeCause(),
-                                       "Startup disk has \(Self.bytes(free)) free, \(Int(freePct.rounded())) %"))
+                                       "Startup disk has \(Metric.bytes(Double(free))) free, \(Int(freePct.rounded()))%"))
             }
         }
         pressure = system.pressureLevel
@@ -177,7 +177,7 @@ public struct EventEngine: Sendable {
         (cpuSeverity, lastCPUAlert) = (severity, now)
         let cause = cpuCause()
         return EventDraft(ts: now, kind: EventKind.alert, severity: severity, identity: cause?.identity, rule: RuleName.systemCPU,
-                          message: Self.message("CPU at \(Int(mean.rounded())) % of all cores for \(rule.minutes) min", cause),
+                          message: Self.message("CPU at \(Int(mean.rounded()))% of all cores for \(rule.minutes) min", cause),
                           value: mean)
     }
 
@@ -215,14 +215,14 @@ public struct EventEngine: Sendable {
     /// CPU and heat: the app with the most CPU over the sustained CPU window, as its mean share of all cores.
     private func cpuCause() -> Cause? {
         processRules.topApp(RuleName.sustainedCPU, mean: true).map {
-            ($0.identity, "\($0.name) used \(Int(($0.value / Double(machine.cores)).rounded())) % of all cores")
+            ($0.identity, "\($0.name) used \(Int(($0.value / Double(machine.cores)).rounded()))% of all cores")
         }
     }
 
     /// Free space: the app that wrote most in the last hour.
     private func writeCause() -> Cause? {
         processRules.topApp(RuleName.diskWrites, mean: false).map {
-            ($0.identity, "\($0.name) wrote \(Self.bytes(UInt64($0.value))) in 1 hour")
+            ($0.identity, "\($0.name) wrote \(Metric.bytes($0.value)) in 1 hour")
         }
     }
 
@@ -233,7 +233,7 @@ public struct EventEngine: Sendable {
         entry.app.appName == entry.name ? entry.name : "\(entry.name) (\(entry.app.appName))"
     }
 
-    /// `x.x GB` from 1 GiB, else `n MB`, in binary units (GB is 2^30 bytes). GB starts where MB would
+    /// Memory: `x.x GB` from 1 GiB, else `n MB`, in binary units (GB is 2^30 bytes), as Activity Monitor. GB starts where MB would
     /// round to 1024.
     static func bytes(_ count: UInt64) -> String {
         let mib = Double(count) / 1_048_576

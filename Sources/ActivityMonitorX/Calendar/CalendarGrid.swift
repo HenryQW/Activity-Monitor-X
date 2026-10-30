@@ -93,9 +93,8 @@ struct CalendarGrid: View {
     private func header(_ layout: Layout) -> some View {
         HStack(spacing: 0) {
             ForEach(0..<layout.columns, id: \.self) { column in
-                let weekend = weekendColumn(column)
                 Text(columnTitle(column, narrow: layout.cell.width < 56)).font(.caption).lineLimit(1)
-                    .foregroundStyle(weekend ? AnyShapeStyle(.indigo) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(.secondary)
                     .bold(isToday(column: column))
                     .frame(width: layout.cell.width)
             }
@@ -115,10 +114,6 @@ struct CalendarGrid: View {
 
     private func columnCell(_ column: Int) -> CalendarCell? { page.grid.compactMap { $0[column] }.first }
 
-    private func weekendColumn(_ column: Int) -> Bool {
-        columnCell(column).map { calendar.isDateInWeekend(Date(timeIntervalSince1970: $0.start)) } ?? false
-    }
-
     private func isToday(column: Int) -> Bool {
         page.period == .week && columnCell(column).map { calendar.isDateInToday(Date(timeIntervalSince1970: $0.start)) } == true
     }
@@ -128,16 +123,16 @@ struct CalendarGrid: View {
         VStack(alignment: .trailing, spacing: 0) {
             Color.clear.frame(height: layout.header)
             ForEach(page.grid.indices, id: \.self) { row in
-                VStack(alignment: .trailing, spacing: 1) {
+                VStack(alignment: .trailing, spacing: ActivityMonitorX.Layout.gap) {
                     if let start = page.grid[row].compactMap({ $0 }).first?.start {
                         ForEach(Array(([calendar.timeZone] + extras).enumerated()), id: \.offset) { i, zone in
                             Text(AppTime.namedHour(start, in: zone)).foregroundStyle(i == 0 ? .primary : .secondary)
-                                .font(i == 0 ? .caption2 : .system(size: 9)).lineLimit(1).minimumScaleFactor(0.7)
+                                .font(.caption2).lineLimit(1).minimumScaleFactor(0.7)
                         }
                     }
                 }
                 .font(.caption2)
-                .padding(.trailing, 6)
+                .padding(.trailing, ActivityMonitorX.Layout.gap)
                 .frame(width: layout.gutter, height: layout.cell.height, alignment: .topTrailing)
             }
         }
@@ -157,7 +152,8 @@ struct CalendarGrid: View {
         guard let cell, page.period == .month || page.period == .week else { return .clear }
         let date = Date(timeIntervalSince1970: cell.start)
         if calendar.isDateInToday(date) { return Color.primary.opacity(scheme == .dark ? 0.12 : 0.08) }
-        return calendar.isDateInWeekend(date) ? Color.indigo.opacity(scheme == .dark ? 0.09 : 0.05) : .clear
+        // A weekend is a lighter neutral tint than today, never an app colour (CAL-2).
+        return calendar.isDateInWeekend(date) ? Color.primary.opacity(scheme == .dark ? 0.05 : 0.03) : .clear
     }
 
     private func cells(_ layout: Layout, colors: [AppKey: Color]) -> some View {

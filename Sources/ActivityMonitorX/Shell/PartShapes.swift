@@ -67,12 +67,27 @@ struct BatteryShape: View {
 }
 
 extension View {
-    /// The cell around a drawn part or a fact (Hardware, Disk, Calendar): the layout's padding, the quinary fill with 7 pt
-    /// corners and the accent outline while it is selected.
+    /// The cell of a drawn part that a click selects (Hardware, Disk): the layout's padding, the quinary fill with 7 pt
+    /// corners, a grey outline under the pointer and the accent outline while it is selected (S9).
     func partCell(selected: Bool = false, padding: CGFloat = Layout.padding) -> some View {
-        self.padding(padding)
+        modifier(PartCell(selected: selected, padding: padding))
+    }
+}
+
+private struct PartCell: ViewModifier {
+    let selected: Bool
+    let padding: CGFloat
+    private let _hover = State(initialValue: false)
+
+    func body(content: Content) -> some View {
+        content.padding(padding)
             .background(.quinary, in: .rect(cornerRadius: 7))
-            .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.tint, lineWidth: 2).opacity(selected ? 1 : 0) }
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary), lineWidth: selected ? 2 : 1)
+                    .opacity(selected || _hover.wrappedValue ? 1 : 0)
+            }
+            .onHover { _hover.wrappedValue = $0 }
     }
 }
 

@@ -10,17 +10,14 @@ struct HardwareInspector: View {
         let path = hardware.selected.map { HardwareRow.path(to: $0, in: hardware.rows) } ?? []
         if let row = path.last {
             Form {
-                Section { Text(row.name).font(.title3.bold()).overlayScrollers() }
-                CardSection("Value") {
+                InspectorTitle(row.name)
+                CardSection("Value", summary: Text(row.value.isEmpty ? "None" : row.value)) {
                     Text(row.value.isEmpty ? "None" : row.value).textSelection(.enabled)
-                    Button("Copy", systemImage: "doc.on.doc") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("\(row.name): \(row.value)", forType: .string)
-                    }
+                    Button("Copy") { Pasteboard.copy("\(row.name): \(row.value)") }
                     .help("Copy the name and the value")
                 }
                 if path.count > 1 {
-                    CardSection("Section") { Text(path.dropLast().map(\.name).joined(separator: " > ")) }
+                    CardSection("Section", summary: path.dropLast().last.map { Text($0.name) }) { Text(path.dropLast().map(\.name).joined(separator: " > ")) }
                 }
             }
             .formStyle(.grouped)
@@ -36,21 +33,15 @@ struct HardwareInspector: View {
 
     private var summaryForm: some View {
         Form {
-            Section { Text(hardware.value("machine_name") ?? "Mac").font(.title3.bold()).overlayScrollers() }
-            Section {
+            CardSection(hardware.value("machine_name") ?? "Mac", summary: hardware.chip.map { Text($0.name) }, footer: Text("Click a row to see its details.")) {
                 if let chip = hardware.chip {
                     LabeledContent("Chip", value: chip.name)
                     LabeledContent("Cores", value: chip.clusters.map { "\($0.cores) \($0.name)" }.joined(separator: ", "))
                     LabeledContent("Memory", value: Int64(chip.memory).formatted(.byteCount(style: .memory)))
                 }
                 // As System Health in Apps shows them.
-                LabeledContent("Thermal State", value: SystemState.thermal(ProcessInfo.processInfo.thermalState.rawValue).capitalized)
-                LabeledContent("Uptime", value: Duration.seconds(ProcessInfo.processInfo.systemUptime)
-                    .formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2)))
-            } header: {
-                Text("Summary")
-            } footer: {
-                Text("Click a row to see its details.")
+                LabeledContent("Thermal state", value: SystemState.thermal(ProcessInfo.processInfo.thermalState.rawValue).capitalized)
+                LabeledContent("Uptime", value: Units.uptime(ProcessInfo.processInfo.systemUptime))
             }
         }
         .formStyle(.grouped)

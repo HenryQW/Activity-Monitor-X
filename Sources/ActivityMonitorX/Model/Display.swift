@@ -45,6 +45,38 @@ extension Metric {
     }
 }
 
+/// One format per quantity, used on every screen (D88). Each is the system format, so it follows the locale.
+enum Units {
+    /// Whole percents of 0 to 100: "42%".
+    static func percent(_ value: Double) -> String { (value / 100).formatted(.percent.precision(.fractionLength(0))) }
+    static func watts(_ value: Double, digits: Int = 1) -> String { measure(value, UnitPower.watts, digits) }
+    /// Whole degrees as read, never converted: "47°C".
+    static func celsius(_ value: Double) -> String { measure(value, UnitTemperature.celsius, 0) }
+    /// Disk latency: "0.2 ms".
+    static func milliseconds(_ value: Double) -> String { measure(value, UnitDuration.milliseconds, 1) }
+    /// Disk operations: "120/s".
+    static func perSecond(_ value: Double) -> String { value.formatted(.number.precision(.fractionLength(0))) + "/s" }
+    /// Uptime: "2 days, 3 hr".
+    static func uptime(_ seconds: Double) -> String {
+        Duration.seconds(seconds).formatted(.units(allowed: [.days, .hours, .minutes], width: .abbreviated, maximumUnitCount: 2))
+    }
+
+    private static func measure<U: Dimension>(_ value: Double, _ unit: U, _ digits: Int) -> String {
+        Measurement(value: value, unit: unit)
+            .formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(digits))))
+    }
+}
+
+extension PowerReading {
+    /// "Adapter, 96 W" or "Battery": short, so it fits a footer column.
+    var sourceText: String { adapterConnected ? "Adapter" + (adapterRating.map { ", " + Units.watts($0, digits: 0) } ?? "") : "Battery" }
+}
+
+extension PowerReading.Battery {
+    /// "79%, charging"; "No data" with no reading.
+    var chargeText: String { (percent.map { Units.percent(Double($0)) } ?? "No data") + (charging ? ", charging" : "") }
+}
+
 extension GroupColor {
     var color: Color {
         switch self {
@@ -56,9 +88,7 @@ extension GroupColor {
         case .blue: .blue
         case .indigo: .indigo
         case .purple: .purple
-        case .pink: .pink
         case .brown: .brown
-        case .gray: .gray
         }
     }
 }

@@ -90,7 +90,7 @@ private struct Rig {
         #expect(r.tick(0, swap: 4 * gib - 1).isEmpty)
         let at = r.tick(5, swap: 4 * gib)
         #expect(at.map(\.rule) == ["swap"] && at.first?.kind == EventKind.alert && at.first?.identity == nil)
-        #expect(at.first?.message == "Swap used 4.0 GB, 50 % of memory" && at.first?.value == 50)
+        #expect(at.first?.message == "Swap used 4.0 GB, 50% of memory" && at.first?.value == 50)
         #expect(r.tick(10, swap: 8 * gib).isEmpty)
         _ = r.tick(15)
         // A new spell alerts only 60 min after the last alert.
@@ -103,7 +103,7 @@ private struct Rig {
         var r = Rig()
         #expect(r.tick(0, free: 10 * gib + 1).isEmpty)
         let at = r.tick(5, free: 10 * gib)
-        #expect(at.map(\.rule) == ["free_space"] && at.first?.message == "Startup disk has 10.0 GB free, 10 %")
+        #expect(at.map(\.rule) == ["free_space"] && at.first?.message == "Startup disk has 10.74 GB free, 10%")
         #expect(r.tick(10, free: gib).isEmpty)
         _ = r.tick(15, free: 20 * gib)
         // A new spell alerts only 24 h after the last alert.
@@ -125,7 +125,7 @@ private struct Rig {
         #expect(alerts.isEmpty)
         run(295, 1, cpu: 75)
         #expect(alerts.map(\.severity) == [1] && alerts.first?.value == 75)
-        #expect(alerts.first?.message == "CPU at 75 % of all cores for 5 min: p10 used 100 % of all cores")
+        #expect(alerts.first?.message == "CPU at 75% of all cores for 5 min: p10 used 100% of all cores")
         // A short burst does not move the window's mean to critical.
         run(300, 5, cpu: 100)
         #expect(alerts.count == 1)
@@ -179,18 +179,18 @@ private struct Rig {
 
     @Test func systemAlertsNameCause() {
         var r = Rig()
-        let busy = [sample(idA, cpu: 400, mem: gib, diskW: 1_048_576), sample(idB, cpu: 100, mem: 3 * gib)]
+        let busy = [sample(idA, cpu: 400, mem: gib, diskW: 1_000_000), sample(idB, cpu: 100, mem: 3 * gib)]
         _ = r.tick(0, processes: busy, new: [idA, idB])
         let step = r.tick(5, thermal: 2, swap: 4 * gib, free: 10 * gib, processes: busy)
-        #expect(step.map(\.message) == ["Thermal state serious: p10 used 50 % of all cores",
-                                        "Swap used 4.0 GB, 50 % of memory: p11 uses the most memory (3.0 GB)",
-                                        "Startup disk has 10.0 GB free, 10 %: p10 wrote 10 MB in 1 hour"])
+        #expect(step.map(\.message) == ["Thermal state serious: p10 used 50% of all cores",
+                                        "Swap used 4.0 GB, 50% of memory: p11 uses the most memory (3.0 GB)",
+                                        "Startup disk has 10.74 GB free, 10%: p10 wrote 10 MB in 1 hour"])
         #expect(step.map(\.identity) == [idA, idB, idA])
         var alerts: [EventDraft] = []
         for t in stride(from: 10.0, through: 305, by: 5) {
             alerts += r.tick(t, thermal: 2, processes: busy).filter { $0.rule == RuleName.thermal }
         }
-        #expect(alerts.map(\.message) == ["Thermal state serious for 5 min: p10 used 50 % of all cores"])
+        #expect(alerts.map(\.message) == ["Thermal state serious for 5 min: p10 used 50% of all cores"])
         // A falling step names no cause.
         let down = r.tick(310, thermal: 1, processes: busy)
         #expect(down.map(\.message) == ["Thermal state fair"] && down.first?.identity == nil)

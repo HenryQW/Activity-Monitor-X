@@ -68,7 +68,7 @@ private struct Rig {
         }
         var alerts = r.alerts("sustained_cpu", from: 0, to: 300, both(100))
         #expect(alerts.map(\.ts) == [295])
-        #expect(alerts.first?.message == "A used 100 % CPU for 5 min" && alerts.first?.value == 100)
+        #expect(alerts.first?.message == "A used 100% CPU for 5 min" && alerts.first?.value == 100)
         #expect(alerts.first?.kind == EventKind.alert && alerts.first?.severity == 1)
         #expect([a1.id, a2.id].contains(alerts.first?.identity))
         alerts += r.alerts("sustained_cpu", from: 300, to: 600, both(100))
@@ -117,8 +117,8 @@ private struct Rig {
         r.rules.apps["/A.app"] = own
         // 100 % alerts for B (global 80 %) but not for A (its own 200 %); A alerts at its own threshold.
         let both = r.alerts("sustained_cpu", from: 0, to: 300) { _ in [(a, 100, gib), (b, 100, gib)] }
-        #expect(both.map(\.message) == ["B used 100 % CPU for 5 min"])
-        #expect(r.alerts("sustained_cpu", from: 300, to: 600) { _ in [(a, 250, gib)] }.map(\.message) == ["A used 200 % CPU for 5 min"])
+        #expect(both.map(\.message) == ["B used 100% CPU for 5 min"])
+        #expect(r.alerts("sustained_cpu", from: 300, to: 600) { _ in [(a, 250, gib)] }.map(\.message) == ["A used 200% CPU for 5 min"])
 
         var m = Rig()
         var mute = AlertRules.AppOverride()
@@ -138,9 +138,9 @@ private struct Rig {
     /// Network, energy and GPU at their `AlertRules()` values, which are Balanced.
     @Test func heldAppRules() {
         let cases: [(rule: String, threshold: Double, minutes: Int, message: String)] = [
-            (RuleName.network, 10_485_760, 5, "A received and sent 10 MB/s for 5 min"),
+            (RuleName.network, 10_000_000, 5, "A received and sent 10 MB/s for 5 min"),
             (RuleName.energy, 300, 10, "A had energy impact 300 for 10 min"),
-            (RuleName.gpu, 50, 5, "A used 50 % GPU for 5 min"),
+            (RuleName.gpu, 50, 5, "A used 50% GPU for 5 min"),
         ]
         let p = Proc(1, "a")
         for c in cases {
@@ -163,7 +163,7 @@ private struct Rig {
     }
 
     @Test func diskWritesInOneHour() {
-        let p = Proc(1, "a"), limit = Double(20 << 30)
+        let p = Proc(1, "a"), limit = 20e9
         // quietBelowThreshold: 1 MB under the limit every hour.
         var quiet = Rig()
         #expect(quiet.alerts(RuleName.diskWrites, of: p, from: 0, to: 7200) { _ in (limit - 1_048_576) / 3600 }.isEmpty)
@@ -171,7 +171,7 @@ private struct Rig {
         var r = Rig()
         var alerts = r.alerts(RuleName.diskWrites, of: p, from: 0, to: 3605) { t in t < 20 ? limit / 20 : 0 }
         #expect(alerts.map(\.ts) == [15])
-        #expect(alerts.first?.message == "A wrote 20.0 GB in 1 hour" && alerts.first?.value == limit)
+        #expect(alerts.first?.message == "A wrote 20 GB in 1 hour" && alerts.first?.value == limit)
         // respectsReAlert: minute 0 leaves the hour at 3600, which ends the spell; the new spell is over the limit
         // from 3610 but waits for 60 min after the alert.
         alerts += r.alerts(RuleName.diskWrites, of: p, from: 3605, to: 3620) { _ in limit / 10 }
@@ -179,7 +179,7 @@ private struct Rig {
     }
 
     @Test func diskWritesAddUpAcrossProcessGaps() {
-        let limit = Double(20 << 30)
+        let limit = 20e9
         var r = Rig()
         var alerts: [EventDraft] = []
         // A new writer of the same app on the first tick of each minute, a quarter of the limit each; no process between.
@@ -189,7 +189,7 @@ private struct Rig {
                 : r.tick(t, samples: []).filter { $0.rule == RuleName.diskWrites }
         }
         #expect(alerts.map(\.ts) == [180])
-        #expect(alerts.first?.message == "A wrote 20.0 GB in 1 hour" && alerts.first?.identity == Proc(4, "a").id)
+        #expect(alerts.first?.message == "A wrote 20 GB in 1 hour" && alerts.first?.identity == Proc(4, "a").id)
     }
 
     @Test func memoryGrowthSteady() {

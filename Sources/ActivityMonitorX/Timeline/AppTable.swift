@@ -109,9 +109,9 @@ struct AppTable: View {
                                 Text("Exited").font(.caption)
                             }
                         }
-                        // Under the app's name: past `AppLabel`'s dot (12), icon (16) and spacing (2 × 6), less the
-                        // 13 pt the table indents a child row (measured).
-                        .padding(.leading, 27)
+                        // Under the app's name: past `AppLabel`'s dot (12), icon (16) and gaps, less the 13 pt the
+                        // table indents a child row (measured).
+                        .padding(.leading, 12 + 16 + 2 * Layout.gap - 13)
                         .foregroundStyle(process.exited ? .tertiary : .secondary), row, .leading)
                     } else {
                         linked(AppLabel(app: row.app, color: colors[row.app], history: history, pinned: selection.isPinned(row.app), detail: details[row.app.key]),
@@ -169,8 +169,7 @@ struct AppTable: View {
                 .defaultVisibility(.hidden)
                 TableColumn("Pin") { row in
                     if row.process == nil, row.id != Row.idleID {
-                        linked(pinButton(row.app).labelStyle(.iconOnly).buttonStyle(.borderless)
-                            .accessibilityLabel(selection.isPinned(row.app) ? "Unpin \(row.name)" : "Pin \(row.name)"), row, .center)
+                        linked(PinButton(app: row.app, name: row.name, selection: selection).labelStyle(.iconOnly).buttonStyle(.borderless), row, .center)
                     }
                 }
                 .width(36)
@@ -187,26 +186,27 @@ struct AppTable: View {
             .contextMenu(forSelectionType: Row.ID.self) { ids in
                 Group {
                     if let row = ids.first.flatMap({ byID[$0] }), row.id != Row.idleID {
+                        // Actions on the row, then Copy and Show in Inspector.
+                        if row.process == nil {
+                            PinButton(app: row.app, name: row.name, selection: selection)
+                            Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: row.app, history: history) }
+                                .help("Choose the colour that shows \(row.name)")
+                            if row.app.key.hasPrefix("/") {
+                                ShowInFinderButton(path: row.app.key, help: "Show \(row.name) in Finder")
+                            }
+                        }
+                        QuitButtons(app: row.app, process: row.process, name: row.name)
+                        Divider()
+                        if let pid = row.pid {
+                            Button("Copy PID", systemImage: "doc.on.doc") { Pasteboard.copy(String(pid)) }
+                                .help("Copy the process ID \(String(pid))")
+                        }
                         Button("Show in Inspector", systemImage: "sidebar.trailing") {
                             selection.app = row.app
                             selection.process = row.process
                             selection.inspectorShown = true
                         }
                         .help("Show \(row.name) in the inspector")
-                        if row.process == nil {
-                            pinButton(row.app)
-                            Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: row.app, history: history) }
-                                .help("Choose the colour that shows \(row.name)")
-                            if row.app.key.hasPrefix("/") {
-                                ShowInFinderButton(path: row.app.key, help: "Show \(row.name) in the Finder")
-                            }
-                        }
-                        if let pid = row.pid {
-                            Button("Copy PID", systemImage: "doc.on.doc") { DiskItemMenu.copy(String(pid)) }
-                                .help("Copy the process ID \(String(pid))")
-                        }
-                        Divider()
-                        QuitButtons(app: row.app, process: row.process, name: row.name)
                     }
                 }
                     .labelStyle(.titleAndIcon)
@@ -218,6 +218,8 @@ struct AppTable: View {
             .scrollEdgeEffectStyle(.hard, for: .top)
             .onHover { inside in _held.wrappedValue = inside && live ? Self.positions(sorted) : nil }
             // Back in Live, an old order must not hold before the pointer comes back.
+            // Edit > Copy (⌘C): the selected row as it reads, "Safari" or "Safari Web Content (812)" (N3).
+            .copyable(selected.wrappedValue.flatMap { byID[$0] }.map { row in [row.process.map { "\(row.name) (\(String($0.pid)))" } ?? row.name] } ?? [])
             .onChange(of: live) { _held.wrappedValue = nil }
             .onChange(of: _columns.wrappedValue) { _, columns in
                 UserDefaults.standard.set(Self.hideable.filter { columns[visibility: $0] == .hidden }, forKey: Self.hiddenKey)
@@ -274,11 +276,17 @@ struct AppTable: View {
                 if held != nil {
                     Label("Sorting paused", systemImage: "pause.circle.fill")
                         .font(.caption.weight(.medium))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.regularMaterial, in: .capsule)
-                        .padding(.top, 4)
+                        .padding(.horizontal, Layout.padding)
+                        .padding(.vertical, Layout.gap)
+                        .glassEffect(.regular, in: .capsule)
+                        .padding(.top, Layout.inset)
                         .allowsHitTesting(false)
+                }
+            }
+            // A search that matches no app (S7), shown or idle.
+            .overlay {
+                if !selection.search.isEmpty && rows.isEmpty && idle.isEmpty {
+                    ContentUnavailableView.search(text: selection.search)
                 }
             }
         }
@@ -351,12 +359,6 @@ struct AppTable: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel("\(shown ? "Hide" : "Show") \(label)")
             .help(shown ? "Hide idle apps" : "Show idle apps")
-    }
-
-    private func pinButton(_ app: AppKey) -> some View {
-        let pinned = selection.isPinned(app)
-        return Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.slash" : "pin") { selection.togglePin(app) }
-            .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
     }
 
     /// A process's value, or an app's when all its processes share it; blank with a hint when they differ.

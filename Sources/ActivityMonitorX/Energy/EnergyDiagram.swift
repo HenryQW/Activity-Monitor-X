@@ -31,8 +31,11 @@ struct EnergyDiagram: View {
             let nodes = flows.columns.flatMap { $0 }
             let column = flows.columns.enumerated().flatMap { c, nodes in nodes.map { _ in c } }
             let index = Dictionary(uniqueKeysWithValues: nodes.enumerated().map { ($1, $0) })
+            // An app's label keeps the room the process labels have: the sources and the Mac move closer instead.
+            let xs = SankeyLayout.columnX(count: flows.columns.count, width: size.width, nodeWidth: Self.nodeWidth, labelled: 2,
+                                          labelStep: 260, minStep: 40)
             let placed = SankeyLayout.layout(columns: column, links: flows.links.map { (index[$0.from]!, index[$0.to]!, $0.weight) },
-                                             size: size, nodeWidth: Self.nodeWidth, gap: Self.gap)
+                                             size: size, nodeWidth: Self.nodeWidth, gap: Self.gap, xs: xs)
             ZStack(alignment: .topLeading) {
                 ForEach(Array(zip(flows.links, placed.bands)), id: \.0.id) { link, band in
                     let app = owner(link.to)
@@ -57,7 +60,7 @@ struct EnergyDiagram: View {
                         .accessibilityElement()
                         .accessibilityLabel("\(spoken(nodes[i])), \(value(nodes[i]))")
                 }
-                labels(nodes: nodes, column: column, rects: placed.nodes, size: size)
+                labels(nodes: nodes, column: column, rects: placed.nodes, xs: xs, size: size)
                     .accessibilityHidden(true)
             }
             .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -76,13 +79,12 @@ struct EnergyDiagram: View {
     /// Each end is the thing it is: the adapter's symbol and the battery as Hardware draws it (SCR-19) left of their nodes,
     /// the Mac's symbol above its node and a charging battery below its node, each app's icon on the right (processes and
     /// Other, a group, keep the icon column empty); app labels are as wide as the space to the process column.
-    @ViewBuilder private func labels(nodes: [EnergyNode], column: [Int], rects: [CGRect], size: CGSize) -> some View {
+    @ViewBuilder private func labels(nodes: [EnergyNode], column: [Int], rects: [CGRect], xs: [Double], size: CGSize) -> some View {
         let sources = nodes.indices.filter { column[$0] == 0 }
         let last = flows.columns.count - 1
-        let step = (size.width - Self.nodeWidth) / Double(last)
         let sourceY = SankeyLayout.spread(sources.map { rects[$0].midY }, spacing: 40, in: 20...max(20, size.height - 20))
         ForEach(Array(sources.enumerated()), id: \.element) { k, i in
-            HStack(spacing: 6) {
+            HStack(spacing: Layout.gap) {
                 Text(value(nodes[i])).fontWeight(.semibold).monospacedDigit()
                 icon(nodes[i]).frame(width: 30)
             }
@@ -92,7 +94,7 @@ struct EnergyDiagram: View {
             .position(x: rects[i].minX - Self.leading / 2 - 4, y: sourceY[k])
         }
         ForEach(Array(nodes.enumerated()).filter { column[$0.offset] == 1 }, id: \.element) { i, _ in
-            HStack(spacing: 6) {
+            HStack(spacing: Layout.gap) {
                 icon(nodes[i])
                 Text(value(nodes[i])).fontWeight(.semibold).monospacedDigit()
             }
@@ -104,14 +106,24 @@ struct EnergyDiagram: View {
         ForEach(2...max(2, last), id: \.self) { c in
             let members = nodes.indices.filter { column[$0] == c }.map { (index: $0, node: nodes[$0]) }
             let y = SankeyLayout.spread(members.map { rects[$0.index].midY }, spacing: 18, in: 9...max(9, size.height - 9))
-            let width = max(0, c == last ? Self.trailing - 8 : step - Self.nodeWidth - 8)
+            let width = max(0, c == last ? Self.trailing - 8 : xs[c + 1] - xs[c] - Self.nodeWidth - 8)
             ForEach(Array(members.enumerated()), id: \.element.node) { k, member in
                 let i = member.index
                 let app: AppKey? = if case .app(let app) = nodes[i] { app } else { nil }
-                HStack(spacing: 6) {
-                    icon(nodes[i]).frame(width: 16)
-                    Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selection.app ? .semibold : nil)
-                    Text(value(nodes[i])).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
+                let label = { (value: String, whole: Bool) in
+                    HStack(spacing: Layout.gap) {
+                        icon(nodes[i]).frame(width: 16)
+                        Text(name(nodes[i])).truncationMode(.middle).fontWeight(app != nil && app == selection.app ? .semibold : nil)
+                            .fixedSize(horizontal: whole, vertical: false)
+                        Text(value).foregroundStyle(.secondary).monospacedDigit().layoutPriority(1)
+                    }
+                }
+                // Where space is short the value drops its share first (the card has it), and only then the name shortens.
+                let watts = flows.links.first { $0.to == nodes[i] }?.watts.map { Units.watts($0) } ?? value(nodes[i])
+                ViewThatFits(in: .horizontal) {
+                    label(value(nodes[i]), true)
+                    label(watts, true)
+                    label(watts, false)
                 }
                 .lineLimit(1)
                 .frame(width: width, alignment: .leading)
@@ -155,7 +167,7 @@ struct EnergyDiagram: View {
         let link = flows.links.first { $0.to == node }
         let total = flows.links.filter { $0.from == link?.from }.reduce(0) { $0 + $1.weight }
         let share = link.map { (total > 0 ? $0.weight / total : 0).formatted(.percent.precision(.fractionLength(0))) }
-        return PreviewCard(size: .compact, title: name(node), top: link?.watts.map { Self.watts($0) },
+        return PreviewCard(size: .compact, title: name(node), top: link?.watts.map { Units.watts($0) },
                            sections: [.init(rows: share.map { [.init(label: link?.from == .mac ? "Share of the Mac" : "Share of \(name(link!.from))", value: $0)] } ?? [])])
     }
 
@@ -204,9 +216,7 @@ struct EnergyDiagram: View {
                 if kept { model.kept.remove(app.key) } else { model.kept.insert(app.key) }
             }
             .help(kept ? "Show \(app.name) only while it is in the top 5" : "Always show \(app.name) in the flow while it runs")
-            let pinned = selection.isPinned(app)
-            Button(pinned ? "Unpin from Sidebar" : "Pin to Sidebar", systemImage: pinned ? "pin.slash" : "pin") { selection.togglePin(app) }
-                .help(pinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
+            PinButton(app: app, selection: selection)
             Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: app, history: history) }
                 .help("Choose the colour that shows \(app.name)")
         }
@@ -240,34 +250,29 @@ struct EnergyDiagram: View {
     private func value(_ node: EnergyNode) -> String {
         switch node {
         case .adapter:
-            let rating = power.adapterRating.map { " of \(Self.watts($0, digits: 0))" } ?? ""
-            return power.adapterWatts.map { Self.watts($0) + rating } ?? "Not available"
+            let rating = power.adapterRating.map { " of \(Units.watts($0, digits: 0))" } ?? ""
+            return power.adapterWatts.map { Units.watts($0) + rating } ?? "No data"
         case .battery:
-            let watts = power.battery?.watts.map { $0 > 0 ? "\(Self.watts($0)) in" : $0 < 0 ? "\(Self.watts(-$0)) out" : Self.watts(0) }
-            let percent = power.battery?.percent.map { (Double($0) / 100).formatted(.percent) }
-            return [watts ?? "Not available", percent].compactMap { $0 }.joined(separator: ", ")
-        case .mac: return power.systemWatts.map { Self.watts($0) } ?? "Not available"
-        case .app, .other, .process, .otherProcesses: return flows.links.first { $0.to == node }.map(value) ?? "Not available"
+            let watts = power.battery?.watts.map { $0 > 0 ? "\(Units.watts($0)) in" : $0 < 0 ? "\(Units.watts(-$0)) out" : Units.watts(0) }
+            let percent = power.battery?.percent.map { Units.percent(Double($0)) }
+            return [watts ?? "No data", percent].compactMap { $0 }.joined(separator: ", ")
+        case .mac: return power.systemWatts.map { Units.watts($0) } ?? "No data"
+        case .app, .other, .process, .otherProcesses: return flows.links.first { $0.to == node }.map(value) ?? "No data"
         }
     }
 
     /// A band into an app or a process shows its share too: of the Mac, or of the app.
     private func value(_ link: EnergyFlows.Link) -> String {
-        guard link.from != .adapter, link.from != .battery else { return link.watts.map { Self.watts($0) } ?? "Not available" }
+        guard link.from != .adapter, link.from != .battery else { return link.watts.map { Units.watts($0) } ?? "No data" }
         let total = flows.links.filter { $0.from == link.from }.reduce(0) { $0 + $1.weight }
         let share = (total > 0 ? link.weight / total : 0).formatted(.percent.precision(.fractionLength(0)))
-        return link.watts.map { "\(Self.watts($0)), \(share)" } ?? share
+        return link.watts.map { "\(Units.watts($0)), \(share)" } ?? share
     }
 
     private var summary: String {
         let apps = flows.columns[2].prefix(3).map { "\(name($0)) \(value($0))" }
         return (["Energy flow. Mac \(value(.mac))"] + flows.columns[0].map { "\(name($0)) \(value($0))" } + apps)
             .joined(separator: "; ")
-    }
-
-    static func watts(_ value: Double, digits: Int = 1) -> String {
-        Measurement(value: value, unit: UnitPower.watts)
-            .formatted(.measurement(width: .abbreviated, usage: .asProvided, numberFormatStyle: .number.precision(.fractionLength(digits))))
     }
 }
 

@@ -23,10 +23,9 @@ struct PinnedRow: View {
             .help(name)
             Spacer(minLength: 0)
             if _hover.wrappedValue {
-                Button("Unpin \(name)", systemImage: "pin.slash") { selection.togglePin(app) }
+                PinButton(app: app, name: name, selection: selection)
                     .labelStyle(.iconOnly)
                     .buttonStyle(.borderless)
-                    .help("Unpin \(name) from the sidebar")
             }
         }
         .onHover { _hover.wrappedValue = $0 }
@@ -39,21 +38,20 @@ struct PinnedRow: View {
                 }
                 .help("Show \(name) in the inspector")
                 // A bare executable name has no path to show.
-                ShowInFinderButton(path: app.key, help: app.key.hasPrefix("/") ? "Show \(name) in the Finder" : "\(name) has no app bundle to show")
-                    .disabled(!app.key.hasPrefix("/"))
+                if app.key.hasPrefix("/") { ShowInFinderButton(path: app.key, help: "Show \(name) in Finder") }
                 Menu("Colour", systemImage: "paintpalette") { AppColorPicker(app: app, history: history) }
                     .help("Choose the colour that shows \(name)")
                 Button("Alert Rules…", systemImage: "bell") { rulesApp = app }
                     .help("Mute alerts for \(name) or give it its own alert values")
                 Divider()
-                Button("Unpin App from Sidebar", systemImage: "pin.slash") { selection.togglePin(app) }
-                    .help("Unpin \(name) from the sidebar")
+                PinButton(app: app, name: name, selection: selection)
                 let running = InspectorView.running(app)
-                Button("Quit…", systemImage: "xmark.circle") {
-                    selection.signalRequest = SignalRequest(app: name, running: running, signal: SIGTERM)
+                if !running.isEmpty {
+                    Button("Quit…", systemImage: "xmark.circle") {
+                        selection.signalRequest = SignalRequest(app: name, running: running, signal: SIGTERM)
+                    }
+                    .help("Quit \(name), or force quit it")
                 }
-                .disabled(running.isEmpty)
-                .help(running.isEmpty ? "No running processes" : "Quit \(name), or force quit it")
             }
                 .labelStyle(.titleAndIcon)
         }

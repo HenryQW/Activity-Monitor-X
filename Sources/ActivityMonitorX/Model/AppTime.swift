@@ -60,6 +60,9 @@ enum AppTime {
 }
 
 extension Date {
+    /// A stored timestamp: seconds since 1970.
+    init(seconds: Double) { self.init(timeIntervalSince1970: seconds) }
+
     /// `formatted` in the app's time zone: this overload, in the app's module, is the one a call with a date style picks.
     func formatted(_ style: Date.FormatStyle) -> String {
         var style = style

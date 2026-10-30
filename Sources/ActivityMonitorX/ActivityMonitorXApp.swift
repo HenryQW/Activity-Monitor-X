@@ -15,6 +15,8 @@ struct ActivityMonitorXApp: App {
     /// App level: the last Disk Map tree stays while the app runs (M5-D10).
     private let diskMap: DiskMapModel
     private let hardware: HardwareModel
+    /// App-wide, so the inspector reads what the Energy screen reads.
+    private let energy = EnergyModel()
     private let calendar: CalendarModel
     private let readout = MenuBarReadout()
     private let settings: SettingsModel
@@ -80,6 +82,7 @@ struct ActivityMonitorXApp: App {
                 .environment(disk)
                 .environment(diskMap)
                 .environment(hardware)
+                .environment(energy)
                 .environment(calendar)
                 .environment(readout)
                 .environment(settings)

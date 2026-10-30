@@ -39,6 +39,7 @@ struct BiggestChangesCard: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .help("Show \(change.app.name) in the inspector")
             }
         }
     }

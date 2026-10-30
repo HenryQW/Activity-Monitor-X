@@ -27,14 +27,17 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 
 `Layout` names every value; a view does not type its own (WIN-17).
 
-- Spacing is 8, 12 or 16 pt only.
+- Spacing is 4, 8, 12 or 16 pt only.
+  - `Layout.gap`, 4 pt: inside one row or one block: an icon and its label, a value over its label, a symbol and its count.
   - `Layout.inset`, 8 pt: insets of panels and floating controls from their container, gaps between them and between cells, and padding inside a small tile (the Calendar fact cells).
   - `Layout.padding`, 12 pt: from the edge of a capsule, card, panel or cell to its content. No text is nearer an edge than this, except in a small tile.
   - `Layout.corner`, 16 pt: panel and footer corners, concentric with the window.
 - `Layout.bar`, 40 pt, is the height of the toolbar row and of the level 2 bars.
+- Not spacing, so not on the grid: an offset measured from another part (the zoom pill under a chart's title row, a process name under its app's name), the native menu's and the menu bar item's own metrics, and the inside of a drawn part.
 - The window has one background. The sidebar is the system's. The inspector is a floating panel, inset 8 pt, that starts 8 pt below the toolbar row. Opening it shrinks the content column, never the window (ADR 0007).
 - Density is compact and aligned: grids are gapless with hairline separators and rows line up. Parts shown side by side share one height (SCR-15, CAL-13).
 - Content fits the column at every width. It drops detail first, then changes to a smaller form; it is never clipped and never goes under the inspector (WIN-10, WIN-11, CAL-12). No toolbar item goes into the overflow.
+- A label gives way in a fixed order: a drawing gives up space before its labels do, a label drops its secondary value (a share) before its name shortens, and a name shortens in the middle (SCR-2).
 
 ## Levels
 
@@ -54,13 +57,14 @@ Premium but calm. AMX is a quiet instrument: it records in the background and sp
 
 Three roles, never mixed (COL-1, D60):
 
-- **Identity: which app.** The top apps during peaks get the five palette colours (`AppPalette`, ADR 0008). A chosen colour gives an app its own band in every chart (COL-2). An app keeps one colour slot everywhere (`appColorSlots`). App colours are never red, yellow or pink. Other is a light grey. The hover line of an app with no colour is the primary colour, which no app gets (COL-4).
-- **Status: over a rule.** Yellow at a rule's warning level, red at its critical level, and only then: the system CPU rule (SET-7), memory pressure, low space (COL-9), the free space alert, the battery (COL-13). Normal has no colour. No heat scales (D60).
+- **Identity: which app.** The top apps during peaks get the five palette colours (`AppPalette`, ADR 0008). A chosen colour gives an app its own band in every chart (COL-2). An app keeps one colour slot everywhere (`appColorSlots`). App and group colours are the same set, never red, yellow, pink or grey (COL-1). Other is a light grey. The hover line of an app with no colour is the primary colour, which no app gets (COL-4).
+- **Status: over a rule.** Yellow at a rule's warning level, red at its critical level, and only then: the system CPU rule (SET-7), memory pressure, low space (COL-9), the free space alert, the battery (COL-13), and SMART failing (critical, COL-16). Normal has no colour and no symbol ("Verified" is plain text). No heat scales (D60). Calendar weekends are a neutral tint, never a colour (CAL-2).
 - **Interaction and level: the accent.** The accent marks the selection (an outline on a part or cell, a tint on a bar) and the level of one-series data (a core's use, a display's brightness, a sparkline). Grey marks the hover.
 
 Rules:
 
 - Colour is never the only cue: text or a shape goes with it ("low", a severity symbol).
+- A status colour and the value it marks come from the same number, so a taller line is never the calmer one (CAL-5, D83).
 - Drawn decoration (outlines, lanes, stands) uses system greys and label colours only (`PartStyle`, COL-12).
 - The menu bar item's numbers keep the menu bar's own colour; a 4 pt bar before a number shows its level in yellow or red, as coloured text on a light menu bar is too faint (SET-3, D82). Colour (default) or Greyscale, where the bars and the alert dot take the menu bar's colour (D81).
 - Exceptions, each a user call: the menu's gauges are green at normal (SET-5, D68); Dismiss All has the system destructive role in red (SCR-7). The Live button is accent-tinted, never a status colour (WIN-5).
@@ -84,6 +88,7 @@ Rules:
 - A list row uses the system symbol for a thing; a cell or a diagram uses the drawn part, in a part cell (`partCell`). The exception is a drive row in the Hardware inventory: it has the flash chips at the symbol's size (SCR-25).
 - A drawn part is live: it fills to its value in the accent, or in a status colour at a rule's level (COL-12, COL-13). A reading does not animate.
 - Names come from the system. Hardware labels and values use the system's own words and spelling (SCR-26); a built-in display has its system type name (SCR-14); an app has its bundle's display name (WIN-20). The app's own words and Title Case only where the system has none.
+- Casing as System Settings: titles in Title Case (cards, sections, menus and their items, buttons, empty-state titles, rule names); row, field and figure labels in sentence case ("Swap used", "Launch at login").
 
 ## Components
 
@@ -92,13 +97,14 @@ Rules:
 - No background: content runs under it with the scroll edge effect (WIN-4).
 - Leading: the window buttons, the Sidebar button (on Calendar, the Back chevron in the same capsule, SCR-1), then the title pill with the screen's icon, title and subtitle. The subtitle says where you are; the content does not say it again.
 - Centre: Metric as segments, or as a pop-up that names the metric where the segments do not fit (WIN-10). On Disk, Activity and Space as native segments (SCR-8).
-- Trailing: the screen's own items, or Live as one round button on the screens with a range (WIN-5); then one compact capsule, a system control group, with Quit, Info, More and Search (WIN-21). View options are toggles in More.
+- Trailing: the screen's own items, or Live as one round button on the screens with a range (WIN-5); then one compact capsule, a system control group, with Quit, Inspector, More and Search (WIN-21). View options are toggles in More.
 - The one primary action of a screen is prominent: Live while it runs, or an empty state's single action (WIN-18). Other buttons use the standard style.
 
 ### Inspector
 
 - A floating glass panel of grouped forms with stock headers and rows, and thin overlay scrollers (INS-2, BLD-2).
-- Each titled section is a card that opens and closes (`CardSection`). Its first row has the disclosure arrow, the title and a summary at the right, so a closed card still says what matters. Open or closed is kept per title (INS-10).
+- Each titled section is a card that opens and closes (`CardSection`). Its first row has the disclosure arrow, 8 pt from the title, then the title and a summary at the right, so a closed card still says what matters. Open or closed is kept per title (INS-10).
+- Every inspector and every pill speaks this card language; the pills may differ in content, not in style. A list that needs selection and arrow keys (Processes) stays a list, with card-style title rows (title, count at the right). A hint for a section is its footer, under the card (INS-10).
 - With nothing selected, it gives a summary of the screen (INS-4, INS-6).
 - With an app: who the app is, then an action row of small buttons with icon and word; Quit… always has its word (INS-8).
 
@@ -129,13 +135,21 @@ Rules:
 
 ### Footer strips
 
-- Every screen has one borderless glass strip across the content column (`ScreenFooter`, WIN-13): one visual that is the screen's own (a trend, the month, the drive, the chip, the battery), then each figure as its value over its label (`Figure`) in equal columns. Only the figures the screen does not already give. The content scrolls under it.
+- Every screen has one borderless glass strip across the content column (`ScreenFooter`, WIN-13): one visual that is the screen's own (a trend, the month, the drive, the chip, the battery), then each figure as its value over its label (`Figure`) in equal columns. Only the figures the screen does not already give. The content scrolls under it. Where the content is AppKit panes that take no safe area (Space), the strip is a row under them (D84).
 
 ### Charts
 
 - Hover values are in a bubble inside the chart (COL-5). Chart marks never interpolate (MOT-2).
+- A chart with more than one series has its key after the title, as a short sample of each series' mark (a line for lines, a square for bars) and its name, never over or under the axis (COL-14).
 - Each chart screen has a vertical zoom pill on the chart's trailing edge. Show Whole Range is a text button after "Ranked for" under the chart (WIN-15, D77).
 - A sparkline over its threshold is yellow, with a dashed threshold line (COL-8).
+- An event marker's shape is its severity, as in Alerts (a triangle for a warning, an octagon for critical); its kind is in its hint and popover (COL-15).
+
+### Menu bar menu
+
+- A real system menu: native highlight, keyboard navigation, type-to-select and VoiceOver, with no custom rows or hover fills (SET-3).
+- The levels come first, as native gauge rings in one row, each with its title and level word; then the newest unread alert, Top Apps in right-aligned columns under headings, and the alerts, one line each with the time below (SET-5).
+- Every row shows its icon, also where the system hides menu icons (D69).
 
 ## Motion
 
@@ -165,7 +179,7 @@ All motion goes through `Motion` (MOT-1 to MOT-7, D67).
 ## Process for a UI change
 
 - Read this file and `docs/requirements.md` before a UI change.
-- Every UI fix gets up to 3 mockups for the user's approval before it is built. The exception is a fix where the user gave the exact change. A bug with no visible design choice (a cut-off table, a flicker) is not a design change.
+- Every UI fix gets up to 3 mockups for the user's approval before it is built, made with the visualize tool and shown inline in the conversation, not as offscreen renders or image files. The exception is a fix where the user gave the exact change. A bug with no visible design choice (a cut-off table, a flicker) is not a design change.
 - Record the user's pick: a requirement line and a decision.
 - One session builds one page; work on a page is not split across agents (D70).
 - Change this file when the design language changes: a new principle, colour role, level, component or interaction. A new size, control or label is a requirement line.

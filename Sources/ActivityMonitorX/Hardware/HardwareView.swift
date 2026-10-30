@@ -31,12 +31,7 @@ struct HardwareView: View {
             } message: {
                 Text("This Mac removes the pairing. To use the device again, pair it again.")
             }
-            .alert(hardware.actionFailure?.title ?? "", isPresented: Binding(
-                get: { hardware.actionFailure != nil }, set: { if !$0 { hardware.actionFailure = nil } })) {
-                Button("OK") {}
-            } message: {
-                Text(hardware.actionFailure?.message ?? "")
-            }
+            .failureAlert(Bindable(hardware).actionFailure)
     }
 
     @ViewBuilder private var content: some View {
@@ -85,7 +80,7 @@ struct HardwareView: View {
     private func summary(_ row: HardwareRow) -> String? {
         guard let disk = hardware.drive(row) else { return nil }
         let share = disk.space(volumes: hardware.allVolumes, containers: hardware.containers, rule: alerts.rules.freeSpace).share
-        return disk.kind + (share.map { ", \(Int(($0 * 100).rounded()))% used" } ?? "")
+        return disk.kind + (share.map { ", \(Units.percent($0 * 100)) used" } ?? "")
     }
 
     private var inventory: some View {
@@ -95,7 +90,7 @@ struct HardwareView: View {
                 // One icon column: symbols of every width centre in the same slot, and a row with none keeps the slot
                 // empty, so the names at one level line up.
                 TableColumn("Name") { row in
-                    HStack(spacing: 4) {
+                    HStack(spacing: Layout.gap) {
                         Color.clear.frame(width: 18, height: 1)
                             .overlay {
                                 // A drive as the board and the Disk screen draw it (SCR-19), at the symbol's size.
@@ -166,15 +161,14 @@ private struct HardwareFacts: View {
     var body: some View {
         let cores = hardware.cpuUsage
         let thermal = ProcessInfo.processInfo.thermalState
-        let percent = { (value: Double?) in value.map { "\(Int($0.rounded()))%" } ?? "Not available" }
+        let percent = { (value: Double?) in value.map(Units.percent) ?? "No data" }
         ScreenFooter(figures: [
-            FooterFigure(label: "Uptime", value: Duration.seconds(ProcessInfo.processInfo.systemUptime)
-                            .formatted(.units(allowed: [.days, .hours, .minutes], width: .narrow, maximumUnitCount: 2)),
+            FooterFigure(label: "Uptime", value: Units.uptime(ProcessInfo.processInfo.systemUptime),
                          help: "The time since this Mac started"),
-            FooterFigure(label: "Thermal state", value: ["Nominal", "Fair", "Serious", "Critical"][thermal.rawValue],
-                         help: "How hard this Mac works to stay cool", severity: thermal == .critical ? 2 : thermal == .serious ? 1 : 0),
-            FooterFigure(label: "CPU now", value: percent(cores.reduce(0, +) / Double(cores.count)), help: "The use of all CPU cores"),
-            FooterFigure(label: "GPU now", value: percent(hardware.gpuUsage), help: "The use of the GPU"),
+            FooterFigure(label: "Thermal state", value: SystemState.thermal(thermal.rawValue).capitalized,
+                         help: "How hard this Mac works to stay cool", severity: SystemState.thermalSeverity(thermal.rawValue)),
+            FooterFigure(label: "CPU now", value: Metric.cpu.format(cores.reduce(0, +) / Double(cores.count)), help: "The use of all CPU cores"),
+            FooterFigure(label: "GPU now", value: hardware.gpuUsage.map(Metric.gpu.format) ?? "No data", help: "The use of the GPU"),
             FooterFigure(label: "Memory now", value: percent(hardware.memoryUsage), help: "The memory used, of the memory installed"),
         ]) {
             CoreGrid(usage: cores, rule: alerts.rules.systemCPU)

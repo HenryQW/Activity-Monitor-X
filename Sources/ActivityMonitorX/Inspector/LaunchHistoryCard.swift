@@ -28,26 +28,26 @@ struct LaunchHistoryCard: View {
         let runs = runs(lanes: Set(lanes), from: from, to: to)
         let launches = history.launches(of: app)
         let format = history.range.timeFormat
-        CardSection("Launch History") {
+        CardSection("Launch History", summary: Text("^[\(runs.count) run](inflect: true)")) {
             Chart {
                 // Each lane's name above its bars, so the bars keep the pane's full width.
                 ForEach(lanes, id: \.self) { name in
                     RuleMark(y: .value("Process", name))
                         .foregroundStyle(.clear)
-                        .annotation(position: .top, alignment: .leading, spacing: 4) {
+                        .annotation(position: .top, alignment: .leading, spacing: Layout.gap) {
                             Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                         }
                         .accessibilityHidden(true)
                 }
                 ForEach(runs.indices, id: \.self) { i in
-                    BarMark(xStart: .value("Start", Self.date(runs[i].start)), xEnd: .value("End", Self.date(runs[i].end)),
+                    BarMark(xStart: .value("Start", Date(seconds: runs[i].start)), xEnd: .value("End", Date(seconds: runs[i].end)),
                             y: .value("Process", runs[i].name), height: .fixed(8))
                         .foregroundStyle(color)
                         .accessibilityLabel(runs[i].name)
                         .accessibilityValue(span(runs[i], format))
                 }
             }
-            .chartXScale(domain: Self.date(from)...Self.date(to))
+            .chartXScale(domain: Date(seconds: from)...Date(seconds: to))
             .chartYScale(domain: lanes)
             .chartXAxis {
                 let (unit, count) = InspectorView.xStride(seconds: to - from)
@@ -76,7 +76,7 @@ struct LaunchHistoryCard: View {
                     if let plot = proxy.plotFrame.map({ geo[$0] }) {
                         ForEach(runs.indices, id: \.self) { i in
                             let run = runs[i]
-                            if let x0 = proxy.position(forX: Self.date(run.start)), let x1 = proxy.position(forX: Self.date(run.end)),
+                            if let x0 = proxy.position(forX: Date(seconds: run.start)), let x1 = proxy.position(forX: Date(seconds: run.end)),
                                let y = proxy.position(forY: run.name) {
                                 Color.clear.frame(width: max(x1 - x0, 1), height: 8)
                                     .position(x: plot.minX + (x0 + x1) / 2, y: plot.minY + y)
@@ -113,6 +113,7 @@ struct LaunchHistoryCard: View {
                 }
             } else {
                 Button("Show All \(launches.count.formatted())") { _showAllOf.wrappedValue = app.key }
+                    .buttonStyle(.link)
                     .help("Show all process starts and quits")
             }
         }
@@ -138,7 +139,7 @@ struct LaunchHistoryCard: View {
     }
 
     private func span(_ run: Run, _ format: Date.FormatStyle) -> String {
-        "\(Self.date(run.start).formatted(format)) to \(Self.date(run.end).formatted(format)), \(Self.length(run))"
+        "\(Date(seconds: run.start).formatted(format)) to \(Date(seconds: run.end).formatted(format)), \(Self.length(run))"
     }
 
     private static func length(_ run: Run) -> String {
@@ -147,8 +148,8 @@ struct LaunchHistoryCard: View {
 
     private func card(_ run: Run, _ format: Date.FormatStyle) -> some View {
         PreviewCard(size: .compact, title: run.name, top: Self.length(run),
-                    sections: [.init(rows: [.init(label: "Start", value: Self.date(run.start).formatted(format)),
-                                            .init(label: "End", value: Self.date(run.end).formatted(format))])])
+                    sections: [.init(rows: [.init(label: "Start", value: Date(seconds: run.start).formatted(format)),
+                                            .init(label: "End", value: Date(seconds: run.end).formatted(format))])])
     }
 
     private func select(_ run: Run) {
@@ -156,5 +157,4 @@ struct LaunchHistoryCard: View {
         selection.showChart = true
     }
 
-    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 }

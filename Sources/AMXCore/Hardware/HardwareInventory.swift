@@ -173,7 +173,7 @@ public enum HardwareInventory {
                     let base = String(key.dropLast(9))
                     if item[base] != nil { continue }
                     name = label(base)
-                    if let n = value as? NSNumber { shown = ByteCountFormatter.string(fromByteCount: n.int64Value, countStyle: .file) }
+                    if let n = value as? NSNumber { shown = n.int64Value.formatted(.byteCount(style: .file)) }
                 }
                 if key.hasSuffix("spdisplays_resolution") { shown = resolution(shown) }
                 // "3024x1964Retina" as System Information shows it: "3024 x 1964 Retina".

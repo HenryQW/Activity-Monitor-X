@@ -46,7 +46,7 @@ struct TimelineView: View {
                 HelperUnavailable()
             case .ready where points.isEmpty:
                 if let title {
-                    ContentUnavailableView("No Activity", systemImage: "chart.xyaxis.line",
+                    ContentUnavailableView("No Data", systemImage: "chart.xyaxis.line",
                                            description: Text("\(title) has no data in this range."))
                 } else {
                     collecting
@@ -60,7 +60,7 @@ struct TimelineView: View {
                                           : selection.search.isEmpty ? nil : Set(shown.map(\.app.key)),
                                       dim: _hovered.wrappedValue == nil && (banded || bandless != nil) ? 0.5 : 0.25,
                                       line: bandless.map { isLive ? live.series(of: $0) : history.series(of: $0) },
-                                      span: history.span.map { Self.date($0.lowerBound)...Self.date($0.upperBound) },
+                                      span: history.span.map { Date(seconds: $0.lowerBound)...Date(seconds: $0.upperBound) },
                                       commitSpan: isLive ? nil : { span in
                                           history.span = span.lowerBound.timeIntervalSince1970...span.upperBound.timeIntervalSince1970
                                       },
@@ -118,14 +118,13 @@ struct TimelineView: View {
     }
 
     private var collecting: some View {
-        ContentUnavailableView("Collecting data…", systemImage: "clock",
+        ContentUnavailableView("Collecting Data…", systemImage: "clock",
                                description: Text("The helper records every 5 s. The chart shows after the first records."))
     }
 
-    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 
     private func spanBar(_ span: ClosedRange<Double>) -> some View {
-        let interval = Self.date(span.lowerBound)..<Self.date(span.upperBound)
+        let interval = Date(seconds: span.lowerBound)..<Date(seconds: span.upperBound)
         return HStack {
             Text("Ranked for \(interval.formatted(history.range.intervalFormat))")
                 .foregroundStyle(.secondary)
@@ -140,13 +139,13 @@ struct TimelineView: View {
         }
         .font(.callout)
         .padding(.horizontal)
-        .padding(.bottom, 6)
+        .padding(.bottom, Layout.gap)
     }
 
     /// In the span bar's place while Live has lost the helper: the chart and table keep the last data.
     private func lostBar(_ lostAt: Double) -> some View {
         HStack {
-            Label("Helper not reachable. Data as of \(Self.date(lostAt).formatted(date: .omitted, time: .shortened))",
+            Label("Helper not reachable. Data as of \(Date(seconds: lostAt).formatted(date: .omitted, time: .shortened))",
                   systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.secondary)
             Spacer()
@@ -160,6 +159,6 @@ struct TimelineView: View {
         }
         .font(.callout)
         .padding(.horizontal)
-        .padding(.vertical, 6)
+        .padding(.vertical, Layout.gap)
     }
 }

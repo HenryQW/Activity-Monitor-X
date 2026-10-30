@@ -42,10 +42,9 @@ struct SignalConfirmation: ViewModifier {
     @Environment(Selection.self) private var selection
     @Environment(LiveModel.self) private var live
     @Environment(HistoryModel.self) private var history
-    private let _failure = State<Failure?>(initialValue: nil)
+    private let _failure = State<(title: String, message: String)?>(initialValue: nil)
 
     func body(content: Content) -> some View {
-        let failure = _failure.wrappedValue
         content
             .confirmationDialog(selection.signalRequest?.title ?? "",
                                 isPresented: Binding(get: { selection.signalRequest != nil },
@@ -64,20 +63,14 @@ struct SignalConfirmation: ViewModifier {
             } message: { request in
                 Text(request.message)
             }
-            .alert(failure?.title ?? "",
-                   isPresented: Binding(get: { failure != nil }, set: { if !$0 { _failure.wrappedValue = nil } }),
-                   presenting: failure) { _ in
-                Button("OK") {}
-            } message: { failure in
-                Text(failure.message)
-            }
+            .failureAlert(_failure.projectedValue)
     }
 
     private func send(_ request: SignalRequest) {
         if case .app(let name, let running) = request.target {
             // terminate() is false only when the request cannot be sent; the app may still decline to quit.
             if !running.map({ request.signal == SIGKILL ? $0.forceTerminate() : $0.terminate() }).allSatisfy({ $0 }) {
-                _failure.wrappedValue = Failure(title: "Cannot \(request.verb) “\(name)”", message: "The app did not accept the request.")
+                _failure.wrappedValue = (title: "Cannot \(request.verb) “\(name)”", message: "The app did not accept the request.")
             }
             return
         }
@@ -91,7 +84,7 @@ struct SignalConfirmation: ViewModifier {
                 }
                 if history.range == .live { await live.refresh() } else { history.reload() }
             } catch {
-                _failure.wrappedValue = Failure(title: "Cannot \(request.verb) “\(process.name)”", message: Self.message(error))
+                _failure.wrappedValue = (title: "Cannot \(request.verb) “\(process.name)”", message: Self.message(error))
             }
         }
     }
@@ -103,14 +96,10 @@ struct SignalConfirmation: ViewModifier {
         default: error.localizedDescription
         }
     }
-
-    private struct Failure {
-        let title: String
-        let message: String
-    }
 }
 
-/// Quit… and Force Quit… for a row's menu: a process through amxd, an app through AppKit; each asks first.
+/// Quit… and Force Quit… for a row's menu: a process through amxd, an app through AppKit; each asks first. Hidden when
+/// nothing can be quit.
 struct QuitButtons: View {
     @Environment(Selection.self) private var selection
     /// The app to quit when there is no `process`.
@@ -120,12 +109,11 @@ struct QuitButtons: View {
 
     var body: some View {
         ForEach([SIGTERM, SIGKILL], id: \.self) { signal in
-            let request = request(signal)
             let verb = signal == SIGKILL ? "Force Quit" : "Quit"
-            Button("\(verb)…", systemImage: signal == SIGKILL ? "xmark.octagon" : "xmark.circle") { selection.signalRequest = request }
-                .disabled(request == nil)
-                .help(request != nil ? "\(verb) \(name), after you confirm"
-                      : process != nil ? "\(name) has stopped or belongs to another user" : "Select a process of \(name) to quit it")
+            if let request = request(signal) {
+                Button("\(verb)…", systemImage: signal == SIGKILL ? "xmark.octagon" : "xmark.circle") { selection.signalRequest = request }
+                    .help("\(verb) \(name), after you confirm")
+            }
         }
     }
 

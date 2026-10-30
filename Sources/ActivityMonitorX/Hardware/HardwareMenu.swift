@@ -29,7 +29,7 @@ struct HardwareMenu: View {
                 Divider()
             }
             if let volume {
-                ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in the Finder")
+                ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in Finder")
                 Button("Show in Space", systemImage: "chart.pie") {
                     diskMap.open(.volume(volume))
                     selection.sidebar = .disk
@@ -49,7 +49,7 @@ struct HardwareMenu: View {
                 Divider()
             }
             // A parent's value is its count, not data.
-            Button("Copy", systemImage: "doc.on.doc") { DiskItemMenu.copy(row.value.isEmpty || row.children != nil ? row.name : "\(row.name): \(row.value)") }
+            Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(row.value.isEmpty || row.children != nil ? row.name : "\(row.name): \(row.value)") }
                 .help("Copy the name and the value")
             Button("Show in Inspector", systemImage: "sidebar.trailing") {
                 hardware.selected = row.id

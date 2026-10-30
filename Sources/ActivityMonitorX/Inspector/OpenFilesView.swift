@@ -32,7 +32,7 @@ final class OpenFilesModel {
     }
 }
 
-/// The Files pill's sections in a grouped Form: the state with Refresh, then a section per process.
+/// The Files pill's sections in a grouped Form: the state with Refresh, then a card per process.
 struct OpenFilesRows: View {
     let model: OpenFilesModel
     let processes: [ProcessRank]
@@ -53,11 +53,11 @@ struct OpenFilesRows: View {
             }
         }
         ForEach(model.processes, id: \.pid) { p in
-            Section("\(p.name) (\(String(p.pid)))") {
+            CardSection(p.name, summary: Text("PID \(String(p.pid))")) {
                 if let open = model.found[p.pid] {
                     if open.items.isEmpty { Text("No open files").foregroundStyle(.secondary) }
                     ForEach(open.items, id: \.self) { ItemRow(item: $0) }
-                    if open.more > 0 { Text("\(open.more.formatted()) more").foregroundStyle(.secondary) }
+                    if open.more > 0 { Text("and \(open.more.formatted()) more").foregroundStyle(.secondary) }
                 } else {
                     Text("Not available: the process has quit or runs as another user").foregroundStyle(.secondary)
                 }
@@ -76,8 +76,9 @@ private struct ItemRow: View {
             Text(path).lineLimit(1).truncationMode(.middle).help(path)
                 .contextMenu {
                     Group {
-                        ShowInFinderButton(path: path)
-                        Button("Copy Path", systemImage: "doc.on.doc") { copy(path) }
+                        ShowInFinderButton(path: path, help: "Show \((path as NSString).lastPathComponent) in Finder")
+                        Button("Copy Path", systemImage: "doc.on.doc") { Pasteboard.copy(path) }
+                            .help("Copy \(path)")
                     }
                         .labelStyle(.titleAndIcon)
                 }
@@ -88,12 +89,7 @@ private struct ItemRow: View {
                 Text([proto, state].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
             }
             .help(text)
-            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { copy(text) }.labelStyle(.titleAndIcon) }
+            .contextMenu { Button("Copy", systemImage: "doc.on.doc") { Pasteboard.copy(text) }.help("Copy \(text)").labelStyle(.titleAndIcon) }
         }
-    }
-
-    private func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }

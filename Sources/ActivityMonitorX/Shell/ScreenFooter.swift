@@ -20,20 +20,20 @@ struct ScreenFooter<Visual: View, Trailing: View, Roll: Equatable>: View {
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 18) {
+            HStack(spacing: Layout.section) {
                 visual.frame(width: 140, height: 32)
                 Divider().frame(height: 30)
                 columns(figures[...])
                 trailing
             }
-            HStack(spacing: 18) {
+            HStack(spacing: Layout.section) {
                 columns(figures[...])
                 trailing
             }
             let half = (figures.count + 1) / 2
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Layout.inset) {
                 columns(figures[..<half])
-                HStack(spacing: 18) {
+                HStack(spacing: Layout.section) {
                     columns(figures[half...])
                     trailing
                 }
@@ -45,10 +45,10 @@ struct ScreenFooter<Visual: View, Trailing: View, Roll: Equatable>: View {
     }
 
     private func columns(_ figures: ArraySlice<FooterFigure>) -> some View {
-        HStack(alignment: .top, spacing: 18) {
+        HStack(alignment: .top, spacing: Layout.section) {
             ForEach(figures) { figure in
                 Figure(label: figure.label) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: Layout.gap) {
                         Text(figure.value)
                             .contentTransition(.numericText())
                             .animation(Motion.smooth(0.25), value: roll)

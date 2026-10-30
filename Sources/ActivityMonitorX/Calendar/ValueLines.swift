@@ -66,7 +66,7 @@ struct LevelCounts: View {
     let counts: (warning: Int, critical: Int)
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: Layout.gap) {
             if counts.critical > 0 { SeverityIcon(severity: 2).imageScale(.small); Text(counts.critical.formatted()) }
             if counts.warning > 0 { SeverityIcon(severity: 1).imageScale(.small); Text(counts.warning.formatted()) }
         }

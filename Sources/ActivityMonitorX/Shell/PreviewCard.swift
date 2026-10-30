@@ -50,16 +50,16 @@ struct PreviewCard<Chart: View>: View {
         let card = VStack(alignment: .leading, spacing: size == .large ? 8 : 3) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).fontWeight(.semibold).lineLimit(1)
-                Spacer(minLength: 8)
+                Spacer(minLength: Layout.inset)
                 if let top { Text(top).monospacedDigit().fontWeight(.semibold) }
             }
             if !span.isEmpty {
-                VStack(alignment: .leading, spacing: 1) { ForEach(span, id: \.self) { Text($0) } }.foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: Layout.gap) { ForEach(span, id: \.self) { Text($0) } }.foregroundStyle(.secondary)
             }
             if !stats.isEmpty {
                 HStack(alignment: .top) {
                     ForEach(stats.indices, id: \.self) { i in
-                        VStack(alignment: .leading, spacing: 1) {
+                        VStack(alignment: .leading, spacing: Layout.gap) {
                             Text(stats[i].label).foregroundStyle(.secondary)
                             Text(stats[i].value).font(.title3).fontWeight(.semibold).monospacedDigit()
                                 .foregroundStyle(stats[i].secondary ? .secondary : .primary)
@@ -90,21 +90,21 @@ struct PreviewCard<Chart: View>: View {
     }
 
     private var rows: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: Layout.gap) {
             ForEach(sections.indices, id: \.self) { s in
-                if let heading = sections[s].heading { Text(heading).foregroundStyle(.secondary).padding(.top, s == 0 ? 0 : 4) }
+                if let heading = sections[s].heading { Text(heading).foregroundStyle(.secondary).padding(.top, s == 0 ? 0 : Layout.gap) }
                 ForEach(sections[s].rows.indices, id: \.self) { r in row(sections[s].rows[r]) }
             }
         }
     }
 
     private func row(_ row: Row) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: Layout.gap) {
             if let severity = row.severity { SeverityIcon(severity: severity).imageScale(.small) }
             if let swatch = row.swatch { RoundedRectangle(cornerRadius: 2).fill(swatch).frame(width: 8, height: 8) }
             if let time = row.time { Text(time).monospacedDigit().foregroundStyle(.secondary) }
             Text(row.label).lineLimit(size == .large ? 2 : 1)
-            Spacer(minLength: 8)
+            Spacer(minLength: Layout.inset)
             if let value = row.value { Text(value).monospacedDigit() }
         }
         .foregroundStyle(row.detail ? .secondary : .primary)

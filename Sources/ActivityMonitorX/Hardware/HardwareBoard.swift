@@ -118,7 +118,7 @@ struct HardwareBoard: View {
     var body: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: Layout.padding) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Layout.gap) {
                     Text(hardware.value("machine_name") ?? "Mac").font(.headline)
                     Text([hardware.value("machine_model"), chip.name, "\(hardware.memory(chip)) unified memory"].compactMap { $0 }
                         .joined(separator: " · "))
@@ -175,7 +175,7 @@ struct HardwareBoard: View {
         case .display(let id):
             if let display = hardware.displays.first(where: { $0.row.id == id }) {
                 let brightness = hardware.brightness[id]
-                let level = brightness.map { "\(Int(($0 * 100).rounded())) %" }
+                let level = brightness.map { Units.percent($0 * 100) }
                 let size = display.resolution.components(separatedBy: ", ").first ?? display.resolution
                 let builtIn = hardware.property("spdisplays_connection_type", of: display.row) == "Internal"
                 // The built-in display's full name ("Built-in Liquid Retina XDR Display") does not fit a cell; the hint has it.
@@ -252,7 +252,7 @@ struct HardwareBoard: View {
     /// "62%", with ", charging" or ", low"; nil with no reading.
     private var shortCharge: String? {
         guard let charge = hardware.charge, let percent = charge.percent else { return nil }
-        return "\(percent)%" + (charge.charging ? ", charging" : chargeLevel > 0 ? ", low" : "")
+        return Units.percent(Double(percent)) + (charge.charging ? ", charging" : chargeLevel > 0 ? ", low" : "")
     }
 
     private var chargeLevel: Int { BatteryShape.level(percent: hardware.charge?.percent, charging: hardware.charge?.charging == true) }
@@ -262,7 +262,7 @@ struct HardwareBoard: View {
     private func cell(_ part: BoardPart, name: String, fact: String, label: String, value: String, hint: String,
                       selected: Set<BoardPart>, @ViewBuilder shape: () -> some View) -> some View {
         Button { hardware.show(part) } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: Layout.inset) {
                 shape().frame(width: 32, height: 22)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(name).fontWeight(.semibold)

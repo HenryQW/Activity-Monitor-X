@@ -12,6 +12,8 @@ struct AlertsView: View {
     /// False while another app is active or the screen is locked: nobody reads the rows then.
     @Environment(\.appearsActive) private var appearsActive
     private let _selected = State<Set<Int64>>(initialValue: [])
+    /// Empty until a header click: newest first (SCR-32).
+    private let _order = State<[KeyPathComparator<EventMark>]>(initialValue: [])
     private let _unreadAtShow = State<Set<Int64>>(initialValue: [])
 
     var body: some View {
@@ -49,12 +51,13 @@ struct AlertsView: View {
 
     private func list(_ rows: [EventMark]) -> some View {
         let unread = _unreadAtShow.wrappedValue
-        return Table(rows, selection: _selected.projectedValue) {
-            TableColumn("Severity") { event in cell(event, unread) { SeverityIcon(severity: event.severity) } }
+        let order = _order.wrappedValue
+        return Table(order.isEmpty ? rows : rows.sorted(using: order), selection: _selected.projectedValue, sortOrder: _order.projectedValue) {
+            TableColumn("Severity", value: \.severity) { event in cell(event, unread) { SeverityIcon(severity: event.severity) } }
                 .width(min: 56, ideal: 56, max: 64)
-            TableColumn("Time") { event in cell(event, unread) { Text(Self.time(event.ts)).monospacedDigit() } }
+            TableColumn("Time", value: \.ts) { event in cell(event, unread) { Text(Self.time(event.ts)).monospacedDigit() } }
                 .width(min: 110, ideal: 150, max: 180)
-            TableColumn("Subject") { event in
+            TableColumn("Subject", value: \.subject) { event in
                 cell(event, unread) {
                     Label {
                         Text(event.subject)
@@ -68,27 +71,33 @@ struct AlertsView: View {
                 }
             }
             .width(min: 120, ideal: 170, max: 240)
-            TableColumn("Message") { event in cell(event, unread) { Text(event.message).help(event.message) } }
+            TableColumn("Message", value: \.message) { event in cell(event, unread) { Text(event.message).help(event.message) } }
         }
         .contextMenu(forSelectionType: Int64.self) { ids in
             Group {
-                if ids.count == 1 { Button("Show App at Alert Time", systemImage: "app.badge") { reveal(ids) } }
-                if !ids.isEmpty {
-                    Button("Copy ^[\(ids.count) Message](inflect: true)", systemImage: "doc.on.doc") {
-                        DiskItemMenu.copy(rows.filter { ids.contains($0.id) }.map(\.message).joined(separator: "\n"))
-                    }
-                    .help("Copy the alert messages")
+                if ids.count == 1 {
+                    Button("Show App at Alert Time", systemImage: "square.grid.2x2") { reveal(ids) }
+                        .help("Show the alert's app in Apps at the time of the alert")
                 }
                 if !ids.isEmpty {
                     if ids.allSatisfy(alerts.dismissed.contains) {
                         Button("Restore ^[\(ids.count) Alert](inflect: true)", systemImage: "arrow.uturn.backward") { alerts.restore(ids) }
+                            .help("Restore the alerts to the list")
                     } else {
                         Button("Dismiss ^[\(ids.count) Alert](inflect: true)", systemImage: "xmark.circle") { alerts.dismiss(ids) }
+                            .help("Dismiss the alerts; Restore brings them back")
                     }
+                    Divider()
+                    Button("Copy ^[\(ids.count) Message](inflect: true)", systemImage: "doc.on.doc") {
+                        Pasteboard.copy(rows.filter { ids.contains($0.id) }.map(\.message).joined(separator: "\n"))
+                    }
+                    .help("Copy the alert messages")
                 }
             }
                 .labelStyle(.titleAndIcon)
         } primaryAction: { reveal($0) }
+        // Edit > Copy (⌘C): the selected messages, as Copy Messages (N3).
+        .copyable(_selected.wrappedValue.isEmpty ? [] : [rows.filter { _selected.wrappedValue.contains($0.id) }.map(\.message).joined(separator: "\n")])
     }
 
     /// A cell's content, bold while unread when shown and dimmed when dismissed.
@@ -99,9 +108,9 @@ struct AlertsView: View {
     /// "Today, 15:42", "Yesterday, 22:31" or "21 Oct 2026, 09:12", in the app's time zone; the menu bar menu uses it too.
     static func time(_ ts: Double) -> String {
         let date = Date(timeIntervalSince1970: ts), calendar = AppTime.calendar
-        let time = date.formatted(Date.FormatStyle(time: .shortened, timeZone: AppTime.zone))
+        let time = date.formatted(Date.FormatStyle(time: .shortened))
         let day = calendar.isDateInToday(date) ? "Today" : calendar.isDateInYesterday(date) ? "Yesterday"
-            : date.formatted(Date.FormatStyle(date: .abbreviated, timeZone: AppTime.zone))
+            : date.formatted(Date.FormatStyle(date: .abbreviated))
         return "\(day), \(time)"
     }
 
@@ -112,6 +121,22 @@ struct AlertsView: View {
 }
 
 /// An alert's severity as shape and colour, with a spoken label: warning (1) or critical (2).
+/// One alert in an inspector card (S6): its severity, its message and its time as the Alerts table writes it.
+struct AlertRow: View {
+    let event: EventMark
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Layout.gap) {
+            SeverityIcon(severity: event.severity)
+            VStack(alignment: .leading) {
+                Text(event.message)
+                Text(AlertsView.time(event.ts)).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct SeverityIcon: View {
     let severity: Int
 

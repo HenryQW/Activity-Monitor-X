@@ -46,13 +46,13 @@ struct DiskChart: View {
     var body: some View {
         let names = series
         let latest = points.last.map { values(at: $0.date) } ?? []
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Layout.gap) {
             HStack(alignment: .firstTextBaseline, spacing: Layout.padding) {
                 Text(title).font(.headline)
                 // The key follows the title it explains, as line samples, as the chart draws lines (LG2).
                 if names.count > 1 {
                     ForEach(names.indices, id: \.self) { i in
-                        HStack(spacing: 4) {
+                        HStack(spacing: Layout.gap) {
                             Capsule().fill(i == 0 ? Color.accentColor : Color.secondary).frame(width: 12, height: 2.5)
                             Text(names[i]).foregroundStyle(.secondary)
                         }
@@ -63,7 +63,7 @@ struct DiskChart: View {
                 if let rule { Text(rule.label).font(.caption).foregroundStyle(.secondary) }
             }
             if points.isEmpty {
-                Text("No data in this range.")
+                Text("No data in this range")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

@@ -9,7 +9,7 @@
       "category": "system",
       "vendor": "Apple",
       "expectedHigh": true,
-      "description": "The core of macOS itself. It also deliberately uses CPU to keep the Mac cool — so high CPU here often means the system is managing heat, not a problem you can fix by quitting it."
+      "description": "The core of macOS itself. It also deliberately uses CPU to keep the Mac cool, so high CPU here often means the system is managing heat, not a problem you can fix by quitting it."
     },
     {
       "match": {
@@ -18,7 +18,7 @@
       "title": "launchd (system launcher)",
       "category": "system",
       "vendor": "Apple",
-      "description": "The first process macOS starts (PID 1). It launches and supervises every other service and app. Essential — never quit it."
+      "description": "The first process macOS starts (PID 1). It launches and supervises every other service and app. Essential: never quit it."
     },
     {
       "match": {
@@ -43,7 +43,7 @@
       "match": {
         "name": "mds"
       },
-      "title": "Spotlight — metadata server",
+      "title": "Spotlight: metadata server",
       "category": "system",
       "vendor": "Apple",
       "description": "The heart of Spotlight search. Coordinates indexing of files so search is instant."
@@ -52,17 +52,17 @@
       "match": {
         "name": "mds_stores"
       },
-      "title": "Spotlight — index store",
+      "title": "Spotlight: index store",
       "category": "system",
       "vendor": "Apple",
       "expectedHigh": true,
-      "description": "Builds and stores the Spotlight search index. Can use heavy CPU/disk for a while after a big file change, an update, or a new drive — this settles on its own."
+      "description": "Builds and stores the Spotlight search index. Can use heavy CPU/disk for a while after a big file change, an update, or a new drive: this settles on its own."
     },
     {
       "match": {
         "name": "mdworker"
       },
-      "title": "Spotlight — indexing worker",
+      "title": "Spotlight: indexing worker",
       "category": "system",
       "vendor": "Apple",
       "description": "A short-lived helper that reads files so Spotlight can index them. Many may appear briefly during indexing; this is normal."
@@ -71,7 +71,7 @@
       "match": {
         "name": "mdworker_shared"
       },
-      "title": "Spotlight — indexing worker",
+      "title": "Spotlight: indexing worker",
       "category": "system",
       "vendor": "Apple",
       "description": "A short-lived helper that reads files for Spotlight indexing. Spikes during indexing are normal."
@@ -110,7 +110,7 @@
       "title": "Login session",
       "category": "system",
       "vendor": "Apple",
-      "description": "Manages your logged-in session — the login screen, fast user switching, and a clean logout/shutdown."
+      "description": "Manages your logged-in session: the login screen, fast user switching, and a clean logout/shutdown."
     },
     {
       "match": {
@@ -210,7 +210,7 @@
       "title": "Directory services",
       "category": "system",
       "vendor": "Apple",
-      "description": "Resolves user accounts, groups, and login records — locally and against any corporate directory the Mac is bound to."
+      "description": "Resolves user accounts, groups, and login records, locally and against any corporate directory the Mac is bound to."
     },
     {
       "match": {
@@ -228,7 +228,7 @@
       "title": "Bluetooth daemon",
       "category": "system",
       "vendor": "Apple",
-      "description": "Manages Bluetooth devices — keyboard, mouse, AirPods, and more."
+      "description": "Manages Bluetooth devices: keyboard, mouse, AirPods, and more."
     },
     {
       "match": {
@@ -255,7 +255,7 @@
       "title": "Apple Push Notifications",
       "category": "system",
       "vendor": "Apple",
-      "description": "Maintains the connection that delivers push notifications to the Mac. Keeps a persistent network connection — that's normal."
+      "description": "Maintains the connection that delivers push notifications to the Mac. Keeps a persistent network connection. That's normal."
     },
     {
       "match": {
@@ -310,7 +310,7 @@
       "title": "Chrome helper process",
       "category": "helper",
       "vendor": "Google",
-      "description": "A sandboxed Chrome child process — a tab, extension, or the GPU/renderer. Chrome deliberately spawns many; high counts and per-helper CPU/RAM are normal."
+      "description": "A sandboxed Chrome child process: a tab, extension, or the GPU/renderer. Chrome deliberately spawns many; high counts and per-helper CPU/RAM are normal."
     },
     {
       "match": {
@@ -374,7 +374,7 @@
       "title": "Node.js",
       "category": "developer",
       "vendor": "Node.js",
-      "description": "A running Node.js (JavaScript) program — often a dev server, build tool, or an app's backend. CPU/RAM depends entirely on what it's running."
+      "description": "A running Node.js (JavaScript) program: often a dev server, build tool, or an app's backend. CPU/RAM depends entirely on what it's running."
     },
     {
       "match": {
@@ -491,7 +491,7 @@
       "title": "iOS Simulator service",
       "category": "developer",
       "vendor": "Apple",
-      "description": "Manages Xcode's iOS/watchOS/tvOS Simulators — creating, booting, and running simulated devices."
+      "description": "Manages Xcode's iOS/watchOS/tvOS Simulators: creating, booting, and running simulated devices."
     },
     {
       "match": {
@@ -5318,7 +5318,7 @@
       "title": "Biome sync",
       "category": "background",
       "vendor": "Apple",
-      "description": "Syncs Biome data — Apple's on-device log of app and usage events that powers Siri Suggestions, Focus, and predictions. Quiet background service."
+      "description": "Syncs Biome data: Apple's on-device log of app and usage events that powers Siri Suggestions, Focus, and predictions. Quiet background service."
     },
     {
       "match": {

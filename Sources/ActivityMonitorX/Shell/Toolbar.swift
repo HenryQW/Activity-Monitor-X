@@ -48,7 +48,7 @@ struct MainToolbar: CustomizableToolbarContent {
                 // No confirmation: Show Dismissed and Restore bring the alerts back.
                 let ids = alerts.undismissed(search: selection.search)
                 // Destructive in the system's way: red words with the destructive role, and the margin of a word button.
-                Button(role: .destructive) { alerts.dismiss(ids) } label: { Text("Dismiss All").padding(.horizontal, 6) }
+                Button(role: .destructive) { alerts.dismiss(ids) } label: { Text("Dismiss All").padding(.horizontal, Layout.gap) }
                     .foregroundStyle(.red)
                     .disabled(ids.isEmpty)
                     .help("Dismiss all alerts shown. Show Dismissed lists them again.")
@@ -94,7 +94,7 @@ struct MainToolbar: CustomizableToolbarContent {
                         .accessibilityLabel(help)
                 }
                 // ⌥⌘I lives on the View menu command.
-                Button("Info", systemImage: "info.circle") { selection.inspectorShown.toggle() }
+                Button("Inspector", systemImage: "sidebar.trailing") { selection.inspectorShown.toggle() }
                     .help(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
                     .accessibilityLabel(selection.inspectorShown ? "Hide the inspector pane" : "Show details of the selection in the inspector")
                 if more {

@@ -134,22 +134,24 @@ public struct AlertRules: Codable, Sendable, Equatable {
     /// An app's writes over the last hour.
     public struct DiskWrites: Codable, Sendable, Equatable {
         public var enabled = true
-        public var bytesPerHour: Int64 = 20 << 30
-        public static let bytesPerHourRange: ClosedRange<Int64> = (1 << 30)...(1000 << 30)
+        public var bytesPerHour: Int64 = 20_000_000_000
+        public static let bytesPerHourRange: ClosedRange<Int64> = 1_000_000_000...1_000_000_000_000
         public init() {}
 
         public init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self), d = Self()
             (enabled, bytesPerHour) = try (c.decode(.enabled, or: d.enabled), c.decode(.bytesPerHour, or: d.bytesPerHour))
+            // Binary values from before D88 can be above the decimal maximum; clamped, they still pass validation.
+            bytesPerHour = min(bytesPerHour, Self.bytesPerHourRange.upperBound)
         }
     }
 
     /// An app's bytes in plus out, held.
     public struct Network: Codable, Sendable, Equatable {
         public var enabled = true
-        public var bytesPerSecond: Int64 = 10 << 20
+        public var bytesPerSecond: Int64 = 10_000_000
         public var minutes = 5
-        public static let bytesPerSecondRange: ClosedRange<Int64> = (1 << 20)...(10_000 << 20), minutesRange = 1...60
+        public static let bytesPerSecondRange: ClosedRange<Int64> = 1_000_000...10_000_000_000, minutesRange = 1...60
         public init() {}
 
         public init(from decoder: any Decoder) throws {
@@ -157,6 +159,7 @@ public struct AlertRules: Codable, Sendable, Equatable {
             (enabled, bytesPerSecond, minutes) = try (c.decode(.enabled, or: d.enabled),
                                                       c.decode(.bytesPerSecond, or: d.bytesPerSecond),
                                                       c.decode(.minutes, or: d.minutes))
+            bytesPerSecond = min(bytesPerSecond, Self.bytesPerSecondRange.upperBound)  // As DiskWrites.
         }
     }
 
@@ -367,8 +370,8 @@ public struct AlertRules: Codable, Sendable, Equatable {
         r.pressure.level = pick(.critical, .warning, .warning)
         r.thermal.state = pick(.critical, .serious, .serious)
         r.thermal.minutes = pick(5, 5, 2)
-        r.diskWrites.bytesPerHour = Int64(pick(50, 20, 10)) << 30
-        r.network.bytesPerSecond = Int64(pick(50, 10, 2)) << 20
+        r.diskWrites.bytesPerHour = Int64(pick(50, 20, 10)) * 1_000_000_000
+        r.network.bytesPerSecond = Int64(pick(50, 10, 2)) * 1_000_000
         r.network.minutes = 5
         r.energy.impact = pick(500, 300, 150)
         r.energy.minutes = 10
@@ -475,7 +478,7 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
         let cpu = R.SustainedCPU.percentRange(machine), growth = R.MemoryGrowth.megabytesRange(machine),
             jump = R.MemoryJump.megabytesRange(machine)
         let checks: [(Bool, String)] = [
-            (cpu.contains(rules.sustainedCPU.percent), "Sustained CPU must be 10 to \(Int(cpu.upperBound)) %"),
+            (cpu.contains(rules.sustainedCPU.percent), "Sustained CPU must be 10 to \(Int(cpu.upperBound))%"),
             (R.SustainedCPU.minutesRange.contains(rules.sustainedCPU.minutes), "Sustained CPU time must be 1 to 60 min"),
             (R.MemoryGrowth.minutesRange.contains(rules.memoryGrowth.minutes), "Memory growth time must be 10 to 120 min"),
             (growth.contains(rules.memoryGrowth.megabytes), "Memory growth must be 50 to \(growth.upperBound) MB"),
@@ -486,14 +489,14 @@ public struct DaemonSettings: Codable, Sendable, Equatable {
             (R.Network.minutesRange.contains(rules.network.minutes), "Network time must be 1 to 60 min"),
             (R.Energy.impactRange.contains(rules.energy.impact), "Energy impact must be 10 to 5000"),
             (R.Energy.minutesRange.contains(rules.energy.minutes), "Energy time must be 1 to 60 min"),
-            (R.GPU.percentRange.contains(rules.gpu.percent), "GPU must be 10 to 100 %"),
+            (R.GPU.percentRange.contains(rules.gpu.percent), "GPU must be 10 to 100%"),
             (R.GPU.minutesRange.contains(rules.gpu.minutes), "GPU time must be 1 to 60 min"),
             (R.SystemCPU.percentRange.contains(rules.systemCPU.warning) && R.SystemCPU.percentRange.contains(rules.systemCPU.critical),
-             "System CPU must be 10 to 100 %"),
+             "System CPU must be 10 to 100%"),
             (rules.systemCPU.warning < rules.systemCPU.critical, "System CPU warning must be below critical"),
             (R.SystemCPU.minutesRange.contains(rules.systemCPU.minutes), "System CPU time must be 1 to 60 min"),
-            (R.Swap.percentOfMemoryRange.contains(rules.swap.percentOfMemory), "Swap must be 10 to 200 % of memory"),
-            (R.FreeSpace.percentFreeRange.contains(rules.freeSpace.percentFree), "Free space must be 1 to 50 %"),
+            (R.Swap.percentOfMemoryRange.contains(rules.swap.percentOfMemory), "Swap must be 10 to 200% of memory"),
+            (R.FreeSpace.percentFreeRange.contains(rules.freeSpace.percentFree), "Free space must be 1 to 50%"),
         ]
         return checks.first { !$0.0 }?.1
     }

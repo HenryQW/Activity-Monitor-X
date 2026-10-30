@@ -30,7 +30,8 @@ final class EnergyModel {
     /// The screen's `.task`: ends, and so stops reading, when the screen goes. Per-app energy comes from amxd's live
     /// snapshot, which the Apps screen's poll does not fetch while a System screen shows.
     func run(client: DaemonClient) async {
-        points = []
+        // App-wide (the inspector reads it), but each visit starts fresh.
+        (points, expanded, power, processes) = ([], nil, nil, nil)
         while !Task.isCancelled {
             if MainWindowRef.windowShown {
                 let power = PowerReader.read()

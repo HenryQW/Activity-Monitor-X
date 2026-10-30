@@ -52,11 +52,11 @@ struct TimelineChart: View {
             if point.bucket != stack.bucket { stack = (point.bucket, 0) }
             let low = stack.top
             stack.top += point.value
-            return Mark(date: Self.date(point.bucket), low: low, high: stack.top, label: labels[point.app]!,
+            return Mark(date: Date(seconds: point.bucket), low: low, high: stack.top, label: labels[point.app]!,
                         value: point.value, metric: metric)
         }
         self.line = line.map { AppSeries.closed($0, bucket: bucket).map {
-            Mark(date: Self.date($0.bucket), low: 0, high: $0.value, label: "", value: $0.value, metric: metric) } }
+            Mark(date: Date(seconds: $0.bucket), low: 0, high: $0.value, label: "", value: $0.value, metric: metric) } }
         // A bucket's last band ends at its total.
         let peak = marks.lazy.map(\.high).max() ?? 0
         // 20 % headroom keeps the stack clear of the event lane at the top of the plot.
@@ -93,7 +93,7 @@ struct TimelineChart: View {
         }
         // The hover entry stays in the scale while no app is hovered: a domain that loses a value Charts still draws traps.
         .chartForegroundStyleScale(domain: series.map(\.label) + [Self.hoverLabel], range: series.map(\.color) + [AppPalette.hover])
-        .chartXScale(domain: Self.date(points.first!.bucket)...Self.date(points.last!.bucket + bucket))
+        .chartXScale(domain: Date(seconds: points.first!.bucket)...Date(seconds: points.last!.bucket + bucket))
         .chartYScale(domain: 0...top)
         // Labels centred on their ticks: a label leading from a tick near the end was cut off ("4…"); centred, it
         // needs only half its width past the plot, inside the trailing y-axis column.
@@ -116,10 +116,10 @@ struct TimelineChart: View {
         // One line: names truncate instead of wrapping into a second row. The top apps are ranked by the busiest
         // buckets (D18), so the title says so: the table below keeps its own sort.
         .chartLegend(position: .bottom, alignment: .leading) {
-            HStack(spacing: 12) {
+            HStack(spacing: Layout.padding) {
                 if series.count > 1 { Text("Top during peaks").fontWeight(.medium).lineLimit(1) }
                 ForEach(series.indices, id: \.self) { i in
-                    HStack(spacing: 4) {
+                    HStack(spacing: Layout.gap) {
                         Circle().fill(series[i].color).frame(width: 8, height: 8)
                         Text(series[i].label).lineLimit(1)
                     }
@@ -128,7 +128,7 @@ struct TimelineChart: View {
                 }
                 // The lane shows warning and critical events only.
                 if events.contains(where: { ($0.level ?? 0) >= 1 }) {
-                    Spacer(minLength: 12)
+                    Spacer(minLength: Layout.padding)
                     ForEach(EventLane.legend, id: \.symbol) { item in
                         Label(item.name, systemImage: item.symbol).imageScale(.small).lineLimit(1)
                     }
@@ -174,7 +174,7 @@ struct TimelineChart: View {
         let rows = AppSeries.bubbleRows(Array(points)) { metric.format($0) == zero }
         // Other's largest processes, under its row.
         let inOther = rows.last?.app == nil ? otherProcesses(b).filter { metric.format($0.value) != zero } : []
-        return PreviewCard(size: .compact, title: Self.date(b).formatted(.hover(bucket: bucket)),
+        return PreviewCard(size: .compact, title: Date(seconds: b).formatted(.hover(bucket: bucket)),
                            top: metric.format(points.reduce(0) { $0 + $1.value }),
                            sections: [.init(rows: rows.map { .init(swatch: $0.app.map { colors[$0]! } ?? AppPalette.other,
                                                                   label: labels[$0.app]!, value: metric.format($0.value)) }
@@ -184,7 +184,6 @@ struct TimelineChart: View {
     /// The hover line's key in the colour scale; never a legend label (the legend lists `series` only).
     private static let hoverLabel = "\u{1}hover"
 
-    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 
     /// The points of the bucket that holds `ts`: the last bucket that starts at or before it. Every bucket holds every
     /// series, so bucket k is `series.count` points from k × `series.count`.

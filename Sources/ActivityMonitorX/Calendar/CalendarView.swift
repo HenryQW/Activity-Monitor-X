@@ -114,9 +114,9 @@ struct CalendarView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// A zoom in grows the new period from the clicked cell (scale 0.86 to 1) as the old one grows away (to 1.12); a zoom out is
-    /// the reverse. With Reduce Motion, or with no zoom (stepping, a new metric), it is a fade.
+    /// the reverse. With Reduce Motion or Low Power Mode, or with no zoom (stepping, a new metric), it is a fade.
     private var zoomTransition: AnyTransition {
-        guard !reduceMotion, let zoom = model.zoom else { return .opacity }
+        guard !reduceMotion, Motion.on, let zoom = model.zoom else { return .opacity }
         let size = _size.wrappedValue
         let anchor = UnitPoint(x: (zoom.from?.x ?? size.width / 2) / size.width, y: (zoom.from?.y ?? size.height / 2) / size.height)
         return .asymmetric(insertion: .scale(scale: zoom.into ? 0.86 : 1.12, anchor: anchor).combined(with: .opacity),

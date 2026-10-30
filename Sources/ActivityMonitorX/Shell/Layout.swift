@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// The floating layout's spacings, from 8, 12 and 16 pt only. Level 1 is the window chrome (toolbar row, sidebar and
+/// The floating layout's spacings, from 4, 8, 12 and 16 pt only. Level 1 is the window chrome (toolbar row, sidebar and
 /// inspector panels), level 2 the content controls that float inside the content column (range bar, span capsule,
 /// footer, Calendar bar, Space capsules), level 3 the data under both (chart, table, grid, treemap), never glass.
 enum Layout {
+    /// The gap inside one row or one block: an icon and its label, a value over its label, a symbol and its count.
+    static let gap: CGFloat = 4
     /// Insets of panels and floating controls from their container, the gaps between them and between cells, and the
     /// padding inside a small tile (Calendar's glyph cells).
     static let inset: CGFloat = 8
@@ -49,7 +51,7 @@ struct CapsuleChoice<Value: Hashable, Label: View>: View {
     @ViewBuilder let label: (Value) -> Label
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Layout.gap) {
             ForEach(values, id: \.self) { value in
                 Toggle(isOn: Binding(get: { selection.wrappedValue == value }, set: { if $0 { selection.wrappedValue = value } })) {
                     label(value)
@@ -70,7 +72,7 @@ struct Figure<Value: View>: View {
     @ViewBuilder let value: Value
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: Layout.gap) {
             value.font(.title3.weight(.semibold)).monospacedDigit()
             Text(label).font(.caption).foregroundStyle(.secondary)
         }

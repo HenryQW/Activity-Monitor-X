@@ -13,8 +13,10 @@ struct DiskMapInspector: View {
             let node = tree[indexPath]
             let path = model.path(indexPath)
             Form {
-                Section { Text(indexPath.isEmpty ? model.title : node.name).font(.title3.bold()).overlayScrollers() }
-                CardSection(model.selected == nil ? "Shown Folder" : "Item") {
+                // The shown root needs no title row: the title pill's subtitle names it.
+                if !indexPath.isEmpty { InspectorTitle(node.name) }
+                CardSection(model.selected == nil ? "Shown Folder" : "Item",
+                            summary: Text(node.kind == .refused ? "Not readable" : Metric.bytes(Double(node.size)))) {
                     LabeledContent("Kind", value: Self.kind(node.kind))
                     LabeledContent("Size", value: node.kind == .refused ? "Not readable" : Metric.bytes(Double(node.size)))
                     LabeledContent("Items", value: node.items.formatted())
@@ -30,7 +32,8 @@ struct DiskMapInspector: View {
                 if model.selected == nil {
                     let largest = node.children.indices.filter { [.folder, .file].contains(node.children[$0].kind) }.prefix(5)
                     if !largest.isEmpty {
-                        Section {
+                        CardSection("Largest Items", summary: largest.first.map { Text(node.children[$0].name) },
+                                    footer: Text("Click an item to see its details.")) {
                             ForEach(largest, id: \.self) { i in
                                 Button { model.selected = indexPath + [i] } label: {
                                     LabeledContent(node.children[i].name, value: Metric.bytes(Double(node.children[i].size)))
@@ -39,21 +42,16 @@ struct DiskMapInspector: View {
                                 .buttonStyle(.plain)
                                 .help("Select \(node.children[i].name)")
                             }
-                        } header: {
-                            Text("Largest Items")
-                        } footer: {
-                            Text("Click an item to see its details.")
                         }
                         .monospacedDigit()
                     }
                 }
                 if let path {
-                    CardSection("Path") {
+                    CardSection("Path", summary: Text(((path as NSString).deletingLastPathComponent as NSString).abbreviatingWithTildeInPath)) {
                         Text(path).textSelection(.enabled)
                         HStack {
-                            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)]) }
-                                .help("Show the item in Finder")
-                            Button("Copy Path") { DiskItemMenu.copy(path) }
+                            ShowInFinderButton(path: path, help: "Show the item in Finder").labelStyle(.titleOnly)
+                            Button("Copy Path") { Pasteboard.copy(path) }
                                 .help("Copy the path of the item")
                         }
                     }

@@ -29,7 +29,7 @@ struct CalendarCellView: View {
     private var counts: (warning: Int, critical: Int) { page.bucket == 3600 || metric == .memory ? page.counts([cell]) : (0, 0) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Layout.gap) {
             switch page.period {
             case .month: month
             case .week: block
@@ -74,7 +74,7 @@ struct CalendarCellView: View {
     }
 
     @ViewBuilder private var month: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Layout.gap) {
             Text(Self.dayLabel(Date(timeIntervalSince1970: cell.start), calendar: page.calendar)).foregroundStyle(.secondary)
             Spacer(minLength: 0)
             value
@@ -83,7 +83,7 @@ struct CalendarCellView: View {
             Spacer()
         } else {
             lines
-            HStack(spacing: 4) {
+            HStack(spacing: Layout.gap) {
                 named
                 Spacer(minLength: 0)
                 if showsCounts { LevelCounts(counts: counts).font(.caption2) }
@@ -95,13 +95,13 @@ struct CalendarCellView: View {
         if cell.value == nil {
             Spacer()
         } else {
-            HStack(spacing: 4) {
+            HStack(spacing: Layout.gap) {
                 value
                 Spacer(minLength: 0)
                 if showsCounts { LevelCounts(counts: counts).font(.caption2) }
             }
             lines
-            HStack(spacing: 4) {
+            HStack(spacing: Layout.gap) {
                 named
                 Spacer(minLength: 0)
                 if showsPeak, let peak = cell.peak { Text(metric.format(cell.lines[peak]!)).foregroundStyle(.secondary).font(.caption2).monospacedDigit().lineLimit(1).fixedSize() }
@@ -111,7 +111,7 @@ struct CalendarCellView: View {
 
     @ViewBuilder private var hour: some View {
         let start = Date(timeIntervalSince1970: cell.start)
-        HStack(spacing: 4) {
+        HStack(spacing: Layout.gap) {
             Text(start.formatted(.dateTime.hour())).foregroundStyle(.secondary)
             Spacer(minLength: 0)
             if width >= 96 {
@@ -162,8 +162,8 @@ struct CalendarRowView: View {
     var width: CGFloat = .infinity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: Layout.gap) {
+            HStack(spacing: Layout.gap) {
                 Text(width >= 56 ? cell.value.map(page.metric.format) ?? "" : "").fontWeight(.semibold).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 0)
             }

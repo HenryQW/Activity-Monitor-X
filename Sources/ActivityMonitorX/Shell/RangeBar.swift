@@ -81,7 +81,7 @@ struct RangeBar: View {
     private var full: String {
         if history.range == .live { return "Live, updated each second" }
         func text(_ seconds: Double) -> String {
-            Date(timeIntervalSince1970: seconds).formatted(Date.FormatStyle(timeZone: AppTime.zone).day().month(.abbreviated).hour().minute())
+            Date(timeIntervalSince1970: seconds).formatted(Date.FormatStyle().day().month(.abbreviated).hour().minute())
         }
         return "\(text(span.lowerBound)) to \(text(span.upperBound))\(zone)"
     }
@@ -103,11 +103,11 @@ struct RangeBar: View {
             if !calendar.isDate(start, equalTo: end, toGranularity: .year) { style = style.year() }
             text = (start..<end).formatted(style).replacingOccurrences(of: "\u{2009}\u{2013}\u{2009}", with: " to ")
         } else if [.hour, .day].contains(history.range) && sameDay {
-            text = "Since " + start.formatted(Date.FormatStyle(timeZone: AppTime.zone).hour().minute())
+            text = "Since " + start.formatted(Date.FormatStyle().hour().minute())
         } else if [.hour, .day].contains(history.range) && calendar.isDateInYesterday(start) {
-            text = "Since yesterday, " + start.formatted(Date.FormatStyle(timeZone: AppTime.zone).hour().minute())
+            text = "Since yesterday, " + start.formatted(Date.FormatStyle().hour().minute())
         } else {
-            text = "Since " + start.formatted(Date.FormatStyle(timeZone: AppTime.zone).day().month(.abbreviated))
+            text = "Since " + start.formatted(Date.FormatStyle().day().month(.abbreviated))
         }
         return text + zone
     }
@@ -132,7 +132,7 @@ private struct RangePopover: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Layout.padding) {
             Text("Custom Range").font(.headline)
             Form {
                 DatePicker("From", selection: _from.projectedValue, in: bounds)

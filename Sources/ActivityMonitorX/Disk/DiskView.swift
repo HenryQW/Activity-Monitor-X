@@ -46,6 +46,9 @@ private struct DiskActivityView: View {
     /// Only the hidden columns are kept, as in the Apps table: a kept `TableColumnCustomization` also keeps each column's
     /// width, so a table narrower than the last pushes columns out of view.
     private let _columns = State(initialValue: DiskActivityView.customization())
+    /// Empty until a header click: the screen's own order (SCR-32).
+    private let _volumeOrder = State<[KeyPathComparator<VolumeInfo>]>(initialValue: [])
+    private let _containerOrder = State<[KeyPathComparator<APFSContainer>]>(initialValue: [])
     private static let hiddenKey = "diskVolumeHiddenColumns"
     private static let hideable = ["mountPoint"]
 
@@ -75,16 +78,11 @@ private struct DiskActivityView: View {
         // Stops with the screen: no disk reads while Disk is not shown.
         .task { await disk.run() }
         .onChange(of: selection.refreshes) { Task { await disk.refresh() } }
-        .alert(disk.actionFailure?.title ?? "", isPresented: Binding(
-            get: { disk.actionFailure != nil }, set: { if !$0 { disk.actionFailure = nil } })) {
-            Button("OK") {}
-        } message: {
-            Text(disk.actionFailure?.message ?? "")
-        }
+        .failureAlert(Bindable(disk).actionFailure)
     }
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Layout.inset) {
             Text(title).font(.title3.weight(.semibold))
             content()
         }
@@ -131,24 +129,24 @@ private struct DiskActivityView: View {
             return segment
         }
         func points(_ series: String, _ value: (Sample) -> Double) -> [DiskPoint] {
-            samples.indices.map { DiskPoint(date: Self.date(samples[$0].ts), series: series, value: value(samples[$0]),
+            samples.indices.map { DiskPoint(date: Date(seconds: samples[$0].ts), series: series, value: value(samples[$0]),
                                             segment: segments[$0]) }
         }
         // From min to max, at least a bucket wide: one sample, or a wall clock that stepped back, gives no valid range.
         let first = samples.map(\.ts).min() ?? 0
-        let xDomain = Self.date(first)...Self.date(max(samples.map(\.ts).max() ?? 0, first + max(bucket, 1)))
+        let xDomain = Date(seconds: first)...Date(seconds: max(samples.map(\.ts).max() ?? 0, first + max(bucket, 1)))
         let throughput = zip(points("Read", \.read), points("Write", \.write)).flatMap { [$0, $1] }
-        return Grid(horizontalSpacing: 24, verticalSpacing: 24) {
+        return Grid(horizontalSpacing: Layout.section, verticalSpacing: Layout.section) {
             GridRow {
                 DiskChart(title: "Throughput", points: throughput, bucket: bucket, format: Metric.disk.format, xDomain: xDomain)
-                DiskChart(title: "IOPS", points: points("IOPS", \.iops), bucket: bucket,
-                          format: { $0.formatted(.number.precision(.fractionLength(0))) }, xDomain: xDomain)
+                DiskChart(title: "Operations", points: points("Operations", \.iops), bucket: bucket,
+                          format: Units.perSecond, xDomain: xDomain)
             }
             GridRow {
                 DiskChart(title: "Latency", points: points("Latency", \.latency), bucket: bucket,
-                          format: { "\($0.formatted(.number.precision(.fractionLength(1)))) ms" }, xDomain: xDomain)
+                          format: Units.milliseconds, xDomain: xDomain)
                 DiskChart(title: "Utilisation", points: points("Utilisation", \.util), bucket: bucket,
-                          format: { ($0 / 100).formatted(.percent.precision(.fractionLength(0))) }, xDomain: xDomain, yDomain: 0...100)
+                          format: Units.percent, xDomain: xDomain, yDomain: 0...100)
             }
             if !live {
                 GridRow {
@@ -168,7 +166,7 @@ private struct DiskActivityView: View {
         var gaps = 0
         return samples.indices.compactMap { i in
             guard let free = samples[i].free else { gaps += 1; return nil }
-            return DiskPoint(date: Self.date(samples[i].ts), series: "Free", value: free, segment: segments[i] + gaps)
+            return DiskPoint(date: Date(seconds: samples[i].ts), series: "Free", value: free, segment: segments[i] + gaps)
         }
     }
 
@@ -178,10 +176,10 @@ private struct DiskActivityView: View {
     @ViewBuilder private var disks: some View {
         let disks = NameSearch.filter(disk.disks, query: selection.search) { [$0.model, $0.bsdName].compactMap { $0 } }
         if disks.isEmpty {
-            Text(disk.disks.isEmpty ? "No physical disks found." : "No disk matches the search.").foregroundStyle(.secondary)
+            Text(disk.disks.isEmpty ? "No physical disks found" : "No disk matches the search").foregroundStyle(.secondary)
         } else {
             let columns = min(disks.count, 3)
-            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+            Grid(horizontalSpacing: Layout.inset, verticalSpacing: Layout.inset) {
                 ForEach(Array(stride(from: 0, to: disks.count, by: columns)), id: \.self) { start in
                     GridRow { ForEach(disks[start..<min(start + columns, disks.count)]) { diskCell($0) } }
                 }
@@ -195,30 +193,24 @@ private struct DiskActivityView: View {
         let selected = disk.selected == .disk(d.bsdName)
         let space = d.space(volumes: disk.volumes, containers: disk.containers, rule: alerts.rules.freeSpace)
         let name = d.model ?? d.bsdName
-        let kind = d.kind
-        let used = space.share.map { "\(Int(($0 * 100).rounded()))% used" }
-        let rate = disk.perDisk[d.bsdName]
+        let fact = [Metric.bytes(Double(d.sizeBytes))] + (space.share.map { ["\(Units.percent($0 * 100)) used"] } ?? [])
+        let rate = disk.perDisk[d.bsdName].map { "Read \(Metric.disk.format($0.readBps)), write \(Metric.disk.format($0.writeBps))" }
         let health = disk.health[d.bsdName]?.isHealthy
+        // As a Hardware cell (S16): a semibold name over one fact; the kind and the rates are in the inspector and VoiceOver.
         return Button { disk.selected = .disk(d.bsdName) } label: {
             HStack(spacing: Layout.inset) {
-                FlashChips(count: space.startup ? 2 : 1, share: space.share, color: ChipDiagram.status(space.level)).frame(width: 32)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 4) {
+                FlashChips(count: space.startup ? 2 : 1, share: space.share, color: ChipDiagram.status(space.level)).frame(width: 32, height: 22)
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: Layout.gap) {
                         Text(name).fontWeight(.semibold)
-                        if health == true { Image(systemName: "checkmark.seal").foregroundStyle(.secondary) }
-                        if health == false { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red) }
+                        if health == false { SeverityIcon(severity: 2) }
                     }
-                    Text(kind)
-                    HStack {
-                        if let used { Text(used) }
-                        Spacer(minLength: 6)
-                        if let rate { Text("R \(Metric.disk.format(rate.readBps))  W \(Metric.disk.format(rate.writeBps))") }
-                    }
-                    .foregroundStyle(.secondary)
+                    Text(fact.joined(separator: ", ")).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            .font(.callout)
+            .font(.caption)
             .monospacedDigit()
             .frame(maxWidth: .infinity, alignment: .leading)
             .partCell(selected: selected)
@@ -228,23 +220,23 @@ private struct DiskActivityView: View {
         .help("Show \(name) in the inspector")
         .contextMenu {
             Group {
+                // One volume ejects the drive with all its volumes.
+                if !d.isInternal, let volume = disk.volumes.first(where: { Volumes.wholeDisk(of: $0, containers: disk.containers) == d.bsdName }) {
+                    Button("Eject", systemImage: "eject") { eject(volume) }
+                        .help("Eject \(name) and all its volumes so that you can disconnect it safely")
+                    Divider()
+                }
                 Button("Show in Inspector", systemImage: "sidebar.trailing") {
                     disk.selected = .disk(d.bsdName)
                     selection.inspectorShown = true
                 }
                 .help("Show \(name) and its SMART details in the inspector")
-                // One volume ejects the drive with all its volumes.
-                if !d.isInternal, let volume = disk.volumes.first(where: { Volumes.wholeDisk(of: $0, containers: disk.containers) == d.bsdName }) {
-                    Button("Eject", systemImage: "eject") { eject(volume) }
-                        .help("Eject \(name) and all its volumes so that you can disconnect it safely")
-                }
             }
             .labelStyle(.titleAndIcon)
         }
         .accessibilityLabel("Disk, \(name)")
-        .accessibilityValue([kind, used, health == true ? "SMART verified" : health == false ? "SMART failing" : nil,
-                             rate.map { "Read \(Metric.disk.format($0.readBps)), write \(Metric.disk.format($0.writeBps))" }]
-            .compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue(([d.kind] + fact + [health == true ? "SMART verified" : health == false ? "SMART failing" : nil, rate].compactMap { $0 })
+            .joined(separator: ", "))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -260,25 +252,29 @@ private struct DiskActivityView: View {
                 if let id { disk.selected = .volume(id) } else if case .volume = disk.selected { disk.selected = nil }
             })
         if volumes.isEmpty && !disk.volumes.isEmpty {
-            Text("No volume matches the search.").foregroundStyle(.secondary)
+            Text("No volume matches the search").foregroundStyle(.secondary)
         } else {
             table(volumes, selection: selected)
         }
     }
 
     private func table(_ volumes: [VolumeInfo], selection: Binding<VolumeInfo.ID?>) -> some View {
-        Table(volumes, selection: selection, columnCustomization: _columns.projectedValue) {
-            TableColumn("Name") { volume in
+        let order = _volumeOrder.wrappedValue
+        return Table(order.isEmpty ? volumes : volumes.sorted(using: order), selection: selection, sortOrder: _volumeOrder.projectedValue,
+                     columnCustomization: _columns.projectedValue) {
+            TableColumn("Name", value: \.name) { volume in
                 Label(volume.name, systemImage: volume.isInternal ? "internaldrive" : "externaldrive")
             }
             TableColumn("Kind") { Text($0.role ?? $0.fileSystem.uppercased()) }
                 .width(ideal: 80)
-            TableColumn("Capacity") { Text(Metric.bytes(Double($0.totalBytes))).monospacedDigit() }
+            TableColumn("Capacity", value: \.totalBytes) { Text(Metric.bytes(Double($0.totalBytes))).monospacedDigit() }
                 .width(ideal: 90)
-            TableColumn("Used") { UsedCell(volume: $0) }
+                .alignment(.trailing)
+            TableColumn("Used", value: \.used) { UsedCell(volume: $0) }
                 .width(min: 140, ideal: 160)
-            TableColumn("Available") { Text(Metric.bytes(Double($0.availableBytes ?? $0.freeBytes))).monospacedDigit() }
+            TableColumn("Available", value: \.available) { Text(Metric.bytes(Double($0.available))).monospacedDigit() }
                 .width(ideal: 90)
+                .alignment(.trailing)
             TableColumn("Encrypted") { Text($0.isEncrypted ? "Yes" : "No") }
                 .width(ideal: 70)
             TableColumn("Mount Point", value: \.mountPoint)
@@ -291,20 +287,22 @@ private struct DiskActivityView: View {
                 Group {
                     Button("Show in Space", systemImage: "chart.pie") { showInSpace(volume) }
                         .help("Show what uses the space on \(volume.name)")
-                    ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in the Finder")
-                    Button("Copy Mount Point", systemImage: "doc.on.doc") { DiskItemMenu.copy(volume.mountPoint) }
-                        .help("Copy \(volume.mountPoint)")
+                    ShowInFinderButton(path: volume.mountPoint, help: "Show \(volume.name) in Finder")
                     if !volume.isInternal {
-                        Divider()
                         Button("Eject", systemImage: "eject") { eject(volume) }
                             .help("Eject \(volume.name) so that you can disconnect it safely")
                     }
+                    Divider()
+                    Button("Copy Mount Point", systemImage: "doc.on.doc") { Pasteboard.copy(volume.mountPoint) }
+                        .help("Copy \(volume.mountPoint)")
                 }
                 .labelStyle(.titleAndIcon)
             }
         } primaryAction: { ids in
             if ids.count == 1, let volume = volumes.first(where: { $0.id == ids.first }) { showInSpace(volume) }
         }
+        // Edit > Copy (⌘C): the selected volume's mount point, as Copy Mount Point (N3).
+        .copyable(selection.wrappedValue.map { [$0] } ?? [])
         // Inside the page's scroll view: as tall as its rows, scrolled with the page.
         .frame(height: Self.tableHeight(rows: volumes.count, row: 24))
         .scrollDisabled(true)
@@ -333,17 +331,20 @@ private struct DiskActivityView: View {
     /// is left out).
     @ViewBuilder private var containers: some View {
         if disk.containers.isEmpty {
-            Text("No APFS containers found.").foregroundStyle(.secondary)
+            Text("No APFS containers found").foregroundStyle(.secondary)
         } else {
-            Table(disk.containers) {
-                TableColumn("Name") { Label($0.bsdName, systemImage: "square.stack.3d.up") }
+            let order = _containerOrder.wrappedValue
+            Table(order.isEmpty ? disk.containers : disk.containers.sorted(using: order), sortOrder: _containerOrder.projectedValue) {
+                TableColumn("Name", value: \.bsdName) { Label($0.bsdName, systemImage: "cylinder.split.1x2") }
                     .width(min: 80, ideal: 100, max: 140)
                 TableColumn("Physical Store") { Text($0.physicalStores.joined(separator: ", ")) }
                     .width(min: 90, ideal: 110, max: 140)
-                TableColumn("Size") { Text(Metric.bytes(Double($0.sizeBytes))).monospacedDigit() }
+                TableColumn("Capacity", value: \.sizeBytes) { Text(Metric.bytes(Double($0.sizeBytes))).monospacedDigit() }
                     .width(min: 70, ideal: 90, max: 120)
-                TableColumn("Free") { Text($0.freeBytes.map { Metric.bytes(Double($0)) } ?? "Unknown").monospacedDigit() }
+                    .alignment(.trailing)
+                TableColumn("Available", value: \.available) { Text($0.freeBytes.map { Metric.bytes(Double($0)) } ?? "No data").monospacedDigit() }
                     .width(min: 70, ideal: 90, max: 120)
+                    .alignment(.trailing)
                 TableColumn("Volumes") { c in
                     let names = c.volumes.map { m in
                         m.role.map { $0 == m.name ? m.name : "\(m.name) (\($0))" } ?? m.name
@@ -361,18 +362,26 @@ private struct DiskActivityView: View {
     /// 24 pt a volume row, 25.5 pt a container row, whose symbol is taller).
     private static func tableHeight(rows: Int, row: CGFloat) -> CGFloat { CGFloat(rows) * row + 33 }
 
-    private static func date(_ seconds: Double) -> Date { Date(timeIntervalSince1970: seconds) }
 }
 
 /// "Verified", "Failing" in red, or "Not available" for a disk without a SMART log.
 struct SmartStatus: View {
     let health: NVMeHealth?
 
+    /// SMART failing is a status (critical); verified is normal, so it has no colour and no symbol.
     var body: some View {
         switch health?.isHealthy {
-        case true?: Label("Verified", systemImage: "checkmark.seal")
-        case false?: Label("Failing", systemImage: "xmark.octagon.fill").foregroundStyle(.red)
-        case nil: Text("Not available").foregroundStyle(.secondary)
+        case true?: Text(Self.word(health))
+        case false?: Label(Self.word(health), systemImage: "xmark.octagon.fill").foregroundStyle(.red)
+        case nil: Text(Self.word(health)).foregroundStyle(.secondary)
+        }
+    }
+
+    static func word(_ health: NVMeHealth?) -> String {
+        switch health?.isHealthy {
+        case true?: "Verified"
+        case false?: "Failing"
+        case nil: "Not available"
         }
     }
 }
@@ -425,6 +434,11 @@ extension VolumeInfo {
 }
 
 /// Used bytes with a bar, yellow on low space.
+extension APFSContainer {
+    /// For sorting: a container with no free count sorts as full.
+    var available: UInt64 { freeBytes ?? 0 }
+}
+
 private struct UsedCell: View {
     let volume: VolumeInfo
 
@@ -458,13 +472,13 @@ private struct DiskFacts: View {
         let space = drive?.space(volumes: disk.volumes, containers: disk.containers, rule: alerts.rules.freeSpace)
         let rate = disk.live.last?.total
         let health = drive.flatMap { disk.health[$0.bsdName]?.isHealthy }
-        let bytes = Metric.memory.format
+        let bytes = Metric.bytes
         ScreenFooter(figures: [
             FooterFigure(label: "Free of \(bytes(Double(startup.totalBytes)))", value: bytes(Double(startup.freeBytes)),
                          help: "The free space on \(startup.name), purgeable space not included", severity: startup.spaceLevel(alerts.rules.freeSpace)),
-            FooterFigure(label: "Read now", value: rate.map { Metric.disk.format($0.readBps) } ?? "Reading…", help: "Bytes read per second by all disks"),
-            FooterFigure(label: "Write now", value: rate.map { Metric.disk.format($0.writeBps) } ?? "Reading…", help: "Bytes written per second by all disks"),
-            FooterFigure(label: "Drive health", value: health.map { $0 ? "Verified" : "Failing" } ?? "Not available",
+            FooterFigure(label: "Read now", value: rate.map { Metric.disk.format($0.readBps) } ?? "No data", help: "Bytes read per second by all disks"),
+            FooterFigure(label: "Write now", value: rate.map { Metric.disk.format($0.writeBps) } ?? "No data", help: "Bytes written per second by all disks"),
+            FooterFigure(label: "Drive health", value: SmartStatus.word(drive.flatMap { disk.health[$0.bsdName] }),
                          help: "The startup disk's SMART status", severity: health == false ? 2 : 0),
         ]) {
             FlashChips(count: 2, share: space?.share, color: ChipDiagram.status(space?.level ?? 0)).frame(height: 32)

@@ -2,6 +2,7 @@ import AMXCore
 import AppKit
 import QuickLook
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The largest items under a volume or folder: a treemap beside a table of the same items, which is the accessible
 /// path. The search filters the table by name; its selection is the inspector's. Content layer: no glass. The system asks
@@ -9,6 +10,8 @@ import SwiftUI
 struct DiskMapView: View {
     @Environment(DiskMapModel.self) private var model
     @Environment(Selection.self) private var selection
+    /// Empty until a header click: largest first, as the scan gives it (SCR-32).
+    private let _order = State<[KeyPathComparator<Row>]>(initialValue: [])
 
     private static let fullDiskAccess = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles")!
 
@@ -21,11 +24,13 @@ struct DiskMapView: View {
             .sheet(item: Binding(get: { model.renaming.map(RenameTarget.init) }, set: { model.renaming = $0?.id })) {
                 DiskRenameSheet(model: model, id: $0.id)
             }
-            .alert(model.actionFailure?.title ?? "", isPresented: Binding(get: { model.actionFailure != nil }, set: { if !$0 { model.actionFailure = nil } })) {
-                Button("OK") {}
-            } message: {
-                Text(model.actionFailure?.message ?? "")
+            .failureAlert(Bindable(model).actionFailure)
+            .fileImporter(isPresented: Bindable(model).choosing, allowedContentTypes: [.folder]) { result in
+                if case .success(let url) = result { model.open(.folder(url)) }
             }
+            .fileDialogConfirmationLabel("Choose")
+            // A screen change while the dialog shows must not leave it to open again later.
+            .onDisappear { model.choosing = false }
     }
 
     private struct RenameTarget: Identifiable {
@@ -48,7 +53,7 @@ struct DiskMapView: View {
                 Text("Choose a volume or folder to see what takes the space.")
             } actions: {
                 // The screen's one action: prominent.
-                Button("Choose Folder…") { DiskMapTargetMenu.choose(model) }
+                Button("Choose Folder…") { model.choosing = true }
                     .buttonStyle(.borderedProminent)
                     .help("Choose a folder to scan")
             }
@@ -57,7 +62,7 @@ struct DiskMapView: View {
 
     /// Determinate for a volume (scanned bytes of the used space), else indeterminate.
     private var scanning: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Layout.padding) {
             let progress = model.progress
             if let total = model.progressTotal, total > 0 {
                 ProgressView(value: Double(min(progress?.bytes ?? 0, total)), total: Double(total))
@@ -105,11 +110,16 @@ struct DiskMapView: View {
                                   selected: model.selected,
                                   label: "Disk map of \(focus.isEmpty ? model.title : folder.name), \(Metric.bytes(Double(folder.size)))",
                                   open: { model.focus = $0 })
-                    FileKindLegend().padding(8)
+                    FileKindLegend().padding(Layout.inset)
                 }
                 .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
+                // Up one folder, as View > Zoom Out (S11); on each pane, as each is its own AppKit view.
+                .onExitCommand { model.up() }
                 let rows = folder.children.enumerated().map { Row(id: focus + [$0.offset], node: $0.element) }
-                table(NameSearch.filter(rows, query: selection.search) { [$0.node.name] }, total: folder.size)
+                let found = NameSearch.filter(rows, query: selection.search) { [$0.node.name] }
+                table(found, total: folder.size)
+                    .onExitCommand { model.up() }
+                    .overlay { if found.isEmpty && !selection.search.isEmpty { ContentUnavailableView.search(text: selection.search) } }
                     .frame(minWidth: 340, idealWidth: 420, maxHeight: .infinity)
             }
             // The screen's footer (WIN-13) in its own row: the AppKit panes above take no safe area, so a bar would cover
@@ -137,7 +147,7 @@ struct DiskMapView: View {
             FooterFigure(label: "Items", value: folder.items.formatted(), help: "The files and folders in \(name)"),
             FooterFigure(label: largest.map { "Largest, \(Metric.bytes(Double($0.size)))" } ?? "Largest", value: largest?.name ?? "None",
                          help: "The largest item in \(name)"),
-            FooterFigure(label: whole.label, value: whole.size > 0 ? min(Double(folder.size) / whole.size, 1).formatted(.percent.precision(.fractionLength(0))) : "–",
+            FooterFigure(label: whole.label, value: whole.size > 0 ? min(Double(folder.size) / whole.size, 1).formatted(.percent.precision(.fractionLength(0))) : "No data",
                          help: "The share of \(name) in the space used"),
         ]) {
             GeometryReader { geometry in
@@ -152,12 +162,12 @@ struct DiskMapView: View {
 
     @ViewBuilder private func banners(_ tree: DiskTree) -> some View {
         if tree.refusedCount > 0 || tree.simplified || tree.partial {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: Layout.inset) {
                 if tree.refusedCount > 0 {
                     Label("^[\(tree.refusedCount) folder](inflect: true) could not be read", systemImage: "lock")
                     DisclosureGroup("Folders") {
                         ScrollView {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Layout.gap) {
                                 ForEach(tree.refused, id: \.self) { Text($0) }
                                 if tree.refusedCount > tree.refused.count {
                                     Text("and \(tree.refusedCount - tree.refused.count) more").foregroundStyle(.secondary)
@@ -205,14 +215,14 @@ struct DiskMapView: View {
                         .accessibilityHidden(true)
                 }
                 // Each step is the thing it names, as a path control: the drive, then folders.
-                Button(level == 0 ? model.title : tree[Array(focus.prefix(level))].name,
-                       systemImage: level > 0 ? "folder" : rootSymbol) {
+                let name = level == 0 ? model.title : tree[Array(focus.prefix(level))].name
+                Button(name, systemImage: level > 0 ? "folder" : rootSymbol) {
                     model.focus = Array(focus.prefix(level))
                 }
                 .labelStyle(.titleAndIcon)
                 .buttonStyle(.borderless)
                 .fontWeight(level == focus.count ? .semibold : nil)
-                .help("Show this folder")
+                .help("Show \(name)")
             }
         }
         // The folder's size and items are in the footer.
@@ -232,21 +242,22 @@ struct DiskMapView: View {
     }
 
     private func table(_ rows: [Row], total: UInt64) -> some View {
-        Table(rows, selection: Bindable(model).selected) {
-            TableColumn("Name") { row in
+        let order = _order.wrappedValue
+        return Table(order.isEmpty ? rows : rows.sorted(using: order), selection: Bindable(model).selected, sortOrder: _order.projectedValue) {
+            TableColumn("Name", value: \.node.name) { row in
                 Label(row.node.name, systemImage: Self.symbol(row.node.kind))
                     .help(row.node.kind == .refused ? "Could not be read" : row.node.name)
             }
-            TableColumn("Size") { row in
+            TableColumn("Size", value: \.node.size) { row in
                 Text(row.node.kind == .refused ? "Not readable" : Metric.bytes(Double(row.node.size))).monospacedDigit()
             }
             .width(min: 70, ideal: 84)
             .alignment(.trailing)
-            TableColumn("Items") { Text($0.node.items.formatted()).monospacedDigit() }
+            TableColumn("Items", value: \.node.items) { Text($0.node.items.formatted()).monospacedDigit() }
                 .width(min: 50, ideal: 70)
                 .alignment(.trailing)
-            TableColumn("% of Folder") { row in
-                Text(total == 0 ? "–" : (Double(row.node.size) / Double(total)).formatted(.percent.precision(.fractionLength(1))))
+            TableColumn("% of Folder", value: \.node.size) { row in
+                Text(total == 0 ? "No data" : (Double(row.node.size) / Double(total)).formatted(.percent.precision(.fractionLength(1))))
                     .monospacedDigit()
             }
             .width(min: 60, ideal: 80)
@@ -257,6 +268,8 @@ struct DiskMapView: View {
         } primaryAction: { ids in
             if ids.count == 1, let id = ids.first, model.tree?[id].kind == .folder { model.focus = id }
         }
+        // Edit > Copy (⌘C): the selected item's path, as Copy Path (N3).
+        .copyable(model.selected.flatMap(model.path).map { [$0] } ?? [])
     }
 
     private static func symbol(_ kind: DiskTree.Node.Kind) -> String {
@@ -275,30 +288,23 @@ struct DiskMapTargetMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(model.volumes) { volume in
-                Button(volume.name) { model.open(.volume(volume)) }
+            Group {
+                ForEach(model.volumes) { volume in
+                    Button(volume.name, systemImage: volume.isInternal ? "internaldrive" : "externaldrive") { model.open(.volume(volume)) }
+                        .help("Scan \(volume.name)")
+                }
+                Divider()
+                Button("Home Folder", systemImage: "house") { model.open(.folder(.homeDirectory)) }
+                    .help("Scan your home folder")
+                Button("Choose Folder…", systemImage: "folder") { model.choosing = true }
+                    .help("Choose a folder to scan")
             }
-            Divider()
-            Button("Home Folder") { model.open(.folder(.homeDirectory)) }
-            Button("Choose Folder…", action: choose)
+            .labelStyle(.titleAndIcon)
         } label: {
             Label(model.target?.name ?? "Volume or Folder", systemImage: "internaldrive")
         }
         .labelStyle(.titleOnly)
         .help("Choose the volume or folder to scan")
-    }
-
-    private func choose() { Self.choose(model) }
-
-    static func choose(_ model: DiskMapModel) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.prompt = "Choose"
-        let done = { (response: NSApplication.ModalResponse) in
-            if response == .OK, let url = panel.url { model.open(.folder(url)) }
-        }
-        if let window = MainWindowRef.window { panel.beginSheetModal(for: window, completionHandler: done) } else { panel.begin(completionHandler: done) }
     }
 }
 

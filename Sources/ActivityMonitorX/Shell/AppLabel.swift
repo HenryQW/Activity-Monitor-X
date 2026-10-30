@@ -13,7 +13,7 @@ struct AppLabel: View {
     var detail: String? = nil
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Layout.gap) {
             AppColorDot(app: app, history: history, color: color)
             Image(nsImage: AppIcon.image(for: app)).resizable().frame(width: 16, height: 16)
             Text(app.name).lineLimit(1).help(app.key).layoutPriority(1)

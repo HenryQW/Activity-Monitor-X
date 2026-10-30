@@ -52,7 +52,7 @@ struct GroupEditor: View {
                         ForEach(Self.symbols, id: \.key) { Label($0.value, systemImage: $0.key).tag($0.key) }
                     }
                     Picker("Colour", selection: draft.color) {
-                        ForEach(GroupColor.allCases, id: \.self) { color in
+                        ForEach(AppPalette.choices, id: \.self) { color in
                             Label { Text(color.rawValue.capitalized) } icon: { Image(nsImage: Self.swatches[color]!) }.tag(color)
                         }
                     }
@@ -66,7 +66,7 @@ struct GroupEditor: View {
                     } else if _processes.wrappedValue == nil {
                         ProgressView().controlSize(.small)
                     } else if matches.isEmpty {
-                        Text("No process seen in the last minute matches.").foregroundStyle(.secondary)
+                        Text("No process seen in the last minute matches").foregroundStyle(.secondary)
                     }
                     ForEach(matches.prefix(Self.rowLimit), id: \.processID) { track in
                         HStack {
@@ -85,7 +85,9 @@ struct GroupEditor: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
+                    .help("Close without saving the changes")
                 Button("Save Group") { save(draft.wrappedValue) }
+                    .help("Save the group and show it in the sidebar")
                     .keyboardShortcut(.defaultAction)
                     .disabled(problem != nil)
             }

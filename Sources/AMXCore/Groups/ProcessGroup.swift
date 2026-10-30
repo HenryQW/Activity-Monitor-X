@@ -17,9 +17,10 @@ public struct ProcessGroup: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// No red or yellow: they mean warning and critical only (COL-1). A group saved with one reads as blue, the default.
+/// The app colours (COL-1): no red or yellow, which mean warning and critical only, and no pink or grey, which read as red
+/// and as Other. A group saved with one reads as blue, the default.
 public enum GroupColor: String, Codable, Sendable, CaseIterable {
-    case orange, green, mint, teal, cyan, blue, indigo, purple, pink, brown, gray
+    case orange, green, mint, teal, cyan, blue, indigo, purple, brown
 
     public init(from decoder: any Decoder) throws {
         self = GroupColor(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .blue

@@ -36,7 +36,7 @@ struct Sparkline: View {
         let style = StrokeStyle(lineWidth: 1.5, lineJoin: .round)
         // A level at or over `top` has no value above it to draw.
         let level = threshold.flatMap { $0 < top ? $0 / top : nil }
-        HStack(spacing: 2) {
+        HStack(spacing: Layout.gap) {
             ZStack {
                 line.stroke(color, style: style)
                 if let level {

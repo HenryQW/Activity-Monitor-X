@@ -589,3 +589,37 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Evidence:** step 0 on a copy of the live database. The charts, ranking and sparklines cost 3 to 5 times the read and stay full. Release estimate of the saving: 0.27% of one core at 1H, 0.1% at 24H, 0.04% at 7D, and only while the window shows.
 - **Call (user):** keep the full read. The saving is too small for a second read path that must give the same slices as the first.
 - **Cost if wrong:** none now; the plan has the design and the risks if it is needed later.
+
+## D86: Round 18 picks and the design file consolidated (user picks)
+
+- **Goal (user):** record the picks of this round in `DESIGN.md`, so a new screen follows them without the conversation.
+- **Picks:** LG2, a two-series chart's key after its title (COL-14). MW1, the menu bar menu leads with native gauge rings (SET-5). SP1, the Space footer as a small treemap in a row under the panes (WIN-13). Every inspector pill in the card language; Processes stays a list with card-style title rows, to keep selection and arrow keys (INS-10). Energy A: with an app open, the label columns keep their room and the sources move closer; a label drops its share before its name shortens (SCR-2).
+- **Call (user):** each pick as named. `DESIGN.md` gains the label order, the same-number rule for status colour (D83), the card language on every pill, the chart key, the menu bar menu and the mockup tool.
+- **Cost if wrong:** text only; each pick is one view.
+
+## D87: Design audit choices (user picks)
+
+- **Goal (user):** make the app meet `DESIGN.md` where the audit found a choice, not a fix.
+- **Options and calls (user):** 19A every card has a summary (19B allowed none). 20B event markers by severity shape (20A an outline, 20C a badge). 21A SMART failing is a status (21B text only). 22A groups use the app colours (22B keep pink and grey). 23 spacing on the 4, 8, 12, 16 grid with `Layout.gap` for gaps inside a row (or every small gap to 8 pt). 24A weekends a neutral tint (24B keep indigo). 25A no title row on the Apps summary and the Space root (25B, the range or span there, was dropped: the range bar and the span line already show them).
+- **Cost if wrong:** one view each; `GroupColor` lost two cases, which read as blue.
+
+
+## D88: Native formats and one standard per quantity (user pick, batch A)
+
+- **Goal (user):** use native Swift where the app has custom code, and show one thing one way on every screen.
+- **Call (user):** build the audit's batch A, the items with no design choice. Disk space and transfer amounts in decimal units, as Finder; memory alone in binary units; alert thresholds for disk writes and network in decimal GB and MB (S1). Percent, watts, °C and ms through the system formats, one formatter per quantity on every screen (N1, N2, S4, S5). "No data" for a value with no reading; "Not available" only where macOS never gives one (S2, S14). One uptime style (S15). One pin control, one symbol per meaning (S17, S18). Shared helpers for copy, Show in Finder, failure alerts, the inspector title and dates (S19).
+- **Not done:** the batch B items, which change what a screen looks like, wait for mockups. `DisclosureGroup` cards, chart selection in Launch History, `inflect` in String sites and Swift Charts for the small bar charts were dropped: no lines saved, or a requirement fixes the look.
+- **Cost if wrong:** text only, except the rule thresholds: a stored binary value reads rounded down until it is edited.
+
+## D89: Batch B, the standards that change a screen (user picks)
+
+- **Goal (user):** finish the audit: one way for each thing on every screen, native where possible.
+- **Call (user), from mockups:** S7 the system "No Results" view on every list a search empties. S8 A, an Energy summary in cards, and no title row on any summary. S9 A, a grey hover outline beside the accent selection. S10 trailing numbers, header sort on every table and one set of column words. S16 the Disk cell as the Hardware cell. S3 Title Case titles and sentence-case labels. S6 one alert row. S12 plain text buttons in cards. S11 Escape and ⌘[ up one folder in Space. S13 options as checkmark toggles. N3 `.copyable` for ⌘C. N4 `.fileImporter` for file choices.
+- **Cost if wrong:** each is one view or one menu; no data changes.
+
+## D90: Event markers as wide as a cluster (user pick)
+
+- **Goal (user):** markers with counts crowded the lane and ran into each other.
+- **Options:** A, a cluster as wide as its marker (32 pt); B, the count as a badge on the symbol, 20 pt clusters; C, fixed 40 pt slots.
+- **Call (user):** A. The gap was 12 pt, but a marker with its count is about 30 pt wide.
+- **Cost if wrong:** one value; fewer, larger clusters at wide ranges.

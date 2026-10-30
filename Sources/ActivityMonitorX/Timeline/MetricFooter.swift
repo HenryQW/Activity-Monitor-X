@@ -121,7 +121,7 @@ struct MetricFooter: View {
         func temperature(_ value: KeyPath<SystemPoint, Double?>) -> String {
             let values = points.compactMap { $0[keyPath: value] }
             guard let t = live ? values.last : values.isEmpty ? nil : values.reduce(0, +) / Double(values.count) else { return "No data" }
-            return "\(t.formatted(.number.precision(.fractionLength(0)))) °C"
+            return Units.celsius(t)
         }
         func text(_ value: Double?, _ format: (Double) -> String = metric.format) -> String { value.map(format) ?? "No data" }
         /// A figure the app reads now: "now" in its label outside Live.
@@ -148,13 +148,13 @@ struct MetricFooter: View {
         case .memory:
             let pressure = live ? points.last?.pressureLevel : points.map(\.pressureLevel).filter { $0 > 0 }.max()
             return [
-                FooterFigure(label: "Physical Memory", value: bytes(Double(ProcessInfo.processInfo.physicalMemory)), help: "The memory installed in this Mac"),
-                FooterFigure(label: "Memory Used", value: text(level(\.memUsed), bytes), help: "App, wired and compressed memory: \(levelHelp.lowercased())"),
-                current("Cached Files", text(now.memory.map { Double($0.cached) }, bytes), "Memory that holds recently used files"),
-                FooterFigure(label: "Swap Used", value: text(live ? points.last?.swapUsed : peak(\.swapUsed), bytes),
+                FooterFigure(label: "Physical memory", value: bytes(Double(ProcessInfo.processInfo.physicalMemory)), help: "The memory installed in this Mac"),
+                FooterFigure(label: "Memory used", value: text(level(\.memUsed), bytes), help: "App, wired and compressed memory: \(levelHelp.lowercased())"),
+                current("Cached files", text(now.memory.map { Double($0.cached) }, bytes), "Memory that holds recently used files"),
+                FooterFigure(label: "Swap used", value: text(live ? points.last?.swapUsed : peak(\.swapUsed), bytes),
                      help: live ? "The latest recorded swap used" : "The most swap used \(window)"),
-                current("App Memory", text(now.memory.map { Double($0.app) }, bytes), "Memory that apps use"),
-                current("Wired Memory", text(now.memory.map { Double($0.wired) }, bytes), "Memory that the system keeps in RAM"),
+                current("App memory", text(now.memory.map { Double($0.app) }, bytes), "Memory that apps use"),
+                current("Wired memory", text(now.memory.map { Double($0.wired) }, bytes), "Memory that the system keeps in RAM"),
                 FooterFigure(label: "Compressed", value: text(level(\.memCompressed), bytes), help: "Compressed memory: \(levelHelp.lowercased())"),
                 FooterFigure(label: "Pressure", value: pressure.map { SystemState.pressure($0).capitalized } ?? "No data",
                      help: live ? "The latest recorded memory pressure" : "The highest memory pressure \(window)",
@@ -166,9 +166,9 @@ struct MetricFooter: View {
                 FooterFigure(label: "Write", value: text(level(\.diskW)), help: "Bytes written per second: \(levelHelp.lowercased())"),
                 FooterFigure(label: "Total read", value: about(total(\.diskR)), help: "An estimate of the bytes read \(window)"),
                 FooterFigure(label: "Total written", value: about(total(\.diskW)), help: "An estimate of the bytes written \(window)"),
-                FooterFigure(label: "Operations", value: text(level(\.diskIOPS)) { "\($0.formatted(.number.precision(.fractionLength(0))))/s" },
+                FooterFigure(label: "Operations", value: text(level(\.diskIOPS), Units.perSecond),
                      help: "Read and write operations per second: \(levelHelp.lowercased())"),
-                FooterFigure(label: "Latency", value: text(level(\.diskLatMs)) { "\($0.formatted(.number.precision(.fractionLength(2)))) ms" },
+                FooterFigure(label: "Latency", value: text(level(\.diskLatMs), Units.milliseconds),
                      help: "The time per operation: \(levelHelp.lowercased())"),
             ]
         case .network:
@@ -194,12 +194,11 @@ struct MetricFooter: View {
                 FooterFigure(label: levelLabel, value: text(average), help: "All apps' energy impact: \(levelHelp.lowercased())"),
             ]
             guard let power = now.power else { return rows }
-            let source = power.adapterConnected ? "Power adapter" + (power.adapterRating.map { ", \(Int($0)) W" } ?? "") : "Battery"
-            rows.append(current("Power source", source, "What powers this Mac"))
-            rows.append(current("System power", power.systemWatts.map { "\($0.formatted(.number.precision(.fractionLength(1)))) W" } ?? "Not reported",
+            rows.append(current("Power source", power.sourceText, "What powers this Mac"))
+            rows.append(current("Power", power.systemWatts.map { Units.watts($0) } ?? "No data",
                                 "The watts this Mac uses"))
             if let battery = power.battery {
-                rows.append(current("Battery", (battery.percent.map { "\($0)%" } ?? "No data") + (battery.charging ? ", charging" : ""),
+                rows.append(current("Battery", battery.chargeText,
                                     "The battery charge"))
                 func minutes(_ m: Int?) -> String {
                     m.map { Duration.seconds($0 * 60).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)) } ?? "Calculating"

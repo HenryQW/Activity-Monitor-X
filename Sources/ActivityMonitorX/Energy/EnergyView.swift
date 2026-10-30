@@ -10,12 +10,11 @@ struct EnergyView: View {
     @Environment(LiveModel.self) private var live
     @Environment(HistoryModel.self) private var history
     @Environment(Selection.self) private var selection
-    private let _model = State(initialValue: EnergyModel())
+    @Environment(EnergyModel.self) private var model
 
     var body: some View {
-        let model = _model.wrappedValue
         content(model)
-            .screenTitle("Energy", subtitle: model.power.map { Text(Self.status($0)) }, icon: .symbol("bolt.fill"))
+            .screenTitle("Energy", subtitle: model.power.map { Text(Self.status($0)) }, icon: .symbol("bolt"))
             .task { await model.run(client: live.client) }
     }
 
@@ -54,7 +53,7 @@ struct EnergyView: View {
                 parts.append(watts < -0.5 ? "battery helping the adapter" : watts > 0.5 || battery.charging ? "battery charging"
                              : battery.percent == 100 ? "battery charged" : "battery not charging")
             }
-            if let percent = battery.percent { parts.append((Double(percent) / 100).formatted(.percent)) }
+            if let percent = battery.percent { parts.append(Units.percent(Double(percent))) }
         }
         return parts.joined(separator: ", ")
     }
@@ -83,13 +82,12 @@ private struct PowerStrip: View {
         let power = model.power
         let battery = power?.battery
         var figures = [
-            FooterFigure(label: "Power now", value: model.points.last?.watts.map { EnergyDiagram.watts($0) } ?? "Not available",
+            FooterFigure(label: "Power now", value: model.points.last?.watts.map { Units.watts($0) } ?? "No data",
                          help: "The watts this Mac uses"),
-            FooterFigure(label: "Power source", value: power.map { $0.adapterConnected ? "Adapter" + ($0.adapterRating.map { ", \(Int($0)) W" } ?? "") : "Battery" }
-                            ?? "Not available", help: "What powers this Mac"),
+            FooterFigure(label: "Power source", value: power.map(\.sourceText) ?? "No data", help: "What powers this Mac"),
         ]
         if let battery {
-            figures.append(FooterFigure(label: battery.charging ? "Battery, charging" : "Battery", value: battery.percent.map { "\($0)%" } ?? "No data",
+            figures.append(FooterFigure(label: "Battery", value: battery.chargeText,
                                         help: "The battery charge"))
         }
         figures.append(FooterFigure(label: top.map { "Most energy, \($0.share.formatted(.percent.precision(.fractionLength(0))))" } ?? "Most energy",
@@ -110,12 +108,13 @@ private struct PowerStrip: View {
             }
             .help("Sort the apps by watts or by name")
         }
+        .accessibilityLabel("Energy summary")
     }
 
     @ViewBuilder private func chart(_ drawn: [(date: Date, watts: Double, segment: Int)]) -> some View {
         let end = model.points.last?.date ?? Date()
         if drawn.isEmpty {
-            Text(model.points.isEmpty ? "Reading…" : "Not available").foregroundStyle(.secondary).frame(width: 140, height: 32)
+            Text("No data").foregroundStyle(.secondary).frame(width: 140, height: 32)
         } else {
             Chart {
                 // One vectorized plot, not a mark per point.
@@ -128,7 +127,7 @@ private struct PowerStrip: View {
             .frame(width: 140, height: 32)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("System power, last 5 minutes")
-            .accessibilityValue(model.points.last?.watts.map { EnergyDiagram.watts($0) } ?? "Not available")
+            .accessibilityValue(model.points.last?.watts.map { Units.watts($0) } ?? "No data")
             .help("System power in the last 5 minutes")
         }
     }

@@ -108,6 +108,15 @@ import Testing
         #expect(one.nodes.allSatisfy { $0.height == 100 } && one.bands[0].thickness == 100)
     }
 
+    @Test func columnXKeepsLabelRoomAndShrinksItLast() {
+        let x = { (count: Int, width: Double) in
+            SankeyLayout.columnX(count: count, width: width, nodeWidth: 10, labelled: 2, labelStep: 260, minStep: 40)
+        }
+        #expect(x(3, 500) == [0, 245, 490])
+        #expect(x(4, 500) == [0, 115, 230, 490])
+        #expect(x(4, 300) == [0, 40, 80, 290])
+    }
+
     @Test func spreadKeepsLabelsApartInside() {
         #expect(SankeyLayout.spread([0, 1, 2], spacing: 10, in: 0...100) == [0, 10, 20])
         #expect(SankeyLayout.spread([95, 99], spacing: 10, in: 0...100) == [90, 100])

@@ -67,7 +67,7 @@ struct CalendarPreview: View {
         if !alerts.isEmpty { sections.append(PreviewSection(heading: "Alerts", rows: alerts)) }
         let hint = "Click to select · double-click to open the \(page.period.zoomedIn?.rawValue ?? "hour")"
         return PreviewCard(size: .large, title: title, span: spanLines, stats: stats, sections: sections, hint: hint) {
-            VStack(spacing: 2) {
+            VStack(spacing: Layout.gap) {
                 ValueLines(values: cell.lines, top: page.top, status: page.levels, severities: page.severities(cell),
                            lineWidth: page.period == .month ? 8 : 22)
                 axis

@@ -87,6 +87,17 @@ import Testing
         }
     }
 
+    /// The old binary maximums, 1000 GiB per hour and 10000 MiB/s, are above the decimal ones (D88): they clamp, so the
+    /// file still loads.
+    @Test func oldBinaryMaximumsClamp() throws {
+        let data = Data(#"""
+            {"version":1,"settings":{"rules":{"disk_writes":{"bytesPerHour":1073741824000},
+            "network":{"bytesPerSecond":10485760000}}}}
+            """#.utf8)
+        let rules = try DaemonSettings.decodeValidated(data).rules
+        #expect(rules.diskWrites.bytesPerHour == 1_000_000_000_000 && rules.network.bytesPerSecond == 10_000_000_000)
+    }
+
     @Test func missingFieldKeepsTheOtherValues() throws {
         let data = Data(#"""
             {"version":1,"settings":{"size_cap_bytes":5000000000,"rules":{"preset":"strict",
@@ -126,7 +137,7 @@ import Testing
         let rules = [AlertPreset.relaxed, .balanced, .strict].map { AlertRules.make($0, for: small) }
         #expect(rules.map(\.sustainedCPU.percent) == [400, 200, 96])
         #expect(rules.map(\.memoryJump.megabytes) == [983, 492, 246])
-        #expect(rules.map(\.diskWrites.bytesPerHour) == [50 << 30, 20 << 30, 10 << 30])
+        #expect(rules.map(\.diskWrites.bytesPerHour) == [50_000_000_000, 20_000_000_000, 10_000_000_000])
         #expect(rules.map(\.freeSpace.percentFree) == [5, 10, 15])
     }
 
@@ -146,8 +157,8 @@ import Testing
         #expect(rules.memoryGrowth.megabytes == 1229 && rules.memoryGrowth.minutes == 30)  // 1.2 GB
         #expect(rules.memoryJump.megabytes == 2949)  // 2.9 GB
         #expect(rules.pressure.level == .warning && rules.thermal.state == .serious && rules.thermal.minutes == 5)
-        #expect(rules.diskWrites.bytesPerHour == 20 << 30)
-        #expect(rules.network.bytesPerSecond == 10 << 20 && rules.network.minutes == 5)
+        #expect(rules.diskWrites.bytesPerHour == 20_000_000_000)
+        #expect(rules.network.bytesPerSecond == 10_000_000 && rules.network.minutes == 5)
         #expect(rules.energy.impact == 300 && rules.energy.minutes == 10)
         #expect(rules.gpu.percent == 50 && rules.gpu.minutes == 5)
         #expect(rules.swap.percentOfMemory == 50 && rules.freeSpace.percentFree == 10)
@@ -180,8 +191,8 @@ import Testing
             ("Size cap must be 1 to 50 GB", { $0.sizeCapBytes = 50_000_000_001 }),
             ("A terminal bundle ID is empty", { $0.terminalBundleIDs = ["com.apple.Terminal", " \n"] }),
             ("Use at most 32 terminal apps", { $0.terminalBundleIDs = (0...32).map { "app.\($0)" } }),
-            ("Sustained CPU must be 10 to 1000 %", { $0.rules.sustainedCPU.percent = 9 }),
-            ("Sustained CPU must be 10 to 1000 %", { $0.rules.sustainedCPU.percent = 1001 }),
+            ("Sustained CPU must be 10 to 1000%", { $0.rules.sustainedCPU.percent = 9 }),
+            ("Sustained CPU must be 10 to 1000%", { $0.rules.sustainedCPU.percent = 1001 }),
             ("Sustained CPU time must be 1 to 60 min", { $0.rules.sustainedCPU.minutes = 0 }),
             ("Sustained CPU time must be 1 to 60 min", { $0.rules.sustainedCPU.minutes = 61 }),
             ("Memory growth time must be 10 to 120 min", { $0.rules.memoryGrowth.minutes = 9 }),
@@ -192,18 +203,18 @@ import Testing
             ("Memory jump must be 128 to 16384 MB", { $0.rules.memoryJump.megabytes = 16385 }),
             ("Thermal time must be 1 to 60 min", { $0.rules.thermal.minutes = 0 }),
             ("Thermal time must be 1 to 60 min", { $0.rules.thermal.minutes = 61 }),
-            ("Disk writes must be 1 to 1000 GB per hour", { $0.rules.diskWrites.bytesPerHour = (1 << 30) - 1 }),
-            ("Network must be 1 to 10000 MB/s", { $0.rules.network.bytesPerSecond = (10_000 << 20) + 1 }),
+            ("Disk writes must be 1 to 1000 GB per hour", { $0.rules.diskWrites.bytesPerHour = 999_999_999 }),
+            ("Network must be 1 to 10000 MB/s", { $0.rules.network.bytesPerSecond = 10_000_000_001 }),
             ("Network time must be 1 to 60 min", { $0.rules.network.minutes = 0 }),
             ("Energy impact must be 10 to 5000", { $0.rules.energy.impact = 9 }),
             ("Energy time must be 1 to 60 min", { $0.rules.energy.minutes = 61 }),
-            ("GPU must be 10 to 100 %", { $0.rules.gpu.percent = 101 }),
+            ("GPU must be 10 to 100%", { $0.rules.gpu.percent = 101 }),
             ("GPU time must be 1 to 60 min", { $0.rules.gpu.minutes = 0 }),
-            ("System CPU must be 10 to 100 %", { $0.rules.systemCPU.critical = 101 }),
+            ("System CPU must be 10 to 100%", { $0.rules.systemCPU.critical = 101 }),
             ("System CPU warning must be below critical", { $0.rules.systemCPU.warning = 90 }),
             ("System CPU time must be 1 to 60 min", { $0.rules.systemCPU.minutes = 0 }),
-            ("Swap must be 10 to 200 % of memory", { $0.rules.swap.percentOfMemory = 9 }),
-            ("Free space must be 1 to 50 %", { $0.rules.freeSpace.percentFree = 51 }),
+            ("Swap must be 10 to 200% of memory", { $0.rules.swap.percentOfMemory = 9 }),
+            ("Free space must be 1 to 50%", { $0.rules.freeSpace.percentFree = 51 }),
         ]
         for (message, change) in cases {
             var settings = DaemonSettings()
@@ -217,14 +228,14 @@ import Testing
         big.rules.memoryJump.megabytes = 196_608
         #expect(big.validationProblem(for: large) == nil)
         big.rules.sustainedCPU.percent = 2401
-        #expect(big.validationProblem(for: large) == "Sustained CPU must be 10 to 2400 %")
+        #expect(big.validationProblem(for: large) == "Sustained CPU must be 10 to 2400%")
         // An app's own values are checked as the global ones.
         var app = DaemonSettings()
         var own = AlertRules.AppOverride()
         own.gpu = AlertRules.GPU()
         own.gpu?.percent = 101
         app.rules.apps["/Applications/A.app"] = own
-        #expect(app.validationProblem(for: small) == "A.app: GPU must be 10 to 100 %")
+        #expect(app.validationProblem(for: small) == "A.app: GPU must be 10 to 100%")
         app.rules.apps = Dictionary(uniqueKeysWithValues: (0...AlertRules.maxApps).map { ("app\($0)", AlertRules.AppOverride()) })
         #expect(app.validationProblem(for: small) == "Use at most 50 apps with their own alert rules")
         var low = DaemonSettings()

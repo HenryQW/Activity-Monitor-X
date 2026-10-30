@@ -9,9 +9,10 @@ public enum SankeyLayout {
 
     /// Nodes are given by column; a node is as tall as the larger of what flows in and out of it. Each column stacks its
     /// nodes in order with `gap` between them, centred; one scale serves all columns, so the fullest column fills
-    /// `size.height`. Bands leave and enter nodes in link order, top first. All weights 0 give zero heights.
+    /// `size.height`. Bands leave and enter nodes in link order, top first. All weights 0 give zero heights. Columns are
+    /// at `xs` when given, else evenly across `size.width`.
     public static func layout(columns: [Int], links: [(from: Int, to: Int, weight: Double)], size: CGSize,
-                              nodeWidth: Double, gap: Double) -> (nodes: [CGRect], bands: [Band]) {
+                              nodeWidth: Double, gap: Double, xs: [Double]? = nil) -> (nodes: [CGRect], bands: [Band]) {
         var inflow = [Double](repeating: 0, count: columns.count), outflow = inflow
         for link in links {
             outflow[link.from] += link.weight
@@ -26,7 +27,7 @@ public enum SankeyLayout {
         }.min().map { max(0, $0) } ?? 0
         var nodes = [CGRect](repeating: .zero, count: columns.count)
         for (c, column) in members.enumerated() {
-            let x = count > 1 ? Double(c) * (size.width - nodeWidth) / Double(count - 1) : 0
+            let x = xs?[c] ?? (count > 1 ? Double(c) * (size.width - nodeWidth) / Double(count - 1) : 0)
             var y = (size.height - column.reduce(0) { $0 + weights[$1] * scale } - Double(max(0, column.count - 1)) * gap) / 2
             for i in column {
                 nodes[i] = CGRect(x: x, y: y, width: nodeWidth, height: weights[i] * scale)
@@ -41,6 +42,19 @@ public enum SankeyLayout {
                         x1: nodes[link.to].minX, y1: nodes[link.to].minY + into[link.to], thickness: thickness)
         }
         return (nodes, bands)
+    }
+
+    /// Column positions in `width` where the columns from `labelled` on carry labels at their right: each gap between them
+    /// is `labelStep`, and the columns before share what is left equally. Where `width` is short, the labelled gaps shrink
+    /// first, to keep each earlier gap `minStep` wide.
+    public static func columnX(count: Int, width: Double, nodeWidth: Double, labelled: Int, labelStep: Double,
+                               minStep: Double) -> [Double] {
+        guard count > 1 else { return [0] }
+        let span = width - nodeWidth
+        let early = min(labelled, count - 1), late = count - 1 - early
+        let step = late == 0 ? 0 : max(0, min(labelStep, (span - Double(early) * minStep) / Double(late)))
+        let first = (span - Double(late) * step) / Double(early)
+        return (0..<count).map { c in c <= early ? Double(c) * first : Double(early) * first + Double(c - early) * step }
     }
 
     /// Label centres moved the least from `centers` (top to bottom) so that they stay `spacing` apart inside `range`

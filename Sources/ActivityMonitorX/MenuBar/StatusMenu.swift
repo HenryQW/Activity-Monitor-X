@@ -40,9 +40,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         allAlertsItem.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: nil)
         allAlertsItem.toolTip = "Show all alerts in the Alerts screen"
         (appItems + alertItems + [unreadItem, allAlertsItem]).forEach { $0.target = self }
-        // macOS 27 hides most menu images by default; the severity symbol carries meaning and every action has an icon
-        // (user call, D69), so they always show.
-        if #available(macOS 27, *) { (alertItems + [unreadItem, allAlertsItem]).forEach { $0.preferredImageVisibility = .visible } }
+        // macOS 27 hides most menu images by default; the severity symbol and the app icon carry meaning and every action
+        // has an icon (user call, D69), so they always show.
+        if #available(macOS 27, *) { (appItems + alertItems + [unreadItem, allAlertsItem]).forEach { $0.preferredImageVisibility = .visible } }
         // The column headings over the CPU and memory values (MW1).
         let appsHeader = NSMenuItem.sectionHeader(title: "Top Apps")
         appsHeader.attributedTitle = Self.columns("Top Apps", "CPU", "Memory", font: NSFont.menuFont(ofSize: NSFont.smallSystemFontSize),
@@ -269,6 +269,6 @@ private struct GaugeReadout: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
-        .accessibilityValue([percent.map { "\($0) percent" } ?? "No reading yet", word].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityValue([percent.map { "\($0) percent" } ?? "No data", word].compactMap { $0 }.joined(separator: ", "))
     }
 }

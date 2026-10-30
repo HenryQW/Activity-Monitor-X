@@ -58,7 +58,7 @@ struct MainWindow: View {
         case "alerts": Label("Alerts", systemImage: "exclamationmark.triangle").badge(alerts.unread)
                 .badgeProminence(alerts.hasUnreadCritical ? .increased : .standard).tag(SidebarItem.alerts)
         case "disk": Label("Disk", systemImage: "internaldrive").tag(SidebarItem.disk)
-        case "energy": Label("Energy", systemImage: "bolt.fill").tag(SidebarItem.energy)
+        case "energy": Label("Energy", systemImage: "bolt").tag(SidebarItem.energy)
         default: Label("Hardware", systemImage: "cpu").tag(SidebarItem.hardware)
         }
     }
@@ -90,7 +90,9 @@ struct MainWindow: View {
                             .contextMenu {
                                 Group {
                                     Button("Edit Group…", systemImage: "pencil") { appSelection.editingGroup = group }
+                                        .help("Edit the name, colour and rules of \(group.name)")
                                     Button("Delete Group…", systemImage: "trash") { _deleting.wrappedValue = group }
+                                        .help("Delete the group \(group.name), after you confirm")
                                 }
                                     .labelStyle(.titleAndIcon)
                             }
@@ -120,8 +122,8 @@ struct MainWindow: View {
                     .buttonStyle(.plain)
                     .help("Add a group of apps to the sidebar")
                     .disabled(groups.loadError != nil || appSelection.editingGroup != nil)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, Layout.padding)
+                    .padding(.vertical, Layout.inset)
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 320)
             .toolbar { SidebarButton(shown: _columns.wrappedValue != .detailOnly) }
@@ -287,8 +289,7 @@ private struct ScreenInspector: View {
             case .disk where selection.diskPane == .space: DiskMapInspector()
             case .disk: DiskInspector()
             case .hardware: HardwareInspector()
-            case .energy where selection.app == nil:
-                ContentUnavailableView("No Selection", systemImage: "bolt", description: Text("Click an app in the energy flow."))
+            case .energy where selection.app == nil: EnergyInspector()
             default: InspectorView()
             }
         }
@@ -352,7 +353,7 @@ private struct InspectorPane<Content: View>: View {
                     .padding([.vertical, .trailing], Layout.inset)
                     .accessibilityElement(children: .contain)
                     .accessibilityLabel("Inspector")
-                    .transition(reduceMotion ? .opacity : .move(edge: .trailing))
+                    .transition(reduceMotion || !Motion.on ? .opacity : .move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

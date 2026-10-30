@@ -25,8 +25,14 @@ struct GoCommands: Commands {
                     .keyboardShortcut("4")
                 Button("Calendar", systemImage: "calendar") { selection.sidebar = .calendar }
                     .keyboardShortcut("5")
-                Button("Energy", systemImage: "bolt.fill") { selection.sidebar = .energy }
+                Button("Energy", systemImage: "bolt") { selection.sidebar = .energy }
                     .keyboardShortcut("6")
+                Divider()
+                // The Disk screen's two panes, checked while one shows (S11).
+                ForEach([(DiskPane.activity, "Disk Activity", "chart.xyaxis.line"), (.space, "Disk Space", "chart.pie")], id: \.0) { pane, title, symbol in
+                    Toggle(title, systemImage: symbol, isOn: Binding(get: { selection.sidebar == .disk && selection.diskPane == pane },
+                                                                     set: { _ in selection.sidebar = .disk; selection.diskPane = pane }))
+                }
                 Divider()
             }
                 .labelStyle(.titleAndIcon)
@@ -37,15 +43,16 @@ struct GoCommands: Commands {
                     selection.inspectorShown.toggle()
                 }
                     .keyboardShortcut("i", modifiers: [.command, .option])
-                Button(selection.showChart ? "Hide Chart" : "Show Chart", systemImage: "chart.xyaxis.line") { selection.showChart.toggle() }
+                // Options are checkmark toggles, as in More (S13); the inspector is a pane, so its title flips as Sidebar's does.
+                Toggle("Show Chart", systemImage: "chart.xyaxis.line", isOn: Bindable(selection).showChart)
                     .disabled((selection.sidebar ?? .apps) != .apps)
                 Toggle("Hide Quiet System Processes", systemImage: "eye.slash", isOn: Bindable(history).hideQuietSystem)
                     .disabled(selection.isSystem || selection.sidebar == .alerts)
-                Button(alerts.showDismissed ? "Hide Dismissed Alerts" : "Show Dismissed Alerts", systemImage: alerts.showDismissed ? "eye.slash" : "eye") { alerts.showDismissed.toggle() }
+                Toggle("Show Dismissed Alerts", systemImage: "eye", isOn: Bindable(alerts).showDismissed)
                     .disabled(selection.sidebar != .alerts)
                 Button("Dismiss All Alerts", systemImage: "xmark.circle") { alerts.dismiss(alerts.undismissed(search: selection.search)) }
                     .disabled(selection.sidebar != .alerts || alerts.undismissed(search: selection.search).isEmpty)
-                // Calendar: the double-click and Escape of the cells; the charts: the zoom pill.
+                // Calendar: the double-click and Escape of the cells; Space: the folder above, as Escape; the charts: the zoom pill.
                 Button("Zoom In", systemImage: "plus.magnifyingglass") {
                     if selection.sidebar == .calendar { calendar.selectedCell.map { calendar.zoomIn(at: $0.start) } } else { history.zoomIn() }
                 }
@@ -53,10 +60,11 @@ struct GoCommands: Commands {
                     .disabled(selection.sidebar == .calendar ? calendar.selectedCell == nil || calendar.period.zoomedIn == nil
                               : !chartZoom || !history.canZoomIn)
                 Button("Zoom Out", systemImage: "minus.magnifyingglass") {
-                    if selection.sidebar == .calendar { calendar.zoomOut() } else { history.zoomOut() }
+                    if selection.showsSpace { diskMap.up() } else if selection.sidebar == .calendar { calendar.zoomOut() } else { history.zoomOut() }
                 }
                     .keyboardShortcut("[")
-                    .disabled(selection.sidebar == .calendar ? calendar.period.zoomedOut == nil : !chartZoom || history.widerRange == nil)
+                    .disabled(selection.showsSpace ? diskMap.focus.isEmpty
+                              : selection.sidebar == .calendar ? calendar.period.zoomedOut == nil : !chartZoom || history.widerRange == nil)
                 Divider()
                 Button("Refresh", systemImage: "arrow.clockwise") { selection.refreshes += 1 }
                     .keyboardShortcut("r")

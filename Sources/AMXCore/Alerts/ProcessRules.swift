@@ -120,17 +120,17 @@ struct ProcessRules: Sendable {
         let cpu = r.sustainedCPU, disk = r.diskWrites, net = r.network, energy = r.energy, gpu = r.gpu
         return [
             AppRule(name: RuleName.sustainedCPU, enabled: cpu.enabled, threshold: cpu.percent, length: ticks(cpu.minutes),
-                    total: false, value: \.cpu) { "\($0) used \(Int($1.rounded())) % CPU for \(cpu.minutes) min" },
+                    total: false, value: \.cpu) { "\($0) used \(Int($1.rounded()))% CPU for \(cpu.minutes) min" },
             AppRule(name: RuleName.diskWrites, enabled: disk.enabled, threshold: Double(disk.bytesPerHour), length: 60,
-                    total: true, value: { $0.diskW * AMX.tick }) { "\($0) wrote \(EventEngine.bytes(UInt64($1))) in 1 hour" },
+                    total: true, value: { $0.diskW * AMX.tick }) { "\($0) wrote \(Metric.bytes($1)) in 1 hour" },
             AppRule(name: RuleName.network, enabled: net.enabled, threshold: Double(net.bytesPerSecond), length: ticks(net.minutes),
                     total: false, value: { $0.netIn + $0.netOut }) {
-                "\($0) received and sent \(EventEngine.bytes(UInt64($1)))/s for \(net.minutes) min"
+                "\($0) received and sent \(Metric.bytes($1))/s for \(net.minutes) min"
             },
             AppRule(name: RuleName.energy, enabled: energy.enabled, threshold: Double(energy.impact), length: ticks(energy.minutes),
                     total: false, value: \.energy) { "\($0) had energy impact \(Int($1.rounded())) for \(energy.minutes) min" },
             AppRule(name: RuleName.gpu, enabled: gpu.enabled, threshold: Double(gpu.percent), length: ticks(gpu.minutes),
-                    total: false, value: \.gpu) { "\($0) used \(Int($1.rounded())) % GPU for \(gpu.minutes) min" },
+                    total: false, value: \.gpu) { "\($0) used \(Int($1.rounded()))% GPU for \(gpu.minutes) min" },
         ]
     }
 

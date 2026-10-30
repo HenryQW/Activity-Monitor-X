@@ -42,7 +42,9 @@ struct RuleEditor: View {
         if kind != .not {
             HStack {
                 Button("Add Condition") { rule.wrappedValue.children.append(.condition(.empty)) }
+                    .help("Add a condition to this group of rules")
                 Button("Add Group") { rule.wrappedValue.children.append(.all([.condition(.empty)])) }
+                    .help("Add a nested group of conditions")
             }
             .padding(.leading, indent + 20)
         }

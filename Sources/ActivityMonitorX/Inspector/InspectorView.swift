@@ -58,8 +58,8 @@ struct InspectorView: View {
         let details = AppKey.details(for: top.map(\.app))
         let span = isLive ? nil : history.span
         let events = history.events.filter { event in (event.level ?? 0) >= 1 && span.map { $0.contains(event.ts) } ?? true }
+        // No title row: the title pill already names the scope.
         return Form {
-            Section { Text(history.scope?.name ?? "All Apps").font(.title3.bold()).overlayScrollers() }
             SystemHealthCard(isLive: isLive)
             CardSection("Top Apps", summary: top.first.map { Text("\($0.app.name) \(metric.format($0.average))") }) {
                 if top.isEmpty {
@@ -76,6 +76,7 @@ struct InspectorView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .help("Show \(rank.app.name) in the inspector")
                 }
             }
             // Live loads no events, and no range before it.
@@ -112,10 +113,10 @@ struct InspectorView: View {
             if tab == .overview {
                 Form {
                     Section {
-                        HStack(spacing: 8) {
+                        HStack(spacing: Layout.inset) {
                             AppColorDot(app: rank.app, history: history, color: color, size: 16)
                             Image(nsImage: AppIcon.image(for: rank.app)).resizable().frame(width: 32, height: 32)
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: Layout.gap) {
                                 Text(rank.app.name).font(.title3.bold()).lineLimit(1).help(rank.app.key)
                                 // The bundle path, or what tells this app from another app of its name in the range.
                                 if let path = rank.app.key.hasPrefix("/") ? (rank.app.key as NSString).abbreviatingWithTildeInPath : detail {
@@ -174,7 +175,7 @@ struct InspectorView: View {
                     }
                     .monospacedDigit()
                     if let entry = history.glossaryEntry(app: rank.app, process: selection.process) {
-                        CardSection("About") {
+                        CardSection("About", summary: Text(entry.vendor ?? entry.title)) {
                             LabeledContent("Name", value: entry.title)
                             if let vendor = entry.vendor { LabeledContent("Vendor", value: vendor) }
                             Text(entry.description)
@@ -184,7 +185,7 @@ struct InspectorView: View {
                         }
                     }
                     if let peak = rank.processes.max(by: { $0.peak < $1.peak }) {
-                        CardSection("Peak Process") {
+                        CardSection("Peak Process", summary: Text("\(peak.name) \(metric.format(peak.peak))")) {
                             LabeledContent("\(peak.name) (\(String(peak.pid)))", value: metric.format(peak.peak)).monospacedDigit()
                         }
                     }
@@ -207,7 +208,7 @@ struct InspectorView: View {
                             // By name: the first process of a name changes as averages shift (each second in Live), which would close an open row.
                             ForEach(runningRows, id: \.[0].name) { processRows($0, of: rank.app) }
                         } header: {
-                            Text("Running (\(running.count.formatted()))").overlayScrollers()
+                            ListCardHeader(title: "Running", count: running.count)
                         }
                     }
                     if !exited.isEmpty {
@@ -219,7 +220,7 @@ struct InspectorView: View {
                                     .help("Show the list of all exited processes")
                             }
                         } header: {
-                            Text("Exited (\(exited.count.formatted()))").overlayScrollers()
+                            ListCardHeader(title: "Exited", count: exited.count)
                         }
                     }
                 }
@@ -247,20 +248,15 @@ struct InspectorView: View {
     /// and its confirmation offers Force Quit, so no destructive action is one click from the app's name.
     private func actions(_ rank: AppRank) -> some View {
         let app = rank.app
-        let isPinned = selection.isPinned(app)
         let quit = selection.quitRequest(of: app)
         func others(_ style: some LabelStyle) -> some View {
-            HStack(spacing: 6) {
-                Button(isPinned ? "Unpin" : "Pin", systemImage: isPinned ? "pin.slash" : "pin") { selection.togglePin(app) }
-                    .accessibilityLabel(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
-                    .help(isPinned ? "Unpin \(app.name)" : "Pin \(app.name) to the sidebar")
-                Button("Finder", systemImage: "folder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: app.key)])
-                }
-                .accessibilityLabel("Show \(app.name) in Finder")
-                // A bare executable name has no path to show.
-                .disabled(!app.key.hasPrefix("/"))
-                .help(app.key.hasPrefix("/") ? "Show \(app.name) in the Finder" : "\(app.name) has no app bundle to show")
+            HStack(spacing: Layout.gap) {
+                PinButton(app: app, selection: selection, short: true)
+                ShowInFinderButton(title: "Finder", path: app.key,
+                                   help: app.key.hasPrefix("/") ? "Show \(app.name) in Finder" : "\(app.name) has no app bundle to show")
+                    .accessibilityLabel("Show \(app.name) in Finder")
+                    // A bare executable name has no path to show.
+                    .disabled(!app.key.hasPrefix("/"))
                 Button("Rules…", systemImage: "bell") { _rulesShown.wrappedValue = true }
                     .accessibilityLabel("Alert Rules for \(app.name)")
                     .help("Mute alerts for \(app.name) or give it its own alert values")
@@ -271,8 +267,8 @@ struct InspectorView: View {
             .disabled(quit == nil)
             .help(quitHelp(rank, quit))
         return ViewThatFits(in: .horizontal) {
-            HStack { others(.titleAndIcon); Spacer(minLength: 8); quitButton }
-            HStack { others(.iconOnly); Spacer(minLength: 8); quitButton }
+            HStack { others(.titleAndIcon); Spacer(minLength: Layout.inset); quitButton }
+            HStack { others(.iconOnly); Spacer(minLength: Layout.inset); quitButton }
         }
         .controlSize(.small)
     }
@@ -329,12 +325,12 @@ struct InspectorView: View {
             .tag(ProcKey(p))
             .contextMenu {
                 Group {
-                    Button("Copy PID", systemImage: "doc.on.doc") { DiskItemMenu.copy(String(p.pid)) }
-                        .help("Copy the process ID \(String(p.pid))")
                     if !p.exited {
-                        Divider()
                         QuitButtons(app: nil, process: p, name: p.name)
+                        Divider()
                     }
+                    Button("Copy PID", systemImage: "doc.on.doc") { Pasteboard.copy(String(p.pid)) }
+                        .help("Copy the process ID \(String(p.pid))")
                 }
                 .labelStyle(.titleAndIcon)
             }
@@ -347,7 +343,7 @@ struct InspectorView: View {
     }
 }
 
-/// An event's message with its date and time below; a click selects its time on the chart.
+/// An alert row; a click selects its time on the chart.
 private struct EventRow: View {
     @Environment(HistoryModel.self) private var history
     @Environment(Selection.self) private var selection
@@ -359,13 +355,7 @@ private struct EventRow: View {
             history.selectTime(around: event.ts)
             selection.showChart = true
         } label: {
-            VStack(alignment: .leading) {
-                Text(event.message)
-                Text(Date(timeIntervalSince1970: event.ts).formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            AlertRow(event: event).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Select this time on the chart")
@@ -400,4 +390,22 @@ private extension ProcessRank {
 private extension SeriesPoint {
     /// The bucket's start, for a chart's time axis.
     var date: Date { Date(timeIntervalSince1970: bucket) }
+}
+
+/// A Processes section's title row, as a card's (INS-10): the title, then the count at the right.
+private struct ListCardHeader: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack {
+            Text(title).fontWeight(.semibold)
+            Spacer(minLength: Layout.inset)
+            Text(count.formatted()).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .font(.body)
+        .foregroundStyle(.primary)
+        .overlayScrollers()
+        .accessibilityElement(children: .combine)
+    }
 }

@@ -13,6 +13,7 @@ struct CalendarInspector: View {
     private let _apps = State<[AppRank]?>(initialValue: nil)
     private let _comparison = State<CalendarComparison?>(initialValue: nil)
     private let _reading = State(initialValue: true)
+    private let _allAlerts = State(initialValue: false)
 
     private struct Read: Equatable {
         let start: Double
@@ -45,6 +46,8 @@ struct CalendarInspector: View {
             }
             .formStyle(.grouped)
             .task(id: read(page, cells)) { await load(read(page, cells), page) }
+            // Show All is for one cell's alerts.
+            .onChange(of: model.selectedCell?.start) { _allAlerts.wrappedValue = false }
         } else {
             ContentUnavailableView("No Selection", systemImage: "calendar",
                                    description: Text("Click a day, an hour or a block of hours to see its details."))
@@ -90,8 +93,8 @@ struct CalendarInspector: View {
         case .day: "\(day), \(start.formatted(.dateTime.hour()))"
         case .hour: "\(day), \(start.formatted(.dateTime.hour().minute())) to \(Date(timeIntervalSince1970: cell.end).formatted(.dateTime.hour().minute()))"
         }
-        Section { Text(title).font(.title3.bold()).overlayScrollers() }
-        CardSection("Summary") {
+        InspectorTitle(title)
+        CardSection("Summary", summary: cell.value.map { Text("\(metric.format($0)) average") }) {
             if let value = cell.value {
                 LabeledContent("Average") {
                     VStack(alignment: .trailing) {
@@ -114,16 +117,16 @@ struct CalendarInspector: View {
             }
         }
         .monospacedDigit()
-        CardSection(page.bucket < 3600 ? "Lines" : "Hours") {
+        CardSection(page.bucket < 3600 ? "Lines" : "Hours", summary: cell.peak.map { Text("\(metric.format(cell.lines[$0]!)) peak") }) {
             CalendarLinesChart(cell: cell, page: page, colors: colors)
         }
-        CardSection("Top Apps") {
+        CardSection("Top Apps", summary: cell.top.first.map { Text("\($0.app.name) \(metric.format($0.value))") }) {
             if cell.top.isEmpty { Text("No apps").foregroundStyle(.secondary) }
             ForEach(cell.top, id: \.app) { entry in
                 LabeledContent {
                     Text(metric.format(entry.value)).monospacedDigit()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: Layout.gap) {
                         Circle().fill(colors[entry.app] ?? .secondary).frame(width: 9, height: 9)
                         Text(entry.app.name).lineLimit(1)
                     }
@@ -135,11 +138,10 @@ struct CalendarInspector: View {
             HStack {
                 Spacer()
                 if let deeper = page.period.zoomedIn {
-                    Button("Open \(deeper.rawValue.capitalized)") { model.zoomIn(at: cell.start) }
+                    Button("Show \(deeper.rawValue.capitalized)") { model.zoomIn(at: cell.start) }
                         .help("Show this \(page.period == .month ? "day" : page.period == .week ? "block of hours" : "hour") in the finer period")
                 }
                 Button("Show in Apps") { selection.reveal(from: cell.start, to: cell.end, history: history) }
-                    .buttonStyle(.borderedProminent)
                     .help("Open Apps at this time")
             }
         }
@@ -148,16 +150,12 @@ struct CalendarInspector: View {
     @ViewBuilder private func alerts(_ events: [EventMark]) -> some View {
         CardSection("Alerts", summary: Text(events.count.formatted())) {
             if events.isEmpty { Text("No alerts").foregroundStyle(.secondary) }
-            ForEach(events.prefix(8)) { event in
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    SeverityIcon(severity: event.severity >= 2 ? 2 : 1)
-                    VStack(alignment: .leading) {
-                        Text(event.message)
-                        Text(Date(timeIntervalSince1970: event.ts).formatted(.dateTime.hour().minute())).font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+            ForEach(events.prefix(_allAlerts.wrappedValue ? .max : 8)) { AlertRow(event: $0) }
+            if events.count > 8 && !_allAlerts.wrappedValue {
+                Button("Show All \(events.count.formatted())") { _allAlerts.wrappedValue = true }
+                    .buttonStyle(.link)
+                    .help("Show all the alerts of this time")
             }
-            if events.count > 8 { Text("and \(events.count - 8) more").foregroundStyle(.secondary) }
         }
     }
 
@@ -176,14 +174,14 @@ struct CalendarInspector: View {
         let time = Date.FormatStyle.dateTime.hour().minute()
         let first = Date(timeIntervalSince1970: span.start), last = Date(timeIntervalSince1970: span.end)
         let day = first.formatted(.dateTime.weekday(.wide).day().month(.wide))
-        Section { Text("\(day), \(first.formatted(time)) to \(last.formatted(time))").font(.title3.bold()).overlayScrollers() }
-        CardSection("Summary") {
+        InspectorTitle("\(day), \(first.formatted(time)) to \(last.formatted(time))")
+        CardSection("Summary", summary: values.isEmpty ? nil : Text("\(metric.format(values.reduce(0, +) / Double(values.count))) average")) {
             if !values.isEmpty { LabeledContent("Average", value: metric.format(values.reduce(0, +) / Double(values.count))) }
             if let peak, slots.count > 1 { LabeledContent("Peak", value: "\(metric.format(peak.value!)) at \(Date(timeIntervalSince1970: peak.start).formatted(time))") }
         }
         .monospacedDigit()
-        CardSection("Lines") {
-            VStack(spacing: 2) {
+        CardSection("Lines", summary: peak.map { Text("\(metric.format($0.value!)) peak") }) {
+            VStack(spacing: Layout.gap) {
                 ValueLines(values: slots.map(\.value), top: page.top, status: page.levels, severities: slots.map(\.severity), lineWidth: 6)
                     .frame(height: 70)
                 HStack {
@@ -196,7 +194,7 @@ struct CalendarInspector: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Lines of the selected time")
         }
-        CardSection("Top Apps") {
+        CardSection("Top Apps", summary: _apps.wrappedValue?.first.map { Text("\($0.app.name) \(metric.format($0.average))") }) {
             if _reading.wrappedValue {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let apps = _apps.wrappedValue {
@@ -205,7 +203,7 @@ struct CalendarInspector: View {
                     LabeledContent {
                         Text(metric.format(rank.average)).monospacedDigit()
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Layout.gap) {
                             Circle().fill(colors[rank.app] ?? .secondary).frame(width: 9, height: 9)
                             Text(rank.app.name).lineLimit(1)
                         }
@@ -219,11 +217,10 @@ struct CalendarInspector: View {
             HStack {
                 Spacer()
                 if let deeper = page.period.zoomedIn {
-                    Button("Open \(deeper.rawValue.capitalized)") { model.zoomIn(at: span.start) }
+                    Button("Show \(deeper.rawValue.capitalized)") { model.zoomIn(at: span.start) }
                         .help("Show the hour of the first selected bar in the finer period")
                 }
                 Button("Show in Apps") { selection.reveal(from: span.start, to: span.end, history: history) }
-                    .buttonStyle(.borderedProminent)
                     .help("Open Apps at this time")
             }
         }
@@ -237,7 +234,7 @@ struct CalendarInspector: View {
         let from = Date(timeIntervalSince1970: first.start), to = Date(timeIntervalSince1970: last.end - 1)
         let format: Date.FormatStyle = page.period == .month ? .dateTime.day().month(.wide) : .dateTime.weekday(.abbreviated).day().hour()
         Section {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Layout.gap) {
                 Text("\(from.formatted(format)) to \(to.formatted(format))").font(.title3.bold()).overlayScrollers()
                 if let c = _comparison.wrappedValue {
                     let before = Date(timeIntervalSince1970: c.before.start), end = Date(timeIntervalSince1970: c.before.end - 1)
@@ -249,7 +246,7 @@ struct CalendarInspector: View {
         if _reading.wrappedValue {
             Section { ProgressView().frame(maxWidth: .infinity) }
         } else if let c = _comparison.wrappedValue {
-            CardSection("Compared") {
+            CardSection("Compared", summary: delta(c.now.average, c.then.average).map { Text("\($0) average") }) {
                 compared("Average", c.now.average.map(metric.format), c.then.average.map(metric.format), delta(c.now.average, c.then.average))
                 compared("Peak", c.now.peak.map(metric.format), c.then.peak.map(metric.format), delta(c.now.peak, c.then.peak))
                 if page.status != nil {
@@ -257,7 +254,7 @@ struct CalendarInspector: View {
                         VStack(alignment: .trailing) {
                             let now = (c.now.warning, c.now.critical), then = (c.then.warning, c.then.critical)
                             if now.0 + now.1 == 0 { Text("None") } else { LevelCounts(counts: (now.0, now.1)) }
-                            HStack(spacing: 3) {
+                            HStack(spacing: Layout.gap) {
                                 Text("was")
                                 if then.0 + then.1 == 0 { Text("none") } else { LevelCounts(counts: (then.0, then.1)) }
                             }
@@ -267,7 +264,15 @@ struct CalendarInspector: View {
                 }
             }
             .monospacedDigit()
-            CardSection(c.now.units.count > 24 || cells.count > 24 ? "By Day" : "By Hour") {
+            CardSection(c.now.units.count > 24 || cells.count > 24 ? "By Day" : "By Hour",
+                        summary: c.now.peak.map { Text("\(metric.format($0)) peak") }) {
+                // The key comes first, under the title it explains (COL-14); squares, as the chart draws bars.
+                HStack(spacing: Layout.inset) {
+                    Label("Before", systemImage: "square.fill").foregroundStyle(.secondary)
+                    Label("Selected", systemImage: "square.fill").foregroundStyle(Color.accentColor)
+                }
+                .font(.caption2)
+                .labelStyle(.titleAndIcon)
                 PairBars(now: c.now.units, before: c.then.units)
                     .frame(height: 80)
                 HStack {
@@ -276,14 +281,9 @@ struct CalendarInspector: View {
                     Text(to.formatted(format))
                 }
                 .font(.caption2).foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    Label("Before", systemImage: "square.fill").foregroundStyle(.secondary)
-                    Label("Selected", systemImage: "square.fill").foregroundStyle(Color.accentColor)
-                }
-                .font(.caption2)
-                .labelStyle(.titleAndIcon)
             }
-            CardSection("Biggest Changes") {
+            CardSection("Biggest Changes", summary: Text(c.change.up.isEmpty && c.change.down.isEmpty ? "None"
+                                                         : "\(c.change.up.count) up, \(c.change.down.count) down")) {
                 if c.change.up.isEmpty && c.change.down.isEmpty { Text("No changes").foregroundStyle(.secondary) }
                 ForEach(c.change.up + c.change.down, id: \.app) { change in
                     LabeledContent(change.app.name, value: (change.delta > 0 ? "+" : "-") + metric.format(abs(change.delta))).monospacedDigit()
@@ -296,7 +296,6 @@ struct CalendarInspector: View {
             HStack {
                 Spacer()
                 Button("Show in Apps") { selection.reveal(from: first.start, to: last.end, history: history) }
-                    .buttonStyle(.borderedProminent)
                     .help("Open Apps over this span")
             }
         }
@@ -324,10 +323,10 @@ struct CalendarInspector: View {
         let cells = page.cells.filter { $0.value != nil }
         let busiest = cells.max { $0.value! < $1.value! }
         let unit = page.period == .month ? "day" : page.period == .week ? "block" : "hour"
-        Section { Text("\(page.period.rawValue.capitalized) Summary").font(.title3.bold()).overlayScrollers() }
-        CardSection(page.metric.label) {
-            LabeledContent("Average", value: cells.isEmpty ? "No data"
-                           : page.metric.format(cells.flatMap(\.lines).compactMap { $0 }.reduce(0, +) / Double(cells.flatMap(\.lines).compactMap { $0 }.count)))
+        let lines = cells.flatMap(\.lines).compactMap { $0 }
+        let average = lines.isEmpty ? "No data" : page.metric.format(lines.reduce(0, +) / Double(lines.count))
+        CardSection(page.metric.label, summary: Text(lines.isEmpty ? average : "\(average) average")) {
+            LabeledContent("Average", value: average)
             if let busiest {
                 // With bars (Day and Hour) the busiest hour is all its bars.
                 Button { model.selected = busiest.start...(page.period.selectsBars ? busiest.lineStart(busiest.lines.count - 1) : busiest.start) } label: {
@@ -343,7 +342,10 @@ struct CalendarInspector: View {
                 .help("The alerts in this \(page.period.rawValue)")
         }
         .monospacedDigit()
-        Section {
+        CardSection("Top Apps", summary: _apps.wrappedValue?.first.map { Text("\($0.app.name) \(page.metric.format($0.average))") },
+                    footer: Text(page.period == .month ? "Click a day to see its details, or drag across days to compare them with the days before."
+            : page.period.selectsBars ? "Click a bar to see its details, or drag across bars to select a span of time."
+            : "Click a cell to see its details, or drag across cells to compare them with the time before.")) {
             if _reading.wrappedValue {
                 ProgressView().frame(maxWidth: .infinity)
             } else if let apps = _apps.wrappedValue {
@@ -353,7 +355,7 @@ struct CalendarInspector: View {
                     LabeledContent {
                         Text(page.metric.format(rank.average)).monospacedDigit()
                     } label: {
-                        HStack(spacing: 6) {
+                        HStack(spacing: Layout.gap) {
                             Circle().fill(colors[rank.app] ?? .secondary).frame(width: 9, height: 9)
                             Text(rank.app.name).lineLimit(1)
                         }
@@ -362,12 +364,6 @@ struct CalendarInspector: View {
             } else {
                 Text("Cannot read the history").foregroundStyle(.secondary)
             }
-        } header: {
-            Text("Top Apps")
-        } footer: {
-            Text(page.period == .month ? "Click a day to see its details, or drag across days to compare them with the days before."
-                 : page.period.selectsBars ? "Click a bar to see its details, or drag across bars to select a span of time."
-                 : "Click a cell to see its details, or drag across cells to compare them with the time before.")
         }
     }
 }
@@ -382,7 +378,7 @@ private struct CalendarLinesChart: View {
     private let _hover = State<(index: Int, point: CGPoint)?>(initialValue: nil)
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: Layout.gap) {
             GeometryReader { geo in
                 ValueLines(values: cell.lines, top: page.top, status: page.levels, severities: page.severities(cell), lineWidth: 6,
                            marked: _hover.wrappedValue?.index)

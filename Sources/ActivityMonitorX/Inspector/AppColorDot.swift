@@ -35,16 +35,16 @@ struct AppColorDot: View {
                     .buttonStyle(.plain)
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(.white, .gray)
-                    .font(.system(size: 10))
+                    .font(.caption2)
                     .offset(x: 5, y: -5)
                     .help("Remove the colour and use the automatic one")
             }
         }
         // The hover area takes in the cross, which sits past the dot's corner.
-        .padding(6)
+        .padding(Layout.gap)
         .contentShape(Rectangle())
         .onHover { _hover.wrappedValue = $0 }
-        .padding(-6)
+        .padding(-Layout.gap)
     }
 }
 
