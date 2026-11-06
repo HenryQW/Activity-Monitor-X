@@ -1,5 +1,8 @@
+import { projectLinks } from "@henryqw/theme/projects";
 import { colors } from "@henryqw/theme/tokens";
 import { defineConfig } from "blume";
+
+const site = "https://amx.henry.wang";
 
 export default defineConfig({
   title: "Activity Monitor X",
@@ -9,14 +12,14 @@ export default defineConfig({
   footer: {
     links: [
       { label: "About Henry", href: "https://henry.wang" },
-      { label: "Henry Pi Harness", href: "https://pi.henry.wang" },
+      ...projectLinks(site),
       { label: "MIT License", href: "https://github.com/HenryQW/Activity-Monitor-X/blob/main/LICENSE" },
       { label: "GitHub", href: "https://github.com/HenryQW/Activity-Monitor-X" },
     ],
   },
   logo: { image: "/logo.svg", text: "AMX" },
   deployment: {
-    site: "https://amx.henry.wang",
+    site,
   },
   github: {
     owner: "HenryQW",
