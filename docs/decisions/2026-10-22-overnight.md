@@ -638,3 +638,10 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Options:** A, root-owned install: copy `amxd` out of the bundle to a root-owned folder with one sudo prompt, check the copy, write the plist from the installer's own text; B, a Developer ID and notarization (a paid account), so that App Management protects the bundle (not probed).
 - **Call (user):** A, with a `curl ... | sh` install script as for the other HenryQW apps (`website/public/install.sh`), and the cask doing the same in `postflight_steps`. The pin is the SHA-1 of the release certificate, because a code requirement (`certificate leaf = H"..."`) takes only a SHA-1, the same as the helper's own check of its callers. Each check runs on the root-owned copy, after the copy, so a change to the source after the check cannot reach root. The disk image stays for the cask and has "Read me first.txt"; the home page has no download button, because a dragged app has no helper. The helper is in `/Library/PrivilegedHelperTools`, not `/usr/local/libexec` (Opus review): `/usr/local` belongs to the user on some Macs (an old Homebrew `chown`), and that user could then replace the folder that launchd runs the helper from.
 - **Cost if wrong:** one sudo prompt at each install and update. A user-level program that waits for the user to type the password can still act; that is true of any sudo prompt.
+
+## D93: First public release is 0.1.0 (user pick)
+
+- **Goal (user):** a version number that means something to users.
+- **Options:** A, keep 0.5.0, the internal milestone count (M3 0.3.0, M4 0.4.0, M5 0.5.0); B, 0.1.0 for the first public release.
+- **Call (user):** B. No tag, release or cask existed, so no upgrade path depends on 0.5.0. The database schema has its own version.
+- **Cost if wrong:** none; versions only go up from here.
