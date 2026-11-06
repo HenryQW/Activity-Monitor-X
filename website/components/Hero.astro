@@ -1,7 +1,7 @@
 ---
-// The home page hero: the name, the description and the install line at the left; the app icon on a calm wallpaper at
-// the right. The same type, buttons, terminal card and wallpaper as the author's other sites. No disk image button: a dragged
-// app has no helper (D92).
+// The home page hero: the app icon, the name, the description and the install line, centred, then one wide screenshot
+// of the app in the site's theme. The same type, buttons and terminal card as the author's other sites. No disk image
+// button: a dragged app has no helper (D92).
 
 interface Props {
   description: string;
@@ -13,6 +13,7 @@ const command = "curl -fsSL https://amx.henry.wang/install.sh | sh";
 
 <section class="hero homepage-container">
   <div class="intro">
+    <img class="icon" src="/icon.png" alt="" width="112" height="112" />
     <h1>Activity Monitor X</h1>
     <p class="lede">{description}</p>
     <article class="installer" aria-label="Install with one line in Terminal">
@@ -34,23 +35,30 @@ const command = "curl -fsSL https://amx.henry.wang/install.sh | sh";
     <p class="needs">Needs macOS 26 and Apple silicon. Free and <a href="https://github.com/HenryQW/Activity-Monitor-X">open source</a> under the <a href="https://github.com/HenryQW/Activity-Monitor-X/blob/main/LICENSE">MIT license</a>.</p>
   </div>
 
-  <div class="stage" aria-hidden="true">
-    <img class="icon" src="/icon.png" alt="" width="192" height="192" />
-  </div>
+  <figure class="shot">
+    <img class="shot-light" src="/screenshots/inspector-light.webp" alt="Activity Monitor X: a chart of CPU by app over 24 hours, the app table, and the inspector with WindowServer selected" width="1600" height="1006" />
+    <img class="shot-dark" src="/screenshots/inspector-dark.webp" alt="Activity Monitor X: a chart of CPU by app over 24 hours, the app table, and the inspector with WindowServer selected" width="1600" height="1006" />
+  </figure>
 </section>
 
 <style>
   .hero {
-    align-items: center;
     display: grid;
-    gap: 40px;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+    gap: 48px;
+    justify-items: center;
   }
 
-  @media (max-width: 900px) {
-    .hero {
-      grid-template-columns: minmax(0, 1fr);
-    }
+  .intro {
+    max-width: 720px;
+    text-align: center;
+  }
+
+  .icon {
+    display: block;
+    filter: drop-shadow(0 8px 16px rgb(0 0 0 / 0.25));
+    height: 112px;
+    margin: 0 auto 20px;
+    width: 112px;
   }
 
   h1 {
@@ -71,6 +79,7 @@ const command = "curl -fsSL https://amx.henry.wang/install.sh | sh";
   .links {
     display: flex;
     gap: 10px;
+    justify-content: center;
     margin-top: 16px;
   }
 
@@ -99,6 +108,7 @@ const command = "curl -fsSL https://amx.henry.wang/install.sh | sh";
     gap: 12px;
     margin-top: 16px;
     padding: 12px 16px;
+    text-align: left;
   }
 
   .command-row {
@@ -164,31 +174,18 @@ const command = "curl -fsSL https://amx.henry.wang/install.sh | sh";
     text-underline-offset: 2px;
   }
 
-  /* The desktop: the same calm wallpaper from the theme's blue steps as the author's other sites, with the app icon in its centre. */
-  .stage {
-    background: linear-gradient(140deg, var(--ui-stream-6), var(--ui-stream-3) 55%, var(--ui-stream-1));
+  /* The screenshot: the app window as macOS draws it, at the full content width. */
+  .shot {
+    margin: 0;
+    max-width: 1200px;
+    width: 100%;
+  }
+
+  .shot img {
     border: 1px solid var(--blume-border);
-    border-radius: 14px;
-    display: grid;
-    height: 420px;
-    place-items: center;
-  }
-
-  .icon {
-    filter: drop-shadow(0 12px 24px rgb(0 0 0 / 0.35));
-    height: 192px;
-    width: 192px;
-  }
-
-  @media (max-width: 900px) {
-    .stage {
-      height: 280px;
-    }
-
-    .icon {
-      height: 144px;
-      width: 144px;
-    }
+    border-radius: 12px;
+    height: auto;
+    width: 100%;
   }
 
   @media (prefers-reduced-motion: reduce) {
