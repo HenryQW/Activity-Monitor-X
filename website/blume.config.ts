@@ -20,7 +20,7 @@ export default defineConfig({
   },
   github: {
     owner: "HenryQW",
-    repo: "amx",
+    repo: "Activity-Monitor-X",
     dir: "website",
   },
   navigation: {
