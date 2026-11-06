@@ -1,4 +1,4 @@
-import { projectLinks } from "@henryqw/theme/projects";
+import { footer } from "@henryqw/theme/projects";
 import { colors } from "@henryqw/theme/tokens";
 import { defineConfig } from "blume";
 
@@ -9,14 +9,7 @@ export default defineConfig({
   description:
     "Activity Monitor X records what each process on your Mac does and keeps the history, so you can see what made your Mac slow, and when.",
   feedback: false,
-  footer: {
-    links: [
-      { label: "About Henry", href: "https://henry.wang" },
-      ...projectLinks(site),
-      { label: "MIT License", href: "https://github.com/HenryQW/Activity-Monitor-X/blob/main/LICENSE" },
-      { label: "GitHub", href: "https://github.com/HenryQW/Activity-Monitor-X" },
-    ],
-  },
+  footer: footer(site, "HenryQW/Activity-Monitor-X"),
   logo: { image: "/logo.svg", text: "AMX" },
   deployment: {
     site,
