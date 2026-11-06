@@ -14,7 +14,7 @@ export default defineConfig({
       { label: "GitHub", href: "https://github.com/HenryQW/Activity-Monitor-X" },
     ],
   },
-  logo: { image: "/icon.png", text: "AMX" },
+  logo: { image: "/logo.svg", text: "AMX" },
   deployment: {
     site: "https://amx.henry.wang",
   },
