@@ -25,14 +25,14 @@ export default defineConfig({
   },
   navigation: {
     sidebar: [
-      "/overview",
-      "/how-it-works",
-      "/install",
-      "/cli",
-      "/privacy",
-      "/glossary",
-      "/build",
-      "/release",
+      { label: "Get Started", items: ["/overview", "/install", "/how-it-works"] },
+      {
+        label: "Screens",
+        items: ["/apps", "/inspector", "/calendar", "/alerts", "/disk", "/energy", "/hardware", "/groups", "/menu-bar", "/settings"],
+      },
+      { label: "Terminal", items: ["/cli"] },
+      { label: "Reference", items: ["/privacy", "/glossary"] },
+      { label: "Develop", items: ["/build", "/release"] },
     ],
   },
   theme: {
