@@ -33,6 +33,12 @@ footer a[href="https://henry.wang"]::before {
   width: 20px;
 }
 
+/* Screenshots: each has a light and a dark image; the page shows the one for its theme. */
+:root[data-theme="dark"] .shot-light,
+:root:not([data-theme="dark"]) .shot-dark {
+  display: none;
+}
+
 /* How It Works: the four steps as boxes in a row, one under the other on a narrow screen. */
 .flow {
   counter-reset: step;

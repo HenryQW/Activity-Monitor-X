@@ -5,11 +5,26 @@ import data from "blume:data";
 import Hero from "../components/Hero.astro";
 
 const { config } = data;
-const features = [
-  { title: "Every process, all the time", text: "A helper records CPU, memory, disk, energy, network and GPU for each process, also while the app is closed.", href: "/how-it-works" },
-  { title: "History by app", text: "One chart and one table show which apps used your Mac, from the last 5 minutes to 90 days.", href: "/overview" },
-  { title: "Ask from the terminal", text: "The amx command and its MCP server give the same history to scripts and AI clients.", href: "/cli" },
+// The story of the app, one row each: when the Mac was busy, why, and the same history from the terminal.
+const rows = [
+  {
+    title: "See when your Mac was busy",
+    text: "A helper records CPU, memory, disk, energy, network and GPU for each process every 5 seconds, also while the app is closed. Calendar shows each hour and day of the last 90 days, with the busiest app in each cell.",
+    href: "/calendar",
+    link: "Read about Calendar",
+    shot: "calendar",
+    alt: "The Calendar screen in Day view, with CPU bars for each 5 minutes of the afternoon",
+  },
+  {
+    title: "Know why it was slow",
+    text: "Rules check every app and the Mac as a whole. An alert about the Mac names a likely cause, for example the process whose memory grew most.",
+    href: "/alerts",
+    link: "Read about Alerts",
+    shot: "alerts",
+    alt: "The Alerts screen: a table of warnings with time, subject and message",
+  },
 ];
+const commands = ['amx call top_apps \'{"metric":"memory","from":"-7d"}\'', 'amx call summarize \'{"from":"-24h"}\'', "amx mcp"];
 ---
 
 <PageLayout
@@ -28,44 +43,100 @@ const features = [
   page={{ title: config.title, description: config.description }}
 >
   <Hero description={config.description} />
-  <section class="features homepage-container">
-    {features.map((f) => (
-      <a class="feature" href={f.href}>
-        <h2>{f.title}</h2>
-        <p>{f.text}</p>
-      </a>
+  <section class="rows homepage-container">
+    {rows.map((r) => (
+      <article class="row">
+        <div class="text">
+          <h2>{r.title}</h2>
+          <p>{r.text}</p>
+          <a href={r.href}>{r.link}</a>
+        </div>
+        <figure>
+          <img class="shot-light" src={`/screenshots/${r.shot}-light.webp`} alt={r.alt} width="1600" height="1006" loading="lazy" />
+          <img class="shot-dark" src={`/screenshots/${r.shot}-dark.webp`} alt={r.alt} width="1600" height="1006" loading="lazy" />
+        </figure>
+      </article>
     ))}
+    <article class="row">
+      <div class="text">
+        <h2>Ask from the terminal</h2>
+        <p>The amx command reads the same history. Its MCP server gives it to AI clients, so you can ask what slowed your Mac down yesterday.</p>
+        <a href="/cli">Read about amx and MCP</a>
+      </div>
+      <pre class="terminal" aria-label="Example amx commands">{commands.map((c) => <code><span aria-hidden="true">$ </span>{c}</code>)}</pre>
+    </article>
   </section>
 </PageLayout>
 
 <style>
-  .features {
+  .rows {
     display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 72px;
   }
 
-  .feature {
-    border: 1px solid var(--blume-border);
-    border-radius: 12px;
-    color: inherit;
-    padding: 20px;
-    text-decoration: none;
+  .row {
+    align-items: center;
+    display: grid;
+    gap: 40px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
   }
 
-  .feature:hover {
-    background: var(--blume-muted);
+  /* Every second row puts its picture first, so the eye moves left and right down the page. */
+  .row:nth-child(even) > :first-child {
+    order: 2;
+  }
+
+  @media (max-width: 900px) {
+    .row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .row:nth-child(even) > :first-child {
+      order: 0;
+    }
   }
 
   h2 {
-    font-size: 1.05rem;
+    font-size: 1.5rem;
     font-weight: 600;
-    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
   }
 
   p {
     color: var(--blume-muted-foreground);
-    line-height: 1.5;
+    line-height: 1.55;
+    margin: 0 0 16px;
+  }
+
+  .text a {
+    color: inherit;
+    font-size: 0.875rem;
+    text-underline-offset: 3px;
+  }
+
+  figure {
     margin: 0;
+  }
+
+  figure img {
+    border: 1px solid var(--blume-border);
+    border-radius: 12px;
+    height: auto;
+    width: 100%;
+  }
+
+  /* The same terminal card as the install line in the hero. */
+  .terminal {
+    background: #09090b;
+    border: 1px solid rgb(255 255 255 / 0.1);
+    border-radius: 8px;
+    color: #f0eee9;
+    display: grid;
+    font: 13px/22px ui-monospace, SFMono-Regular, Menlo, monospace;
+    gap: 4px;
+    margin: 0;
+    overflow-x: auto;
+    padding: 16px;
   }
 </style>

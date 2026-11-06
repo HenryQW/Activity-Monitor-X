@@ -15,15 +15,15 @@ A helper, `amxd`, runs as root. Every 5 seconds it records CPU, memory, disk, en
 
 | Screen | What it shows |
 | --- | --- |
-| Apps | A chart above an app table, for one metric and one time range, from Live (the last 5 minutes) to 90 days. |
-| Calendar | The metric for each hour or day, as a grid of cells for a day, a week or a month, with the busiest app in each cell. |
-| Alerts | The alerts that the rules wrote. An alert about the Mac names a likely cause. |
-| Groups | Your own sets of apps, chosen by rules on the name, bundle ID, path or team ID. |
-| Disk | Activity: read and write charts, disks and volumes. Space: a map of what uses the space of a volume or folder. |
-| Energy | Live watts from the power adapter and the battery to the top apps. |
-| Hardware | The chip, memory, drives, displays and devices of the Mac. |
+| [Apps](/apps) | A chart above an app table, for one metric and one time range, from Live (the last 5 minutes) to 90 days. The [inspector](/inspector) shows the details of the app you select. |
+| [Calendar](/calendar) | The metric for each hour or day, as a grid of cells for a day, a week or a month, with the busiest app in each cell. |
+| [Alerts](/alerts) | The alerts that the rules wrote. An alert about the Mac names a likely cause. |
+| [Groups](/groups) | Your own sets of apps, chosen by rules on the name, bundle ID, path or team ID. |
+| [Disk](/disk) | Activity: read and write charts, disks and volumes. Space: a map of what uses the space of a volume or folder. |
+| [Energy](/energy) | Live watts from the power adapter and the battery to the top apps. |
+| [Hardware](/hardware) | The chip, memory, drives, displays and devices of the Mac. |
 
-The menu bar item shows CPU and memory pressure as two small numbers, and a dot while an alert is unread. The `amx` command gives the same history to scripts and to AI clients through an MCP server. See [amx and MCP](/cli).
+The [menu bar item](/menu-bar) shows CPU and memory pressure as two small numbers, and a dot while an alert is unread. The `amx` command gives the same history to scripts and to AI clients through an MCP server. See [amx and MCP](/cli).
 
 ## What AMX does not do
 
@@ -36,5 +36,6 @@ AMX is free and open source under the [MIT license](https://github.com/HenryQW/A
 ## Next
 
 - [How it works](/how-it-works): from a sample to a chart.
-- [Install](/install) AMX and approve its helper.
+- [Install](/install) AMX and its helper.
+- [Apps and timeline](/apps): the main screen.
 - [Glossary](/glossary): the words that AMX uses.
