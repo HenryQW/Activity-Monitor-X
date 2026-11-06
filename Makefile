@@ -35,7 +35,7 @@ app: build
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp Packaging/Info.plist "$(APP)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $(VERSION)" -c "Add :CFBundleVersion string $(VERSION)" "$(APP)/Contents/Info.plist"
-	cp Packaging/glossary.json Packaging/Credits.html Packaging/AppIcon.icns "$(APP)/Contents/Resources/"
+	cp Packaging/glossary.json Packaging/Credits.html Packaging/AppIcon.icns Packaging/henry.png "$(APP)/Contents/Resources/"
 	cp $(BIN)/ActivityMonitorX $(BIN)/amxd $(BIN)/amx "$(APP)/Contents/MacOS/"
 	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(LABEL) "$(APP)/Contents/MacOS/amxd"
 	codesign --force --options runtime --timestamp=none --entitlements Packaging/amx.entitlements -s "$(IDENTITY)" -i $(CLI_ID) "$(APP)/Contents/MacOS/amx"

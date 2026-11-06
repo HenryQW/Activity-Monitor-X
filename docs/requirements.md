@@ -150,6 +150,7 @@ Rules:
 - **SET-7** (user) Settings > Alerts has a System CPU rule: CPU of all cores, warning 70 % and critical 90 % held for 5 min by default, editable, on or off; it names the top app as a likely cause (D63).
 - **SET-8** (user) Settings > General has a Terminal pop-up (installed terminal apps, default Terminal) used by Open in Terminal (D64).
 - **SET-9** (user) Settings > Alerts lists the rules as Notifications settings lists apps: App Rules and System Rules, each rule one row with the symbol of what it watches (the same as in Alerts), its name, its values in a few words and its switch; a click on the row or its arrow opens its values and footer in a sheet (D76).
+- **SET-10** (user) The foot of every Settings tab shows the author's round picture and "Made with Henry by AI 🤖.", with "Henry" a link to henry.wang in its cobalt, in a box with a thin border, as in the other HenryQW apps (D95).
 
 ## BLD: Build and platform
 

@@ -652,3 +652,10 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Options:** A, the chip as line art, with the two app colours on its die; B, the die alone as a solid dark tile; C, two history lines that cross to make the X of "AMX".
 - **Call (user):** A. It is the same chip as the app icon, so the site, the README and the app read as one. The lines take the text colour (`currentColor` in the site header and the Open Graph cards; `icon.svg` and `icon-dark.svg` for the favicon and the README), and the bands keep the app icon's blue and teal, which are app colours and never red or yellow.
 - **Cost if wrong:** three small SVG files and one line in `website/blume.config.ts`; the app icon does not change.
+
+## D95: The author line at the foot of every Settings tab (user pick)
+
+- **Goal (user):** every HenryQW Mac app shows the same author line in Settings, as Rounds does at the foot of its Settings sidebar.
+- **Options:** A, a row under every tab; B, a row at the end of General only; C, a new About tab.
+- **Call (user):** A. AMX Settings has tabs and no sidebar, so a row under every tab keeps the line in view, as in Rounds. It sits below each tab's form (the Form ignores a bottom safe-area inset and scrolls under it), so the 520 x 600 window does not change size.
+- **Cost if wrong:** one view and one image in the bundle.
