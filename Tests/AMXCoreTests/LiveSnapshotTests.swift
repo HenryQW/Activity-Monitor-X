@@ -44,7 +44,8 @@ import Testing
     }
 
     @Test func clientMapsConnectionErrorToUnreachable() async {
-        let client = DaemonClient(machServiceName: "com.henryqw.activitymonitorx.nonexistent")
+        // A long timeout: a CI runner can stall for over 10 s, and the test is about the error, not the timeout.
+        let client = DaemonClient(machServiceName: "com.henryqw.activitymonitorx.nonexistent", timeout: 60)
         let error = await #expect(throws: DaemonClientError.self) { try await client.live() }
         #expect(error.map { if case .unreachable = $0 { true } else { false } } == true)
     }

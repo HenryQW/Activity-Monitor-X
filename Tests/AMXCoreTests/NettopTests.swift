@@ -102,11 +102,11 @@ import Testing
         }
         pipe.fileHandleForWriting.write(Data("\(Self.header)\n".utf8))
         let rates = { s.rates(alive: [77: id(start: 1)]) }
-        var deadline = Date().addingTimeInterval(5)
+        var deadline = Date().addingTimeInterval(60)
         while rates().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         try #require(!rates().isEmpty)
         try pipe.fileHandleForWriting.close()  // EOF: the run ends
-        deadline = Date().addingTimeInterval(5)
+        deadline = Date().addingTimeInterval(60)
         while !rates().isEmpty && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         #expect(rates().isEmpty)
     }
@@ -141,7 +141,7 @@ import Testing
             Thread.sleep(forTimeInterval: 0.05)
         }
         pipe.fileHandleForWriting.write(Data("\(Self.header)\n".utf8))
-        let deadline = Date().addingTimeInterval(5)
+        let deadline = Date().addingTimeInterval(60)
         var r = s.rates(alive: [77: id(start: 1)])
         while r.isEmpty && Date() < deadline {
             Thread.sleep(forTimeInterval: 0.02)

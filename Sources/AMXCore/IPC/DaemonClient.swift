@@ -19,12 +19,16 @@ public enum DaemonClientError: LocalizedError, Equatable {
 /// App-side XPC client for `amxd`. One connection, recreated after invalidation or interruption.
 public final class DaemonClient: @unchecked Sendable {
     private let machServiceName: String
+    private let timeout: Double
     private let lock = NSLock()
     private var connection: NSXPCConnection?
 
     public convenience init() { self.init(machServiceName: AMX.daemonLabel) }
 
-    init(machServiceName: String) { self.machServiceName = machServiceName }
+    init(machServiceName: String, timeout: Double = 3) {
+        self.machServiceName = machServiceName
+        self.timeout = timeout
+    }
 
     deinit { connection?.invalidate() }
 
@@ -71,7 +75,7 @@ public final class DaemonClient: @unchecked Sendable {
     private func call<T: Sendable>(_ body: (DaemonXPC, @escaping @Sendable (T) -> Void) -> Void) async throws -> T {
         let c = currentConnection()
         return try await withCheckedThrowingContinuation { continuation in
-            let once = Once(continuation, timeout: 3)
+            let once = Once(continuation, timeout: timeout)
             let proxy = c.remoteObjectProxyWithErrorHandler { error in
                 once.resume(.failure(DaemonClientError.unreachable(error.localizedDescription)))
             } as! DaemonXPC
