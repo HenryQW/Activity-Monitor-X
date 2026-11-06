@@ -26,8 +26,10 @@ jobs:
           test "v$(cat VERSION)" = "$GITHUB_REF_NAME"
 
       # Xcode has the Swift Testing plugin, so the plain command works here (`make test` is for Command Line Tools).
+      # One test at a time: in parallel on the small runner, the CPU-heavy tests starve the background queues that the
+      # nettop and XPC tests wait for, for over a minute.
       - name: Test
-        run: swift test
+        run: swift test --no-parallel
 
       - name: Import the release signing identity
         env:
