@@ -16,10 +16,10 @@ struct SettingsView: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            Tab("General", systemImage: "gearshape", value: "general") { GeneralSettings() }
-            Tab("Alerts", systemImage: "bell.badge", value: "alerts") { AlertSettings() }
-            Tab("Recording", systemImage: "internaldrive", value: "recording") { RecordingSettings() }
-            Tab("Helper", systemImage: "wrench.and.screwdriver", value: "helper") { HelperSettings() }
+            Tab("General", systemImage: "gearshape", value: "general") { GeneralSettings().signed() }
+            Tab("Alerts", systemImage: "bell.badge", value: "alerts") { AlertSettings().signed() }
+            Tab("Recording", systemImage: "internaldrive", value: "recording") { RecordingSettings().signed() }
+            Tab("Helper", systemImage: "wrench.and.screwdriver", value: "helper") { HelperSettings().signed() }
         }
         .frame(width: 520, height: 600)
         // Login Items, notification permission and the helper can all change while the window is in the background.
@@ -30,6 +30,41 @@ struct SettingsView: View {
                 await notifier?.refreshStatus()
                 await model.load()
             }
+        }
+    }
+}
+
+/// The foot of every tab: the author's picture and line, as in the other HenryQW apps; "Henry" is a link to henry.wang
+/// in the site's cobalt (Evidence Blue in dark mode, for contrast).
+private struct Signature: View {
+    /// henry.wang's Decisive Cobalt, oklch(0.488 0.217 264.4); in dark mode its Evidence Blue, oklch(0.77 0.116 264.4).
+    private static let cobalt = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x8F / 255, green: 0xB3 / 255, blue: 1, alpha: 1)
+            : NSColor(srgbRed: 0x1D / 255, green: 0x4E / 255, blue: 0xD8 / 255, alpha: 1)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Bundle.main.image(forResource: "henry").map { Image(nsImage: $0).resizable().frame(width: 24, height: 24).clipShape(.circle) }
+            Text("Made with [Henry](https://henry.wang) by AI 🤖.").font(.caption).lineLimit(1).fixedSize()
+                .tint(Color(nsColor: Self.cobalt))
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator, lineWidth: 0.5))
+        .padding(.horizontal, 20)
+        .padding(.bottom, 12)
+    }
+}
+
+private extension View {
+    /// The signature under a tab's form. A Form here ignores a bottom safe-area inset and scrolls under it, so the
+    /// form ends above the signature.
+    func signed() -> some View {
+        VStack(spacing: 0) {
+            self
+            Signature()
         }
     }
 }
