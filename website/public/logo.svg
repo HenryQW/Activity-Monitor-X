@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- The Activity Monitor X mark: the app icon's chip as line art, with two app colours stacked over time on its die. -->
+  <clipPath id="amx-die"><rect x="9" y="9" width="30" height="30" rx="7"/></clipPath>
+  <path d="M18 3v4M24 3v4M30 3v4M18 41v4M24 41v4M30 41v4M3 18h4M3 24h4M3 30h4M41 18h4M41 24h4M41 30h4" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+  <g clip-path="url(#amx-die)">
+    <path d="M9 39V30.8C15 29 17.7 32.6 23.2 27C27.8 22.4 31.4 27 39 18V39Z" fill="#378ADD"/>
+    <path d="M9 39V35.4C15 34.4 17.7 36.2 23.2 33.5C27.8 30.8 31.4 33.5 39 28.8V39Z" fill="#5DCAA5"/>
+  </g>
+  <rect x="9" y="9" width="30" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="2.5"/>
+</svg>

@@ -645,3 +645,10 @@ The user was asleep from 02:37. For each decision: the goal, the options, my rec
 - **Options:** A, keep 0.5.0, the internal milestone count (M3 0.3.0, M4 0.4.0, M5 0.5.0); B, 0.1.0 for the first public release.
 - **Call (user):** B. No tag, release or cask existed, so no upgrade path depends on 0.5.0. The database schema has its own version.
 - **Cost if wrong:** none; versions only go up from here.
+
+## D94: The logo is the app icon's chip as line art (user pick)
+
+- **Goal (user):** a logo for the docs site and the GitHub repository.
+- **Options:** A, the chip as line art, with the two app colours on its die; B, the die alone as a solid dark tile; C, two history lines that cross to make the X of "AMX".
+- **Call (user):** A. It is the same chip as the app icon, so the site, the README and the app read as one. The lines take the text colour (`currentColor` in the site header and the Open Graph cards; `icon.svg` and `icon-dark.svg` for the favicon and the README), and the bands keep the app icon's blue and teal, which are app colours and never red or yellow.
+- **Cost if wrong:** three small SVG files and one line in `website/blume.config.ts`; the app icon does not change.
