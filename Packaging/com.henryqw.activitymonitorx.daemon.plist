@@ -4,11 +4,9 @@
 <dict>
 	<key>Label</key>
 	<string>com.henryqw.activitymonitorx.daemon</string>
-	<key>BundleProgram</key>
-	<string>Contents/MacOS/amxd</string>
-	<key>AssociatedBundleIdentifiers</key>
+	<key>ProgramArguments</key>
 	<array>
-		<string>com.henryqw.activitymonitorx</string>
+		<string>/Library/PrivilegedHelperTools/amxd</string>
 	</array>
 	<key>MachServices</key>
 	<dict>

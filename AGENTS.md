@@ -23,7 +23,7 @@ Code: `Sources/AMXCore` (models, schema, queries, rules; no UI), `Sources/CAMX` 
 - `make app`: builds and signs `.build/Activity Monitor X.app` (needs `make cert` once).
 - Signing runs without a prompt (D52): `codesign` has standing access to the key, so builds and installs run unattended. If macOS ever asks, click "Always Allow" once.
 - `make install-app`: copies the app to `/Applications`, no root.
-- `make install`: the app (with the helper and `amx` inside) to `/Applications` and the `amx` link; no sudo. The app registers the helper at its first launch and the user allows it in Login Items. Agents never run it; ask the user.
+- `make install`: the app to `/Applications`, then, with sudo, `amxd` to `/Library/PrivilegedHelperTools`, `amx` to `/usr/local/bin` and the LaunchDaemon plist, and restarts the helper (D92). It needs the user's sudo password. Agents never run it; ask the user.
 - Linker "search path ... not found" warnings are harmless toolchain noise.
 
 ## Toolchain traps (Command Line Tools only, no Xcode)

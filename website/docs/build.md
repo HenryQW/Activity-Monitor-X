@@ -11,15 +11,15 @@ description: Build Activity Monitor X with the Command Line Tools, run the tests
 ## Build and install
 
 ```sh
-git clone https://github.com/HenryQW/amx.git
-cd amx
+git clone https://github.com/HenryQW/Activity-Monitor-X.git
+cd Activity-Monitor-X
 make cert
 make install
 open "/Applications/Activity Monitor X.app"
 ```
 
 - `make cert` makes a self-signed code-signing certificate in your login keychain. Do this one time. macOS asks for your login password.
-- `make install` builds the app, signs it with that certificate, and copies it to `/Applications`. At the first launch, the app registers its helper. Approve it as [Install](/install#approve-the-helper) tells.
+- `make install` builds the app, signs it with that certificate, and copies it to `/Applications`. Then it asks for your administrator password, copies `amxd` and `amx` to root-owned folders and starts the helper, as the [install script](/install#install-with-one-line) does.
 
 The helper accepts only callers that are signed with the same certificate as itself. So a build that you sign with your certificate works only with a helper from the same certificate. The [Release](/release#the-release-certificate) page tells more.
 

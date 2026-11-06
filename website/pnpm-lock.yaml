@@ -169,9 +169,6 @@ importers:
       '@henryqw/theme':
         specifier: 0.1.0
         version: 0.1.0(astro@7.4.4(@types/node@22.20.5)(@vercel/functions@3.10.4)(jiti@2.7.0)(yaml@2.9.1))
-      '@lobehub/icons-static-svg':
-        specifier: 1.101.0
-        version: 1.101.0
       blume:
         specifier: 2.2.4
         version: 2.2.4(@emnapi/runtime@1.11.3)(@shikijs/themes@4.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(@vercel/functions@3.10.4)(csstype@3.2.3)(prettier@3.9.10)(vite@8.3.5(@types/node@22.20.5)(jiti@2.7.0)(yaml@2.9.1))(yaml@2.9.1)
@@ -680,9 +677,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
-
-  '@lobehub/icons-static-svg@1.101.0':
-    resolution: {integrity: sha512-Ob6WJOjXauLP/A1qZ9OlPlrncPNbwsIGH+ToFdxWt3APtaaMKtbIBGqJ0/LY2eBeUwTQuG7GpUw9LwPiv7OTdg==}
 
   '@mapbox/node-pre-gyp@2.0.3':
     resolution: {integrity: sha512-uwPAhccfFJlsfCxMYTwOdVfOz3xqyj8xYL3zJj8f0pb30tLohnnFPhLuqp4/qoEz8sNxe4SESZedcBojRefIzg==}
@@ -4499,8 +4493,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
-
-  '@lobehub/icons-static-svg@1.101.0': {}
 
   '@mapbox/node-pre-gyp@2.0.3':
     dependencies:

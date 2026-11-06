@@ -14,7 +14,7 @@ AMX does four things, in this order:
 
 ## 1. The helper samples every process
 
-The helper, `amxd`, runs as root. Without root, macOS hides the numbers of processes that you do not own, such as `WindowServer`, `mds_stores` and `backupd`. The app registers the helper with macOS at the first launch (see [Install](/install#approve-the-helper)). Then macOS starts it, also when the app is closed and when nobody is logged in.
+The helper, `amxd`, runs as root. Without root, macOS hides the numbers of processes that you do not own, such as `WindowServer`, `mds_stores` and `backupd`. The install puts it in a folder that only root can change, and launchd starts it (see [Install](/install#why-the-helper-is-not-inside-the-app)). It runs also when the app is closed and when nobody is logged in.
 
 Every 5 seconds the helper reads, for each process:
 

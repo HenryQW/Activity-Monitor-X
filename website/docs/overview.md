@@ -31,7 +31,7 @@ AMX does not send your data anywhere. The history stays on your Mac. See [Privac
 
 ## Open source
 
-AMX is free and open source under the [MIT license](https://github.com/HenryQW/amx/blob/main/LICENSE). The source code is on [GitHub](https://github.com/HenryQW/amx). The notices for the third-party code are in the About window of the app.
+AMX is free and open source under the [MIT license](https://github.com/HenryQW/Activity-Monitor-X/blob/main/LICENSE). The source code is on [GitHub](https://github.com/HenryQW/Activity-Monitor-X). The notices for the third-party code are in the About window of the app.
 
 ## Next
 

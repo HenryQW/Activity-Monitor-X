@@ -12,29 +12,33 @@ Docs: [amx.henry.wang](https://amx.henry.wang). License: [MIT](LICENSE).
 
 ## Install
 
-Download [AMX.dmg](https://github.com/HenryQW/amx/releases/latest/download/AMX.dmg) and drag the app to `/Applications`, or install it with Homebrew:
+Paste this line in Terminal:
+
+```sh
+curl -fsSL https://amx.henry.wang/install.sh | sh
+```
+
+The script downloads the latest release, checks its signature, copies the app to `/Applications`, then asks for your administrator password and installs the helper in root-owned folders. Or install with Homebrew, which does the same:
 
 ```sh
 brew trust --tap henryqw/tap && brew install --cask henryqw/tap/amx
 ```
 
-Activity Monitor X has no Developer ID signature, so macOS blocks a downloaded copy at first. Run `xattr -dr com.apple.quarantine "/Applications/Activity Monitor X.app"`, or click Open Anyway in System Settings > Privacy & Security.
-
 To build from source:
 
 1. Run `make cert` one time. It adds a self-signed, trusted code-signing certificate to your login keychain. macOS asks for your login password.
-2. Run `make install`. It builds and signs the app, with the helper and `amx` inside, and copies it to `/Applications`. It links `amx` into `/usr/local/bin` if that folder is writable; if not, it prints the command. It does not ask for an administrator password.
+2. Run `make install`. It builds and signs the app and copies it to `/Applications`. Then it asks for your administrator password, copies `amxd` and `amx` to root-owned folders, installs the LaunchDaemon plist and starts the helper.
 
-Open `Activity Monitor X` from `/Applications`. At its first launch, the app registers the helper, and macOS asks you to allow it. Turn on Activity Monitor X in System Settings > General > Login Items & Extensions, under Allow in the Background. The app shows this step and an **Open Login Items Settings** button until you do it. Recording starts when the helper starts. It continues when the app is closed and when nobody is logged in.
+Recording starts when the helper starts. It continues when the app is closed and when nobody is logged in.
 
 ## What is installed where
 
 | Item | Path |
 |---|---|
 | App | `/Applications/Activity Monitor X.app` |
-| Helper | `/Applications/Activity Monitor X.app/Contents/MacOS/amxd` |
-| Helper launchd property list | `/Applications/Activity Monitor X.app/Contents/Library/LaunchDaemons/com.henryqw.activitymonitorx.daemon.plist` |
-| CLI | `/Applications/Activity Monitor X.app/Contents/MacOS/amx`, linked from `/usr/local/bin/amx` (`make install`) or the Homebrew `bin` folder (the cask) |
+| Helper | `/Library/PrivilegedHelperTools/amxd` (owned by root) |
+| Helper launchd property list | `/Library/LaunchDaemons/com.henryqw.activitymonitorx.daemon.plist` |
+| CLI | `/usr/local/bin/amx` (the script and `make install`), or a link in the Homebrew `bin` folder (the cask) |
 | History database and helper settings | `/Library/Application Support/ActivityMonitorX/` |
 | Process groups | `~/Library/Application Support/ActivityMonitorX/groups.json` |
 | App settings | `defaults read com.henryqw.activitymonitorx` |
@@ -43,8 +47,7 @@ The helper writes its messages to the unified log (see Troubleshooting).
 
 ## Permissions
 
-- **Allow in the Background.** The app registers the helper with launchd through `SMAppService`. macOS runs it only after you turn on Activity Monitor X in System Settings > General > Login Items & Extensions.
-- **Root helper.** `amxd` runs as root. Without root, macOS hides the statistics of processes that you do not own, such as `WindowServer`, `mds_stores` and `backupd`. The app and `amx` talk to the helper over XPC. The helper only accepts callers that are signed with the same certificate as the helper.
+- **Root helper.** `amxd` runs as root, from a folder that only root can change: root never runs code from the user-writable app. Without root, macOS hides the statistics of processes that you do not own, such as `WindowServer`, `mds_stores` and `backupd`. The app and `amx` talk to the helper over XPC. The helper only accepts callers that are signed with the same certificate as the helper.
 - **Full Disk Access (optional).** The Disk Map shows the folders that macOS refuses to read, and has a button for the Full Disk Access settings. Give access to the app to see those folders.
 - **Notifications.** The app asks for permission to show a notification for each new alert.
 
@@ -89,7 +92,7 @@ Use `amx call <tool> '<json-object>'` to run a tool from the shell.
 
 - `amx ping` asks the helper for its status. It fails if the helper does not run.
 - `amx stats` prints the row count of each table and the database size.
-- Settings > Helper in the app shows the helper status, uptime and database path. When the helper waits for approval or is out of date, it has a button that opens Login Items. Turn Activity Monitor X off and on again there to restart the helper.
+- Settings > Helper in the app shows the helper status, uptime and database path. When the helper does not run or is out of date, it shows the install line. Run it again to install and restart the helper.
 - Read the logs of the last 10 minutes:
 
   ```
@@ -100,11 +103,9 @@ Use `amx call <tool> '<json-object>'` to run a tool from the shell.
 
 ## Uninstall
 
-1. Quit Activity Monitor X.
-2. In System Settings > General > Login Items & Extensions, turn off Activity Monitor X under Allow in the Background. The helper stops.
-3. Move the app to the Trash, or run `brew uninstall --cask amx`. If you linked `amx`, run `rm /usr/local/bin/amx`.
+With Homebrew, run `brew uninstall --cask amx`. It stops the helper and removes the app, the helper and its property list. `brew uninstall --zap --cask amx` also removes your groups and the app settings.
 
-`make uninstall` prints these steps. It keeps the history database, your groups, the app settings, the login item and the certificate, and prints the command that removes each kept item. After step 2, `make uninstall PURGE=1` also removes the history database and the helper settings (it asks for an administrator password). `brew uninstall --zap --cask amx` removes your groups and the app settings.
+After the script or `make install`, run `make uninstall` in the repository, or the lines in [Install](https://amx.henry.wang/install#uninstall). `make uninstall` stops the helper and removes the app, the helper, `amx` and the property list (it asks for an administrator password). It keeps the history database, your groups, the app settings, the login item and the certificate, and prints the command that removes each kept item. `make uninstall PURGE=1` also removes the history database and the helper settings.
 
 ## Development
 

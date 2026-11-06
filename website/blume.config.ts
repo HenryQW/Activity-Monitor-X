@@ -10,8 +10,8 @@ export default defineConfig({
     links: [
       { label: "About Henry", href: "https://henry.wang" },
       { label: "Henry Pi Harness", href: "https://pi.henry.wang" },
-      { label: "MIT License", href: "https://github.com/HenryQW/amx/blob/main/LICENSE" },
-      { label: "GitHub", href: "https://github.com/HenryQW/amx" },
+      { label: "MIT License", href: "https://github.com/HenryQW/Activity-Monitor-X/blob/main/LICENSE" },
+      { label: "GitHub", href: "https://github.com/HenryQW/Activity-Monitor-X" },
     ],
   },
   logo: { image: "/icon.png", text: "AMX" },

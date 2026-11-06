@@ -21,12 +21,13 @@ The workflow stops if the tag is not `v` followed by the version in `VERSION`.
 
 1. It runs the tests.
 2. It builds the app and the helper, signs them with the release certificate, and makes the disk image.
-3. It publishes a GitHub release with `AMX-<version>.dmg`, its SHA-256 file `AMX-<version>.dmg.sha256`, and `AMX.dmg`. The download link on the home page always points to the `AMX.dmg` of the latest release.
-4. If `TAP_TOKEN` is set, it writes the new version and checksum into `Casks/amx.rb` in `HenryQW/homebrew-tap`.
+3. It checks that the app and the helper are signed with the certificate that `CERT` in `website/public/install.sh` names.
+4. It publishes a GitHub release with `AMX-<version>.dmg`, its SHA-256 file `AMX-<version>.dmg.sha256`, and `AMX.dmg`. The install script always downloads the `AMX.dmg` of the latest release.
+5. If `TAP_TOKEN` is set, it writes the new version, the checksum and the certificate into `Casks/amx.rb` in `HenryQW/homebrew-tap`.
 
 ## Signing
 
-A release has no Developer ID signature, so Apple does not notarize it. macOS blocks the downloaded app at the first launch, and users remove the quarantine flag or click Open Anyway (see [Install](/install#open-amx-the-first-time)).
+A release has no Developer ID signature, so Apple does not notarize it. The install script downloads with `curl`, which adds no quarantine flag, and the cask removes the flag. Both accept only an app and a helper that the release certificate signed.
 
 ## The release certificate
 
@@ -42,7 +43,7 @@ Set these in the repository settings, under Secrets and variables > Actions:
 | `RELEASE_CERT_PASSWORD` | The password of that `.p12` file. |
 | `TAP_TOKEN` | A fine-grained token with write access to the contents of `HenryQW/homebrew-tap`. Without it the release still publishes, and the tap does not change. |
 
-`Scripts/make-release-cert.sh` makes the release certificate once and prints the two values for `RELEASE_CERT_P12` and `RELEASE_CERT_PASSWORD`. Keep the `.p12` file out of the repository.
+`Scripts/make-release-cert.sh` makes the release certificate once and prints the two values for `RELEASE_CERT_P12` and `RELEASE_CERT_PASSWORD`. Keep the `.p12` file out of the repository. It also prints the SHA-1 of the certificate: put it in `CERT` in `website/public/install.sh`. A code requirement takes only a SHA-1. If you change the certificate, change `CERT` in the same commit, or the next release stops at the check.
 
 ## The Homebrew tap
 

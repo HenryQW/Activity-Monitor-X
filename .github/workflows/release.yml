@@ -1,8 +1,8 @@
 name: Release
 
 # A tag v<VERSION> (the VERSION file) builds Activity Monitor X, signed with the self-signed release identity (no
-# Developer ID, D91), and publishes AMX-<VERSION>.dmg and AMX.dmg (the "latest" link on the docs site) on a GitHub
-# release. With TAP_TOKEN set, the cask in HenryQW/homebrew-tap moves to this version.
+# Developer ID, D91), and publishes AMX-<VERSION>.dmg and AMX.dmg (what install.sh downloads) on a GitHub release.
+# With TAP_TOKEN set, the cask in HenryQW/homebrew-tap moves to this version.
 on:
   push:
     tags: ["v*"]
@@ -49,7 +49,14 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
 
       - name: Build the app and the disk image
-        run: make dmg IDENTITY="Activity Monitor X Release Signing"
+        run: |
+          make dmg IDENTITY="Activity Monitor X Release Signing"
+          # install.sh and the cask accept only the certificate that CERT in install.sh names: a release signed with
+          # another one would not install.
+          CERT="$(sed -n 's/^CERT="\(.*\)"$/\1/p' website/public/install.sh)"
+          echo "CERT=$CERT" >> "$GITHUB_ENV"
+          codesign --verify --strict -R="identifier \"com.henryqw.activitymonitorx\" and certificate leaf = H\"$CERT\"" ".build/Activity Monitor X.app"
+          codesign --verify --strict -R="identifier \"com.henryqw.activitymonitorx.daemon\" and certificate leaf = H\"$CERT\"" ".build/Activity Monitor X.app/Contents/MacOS/amxd"
 
       - name: Publish the release
         env:
@@ -80,7 +87,7 @@ jobs:
           SHA256="$(shasum -a 256 ".build/AMX-$VERSION.dmg" | cut -d ' ' -f 1)"
           git clone "https://x-access-token:$TAP_TOKEN@github.com/HenryQW/homebrew-tap.git" "$RUNNER_TEMP/tap"
           mkdir -p "$RUNNER_TEMP/tap/Casks"
-          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA256/" Packaging/homebrew/amx.rb > "$RUNNER_TEMP/tap/Casks/amx.rb"
+          sed -e "s/@VERSION@/$VERSION/" -e "s/@SHA256@/$SHA256/" -e "s/@CERT_SHA1@/$CERT/" Packaging/homebrew/amx.rb > "$RUNNER_TEMP/tap/Casks/amx.rb"
           cd "$RUNNER_TEMP/tap"
           git add Casks/amx.rb
           git diff --cached --quiet && exit 0

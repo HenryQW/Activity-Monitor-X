@@ -24,6 +24,8 @@ P12_PASS=$("$OPENSSL" rand -hex 16)
     -name "$NAME" -out "$out/release.p12" -passout env:P12_PASS
 
 echo "Identity '$NAME' is in $out/release.p12."
+echo "Certificate SHA-1 (public, for CERT in website/public/install.sh):"
+"$OPENSSL" x509 -in "$tmp/cert.pem" -outform der | shasum -a 1 | cut -d' ' -f1
 echo "Keep a copy in your password manager: a new identity changes the release signature. Then delete the folder."
 echo
 echo "Secret RELEASE_CERT_PASSWORD:"
